@@ -14,9 +14,10 @@ import { PlanGuard } from './billing/plan.guard';
 import { DemoController } from './demo.controller';
 import { BillingModule } from './billing/billing.module';
 import { RemoteSupportModule } from './remote-support/remote-support.module';
+import { NetworkModule } from './network/network.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule],
   controllers: [HealthController, DemoController],
   providers: [
     {

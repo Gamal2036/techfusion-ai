@@ -54,6 +54,8 @@ model Organization {
   securityScans SecurityScan[]
   securityFindings SecurityFinding[]
   securityScores SecurityScore[]
+  networkDevices  NetworkDevice[]
+  networkScans    NetworkScan[]
   reportTemplate  ReportTemplate?
   reports         Report[]
   reportSchedules ReportSchedule[]
@@ -352,6 +354,50 @@ model SecurityScore {
 
   @@index([orgId, calculatedAt])
   @@index([deviceId, calculatedAt])
+}
+
+model NetworkDevice {
+  id              String   @id @default(uuid())
+  orgId           String
+  ip              String
+  mac             String?
+  hostname        String?
+  vendor          String?
+  interface       String?
+  source          String   @default("arp")
+  reachable       Boolean  @default(false)
+  latencyMs       Float?
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @updatedAt
+  metadata        Json?
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, ip])
+  @@index([orgId])
+  @@index([orgId, reachable])
+}
+
+model NetworkScan {
+  id              String   @id @default(uuid())
+  orgId           String
+  deviceId        String?
+  status          String   @default("completed")
+  gatewayIp       String?
+  gatewayMac      String?
+  localIp         String?
+  localMac        String?
+  subnet          String?
+  scanDurationMs  Int?
+  deviceCount     Int      @default(0)
+  discoveredIps   Json?
+  error           String?
+  startedAt       DateTime @default(now())
+  completedAt     DateTime @default(now())
+
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, startedAt])
 }
 
 model Subscription {

@@ -15,10 +15,12 @@ use sysinfo::{
 };
 
 mod security;
+mod network_discovery;
 
 const TOKEN_FILE: &str = ".techfusion/device_token.json";
 const DEFAULT_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SECURITY_INTERVAL_SECS: u64 = 3600;
+const DEFAULT_NETWORK_INTERVAL_SECS: u64 = 300;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct DeviceToken {
@@ -342,6 +344,32 @@ fn send_metrics(client: &Client, token: &DeviceToken) -> bool {
     }
 }
 
+fn send_network_discovery(client: &Client, token: &str, api_url: &str, result: &network_discovery::DiscoveryResult) {
+    let url = format!("{}/network/discovery", api_url);
+    let body = serde_json::json!({
+        "device_token": token,
+        "timestamp": Utc::now().to_rfc3339(),
+        "gateway_ip": result.gateway_ip,
+        "gateway_mac": result.gateway_mac,
+        "local_ip": result.local_ip,
+        "local_mac": result.local_mac,
+        "subnet": result.subnet,
+        "scan_duration_ms": result.scan_duration_ms,
+        "device_count": result.device_count,
+        "devices": result.devices,
+    });
+    match client.post(&url).json(&body).send() {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                println!("[Network] Discovery results sent ({} devices)", result.device_count);
+            } else {
+                eprintln!("[Network] Send failed: HTTP {}", resp.status());
+            }
+        }
+        Err(e) => eprintln!("[Network] Send error: {}", e),
+    }
+}
+
 fn main() {
     println!("TechFusion AI Agent v{}", env!("CARGO_PKG_VERSION"));
 
@@ -355,9 +383,15 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_SECURITY_INTERVAL_SECS);
 
+    let network_interval_secs: u64 = env::var("TF_NETWORK_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_NETWORK_INTERVAL_SECS);
+
     println!("API URL: {}", api_url);
     println!("Metrics interval: {}s", interval_secs);
     println!("Security interval: {}s", security_interval_secs);
+    println!("Network discovery interval: {}s", network_interval_secs);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -382,10 +416,29 @@ fn main() {
 
     let last_security = Arc::new(AtomicU64::new(0));
     let last_security_clone = last_security.clone();
+    let last_network = Arc::new(AtomicU64::new(0));
+    let last_network_clone = last_network.clone();
 
     // Run initial security scan on startup
     let _ = security::send_security_report(&client, &effective_token.token, &api_url);
     last_security.store(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        Ordering::Relaxed,
+    );
+
+    // Run initial network discovery on startup
+    let discovery_result = network_discovery::discover_network();
+    println!(
+        "[Network] Initial scan: {} devices found in {}ms (subnet: {})",
+        discovery_result.device_count,
+        discovery_result.scan_duration_ms,
+        discovery_result.subnet.as_deref().unwrap_or("unknown"),
+    );
+    send_network_discovery(&client, &effective_token.token, &api_url, &discovery_result);
+    last_network.store(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -406,6 +459,18 @@ fn main() {
         if now - last >= security_interval_secs {
             let _ = security::send_security_report(&client, &effective_token.token, &api_url);
             last_security_clone.store(now, Ordering::Relaxed);
+        }
+
+        let last_nw = last_network_clone.load(Ordering::Relaxed);
+        if now - last_nw >= network_interval_secs {
+            let discovery = network_discovery::discover_network();
+            println!(
+                "[Network] Periodic scan: {} devices found in {}ms",
+                discovery.device_count,
+                discovery.scan_duration_ms,
+            );
+            send_network_discovery(&client, &effective_token.token, &api_url, &discovery);
+            last_network_clone.store(now, Ordering::Relaxed);
         }
 
         thread::sleep(Duration::from_secs(interval_secs));
