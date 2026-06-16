@@ -30,6 +30,9 @@ model Organization {
   aiProviderConfigs AiProviderConfig[]
   aiUsageLogs AiUsageLog[]
   aiConversations AiConversation[]
+  securityScans SecurityScan[]
+  securityFindings SecurityFinding[]
+  securityScores SecurityScore[]
 }
 
 model User {
@@ -87,6 +90,9 @@ model Device {
   scores  DeviceHealthScore[]
   alerts  Alert[]
   conversations AiConversation[]
+  securityScans SecurityScan[]
+  securityFindings SecurityFinding[]
+  securityScores SecurityScore[]
 
   @@index([orgId])
 }
@@ -256,4 +262,69 @@ model AiMessage {
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+model SecurityScan {
+  id          String    @id @default(uuid())
+  orgId       String
+  deviceId    String
+  status      String    @default("pending") // pending, running, completed, failed
+  triggeredBy String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  org      Organization    @relation(fields: [orgId], references: [id])
+  device   Device          @relation(fields: [deviceId], references: [id])
+  findings SecurityFinding[]
+  score    SecurityScore?
+
+  @@index([orgId, startedAt])
+  @@index([deviceId, startedAt])
+}
+
+model SecurityFinding {
+  id          String   @id @default(uuid())
+  scanId      String
+  orgId       String
+  deviceId    String
+  category    String   // updates, firewall, weak_config, open_ports, password_policy
+  finding     String
+  severity    String   // low, medium, high, critical
+  status      String   @default("open") // open, remediated, false_positive
+  remediation String
+  details     Json?
+  createdAt   DateTime @default(now())
+  remediatedAt DateTime?
+
+  scan   SecurityScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id])
+  device Device       @relation(fields: [deviceId], references: [id])
+
+  @@index([orgId, severity])
+  @@index([deviceId, severity])
+  @@index([scanId])
+}
+
+model SecurityScore {
+  id            String   @id @default(uuid())
+  scanId        String   @unique
+  orgId         String
+  deviceId      String
+  securityScore Float    // 0-100, higher = more secure
+  riskLevel     String   // low, medium, high, critical
+  totalFindings Int      @default(0)
+  criticalCount Int      @default(0)
+  highCount     Int      @default(0)
+  mediumCount   Int      @default(0)
+  lowCount      Int      @default(0)
+  calculatedAt  DateTime @default(now())
+
+  scan   SecurityScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id])
+  device Device       @relation(fields: [deviceId], references: [id])
+
+  @@index([orgId, calculatedAt])
+  @@index([deviceId, calculatedAt])
 }

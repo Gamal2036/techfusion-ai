@@ -6,14 +6,19 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use sysinfo::{
     CpuRefreshKind, Disks, Networks, System,
 };
 
+mod security;
+
 const TOKEN_FILE: &str = ".techfusion/device_token.json";
 const DEFAULT_INTERVAL_SECS: u64 = 10;
+const DEFAULT_SECURITY_INTERVAL_SECS: u64 = 3600;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct DeviceToken {
@@ -345,9 +350,14 @@ fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_INTERVAL_SECS);
+    let security_interval_secs: u64 = env::var("TF_SECURITY_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_SECURITY_INTERVAL_SECS);
 
     println!("API URL: {}", api_url);
-    println!("Interval: {}s", interval_secs);
+    println!("Metrics interval: {}s", interval_secs);
+    println!("Security interval: {}s", security_interval_secs);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -370,9 +380,34 @@ fn main() {
         api_url: api_url.clone(),
     });
 
+    let last_security = Arc::new(AtomicU64::new(0));
+    let last_security_clone = last_security.clone();
+
+    // Run initial security scan on startup
+    let _ = security::send_security_report(&client, &effective_token.token, &api_url);
+    last_security.store(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        Ordering::Relaxed,
+    );
+
     // Main loop
     loop {
         send_metrics(&client, &effective_token);
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let last = last_security_clone.load(Ordering::Relaxed);
+
+        if now - last >= security_interval_secs {
+            let _ = security::send_security_report(&client, &effective_token.token, &api_url);
+            last_security_clone.store(now, Ordering::Relaxed);
+        }
+
         thread::sleep(Duration::from_secs(interval_secs));
     }
 }
