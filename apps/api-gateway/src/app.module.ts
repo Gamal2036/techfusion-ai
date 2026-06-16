@@ -10,15 +10,22 @@ import { AiModule } from './ai/ai.module';
 import { SecurityModule } from './security/security.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { CombinedAuthGuard } from './common/combined-auth.guard';
+import { PlanGuard } from './billing/plan.guard';
 import { DemoController } from './demo.controller';
+import { BillingModule } from './billing/billing.module';
+import { RemoteSupportModule } from './remote-support/remote-support.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule],
   controllers: [HealthController, DemoController],
   providers: [
     {
       provide: APP_GUARD,
       useClass: CombinedAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PlanGuard,
     },
   ],
 })

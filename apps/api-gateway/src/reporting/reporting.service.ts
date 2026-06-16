@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiOrchestratorService } from '../ai/ai-orchestrator.service';
 import { BrandingService } from './services/branding.service';
@@ -11,6 +11,7 @@ import { GenerateReportDto, ReportType, ReportFormat } from './dto/generate-repo
 import { buildDeviceHealthReport, DeviceHealthInput } from './report-types/device-health.report';
 import { buildSecurityExecutiveReport, SecurityExecutiveInput } from './report-types/security-executive.report';
 import { buildFleetSummaryReport, FleetSummaryInput } from './report-types/fleet-summary.report';
+import { getPlanConfig } from '../billing/plan-features';
 
 @Injectable()
 export class ReportingService {
@@ -34,6 +35,23 @@ export class ReportingService {
   }
 
   async generate(orgId: string, userId: string, dto: GenerateReportDto) {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (org) {
+      const planConfig = getPlanConfig(org.plan);
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const monthCount = await this.prisma.report.count({
+        where: { orgId, createdAt: { gte: startOfMonth } },
+      });
+      if (monthCount >= planConfig.limits.maxReportsPerMonth) {
+        throw new ForbiddenException(
+          `Monthly report limit reached (${planConfig.limits.maxReportsPerMonth} max on ${planConfig.label} plan). ` +
+          `Upgrade to generate more reports.`,
+        );
+      }
+    }
+
     const format = dto.format;
     const generator = this.generators.get(format);
     if (!generator) throw new Error(`Unsupported format: ${format}`);

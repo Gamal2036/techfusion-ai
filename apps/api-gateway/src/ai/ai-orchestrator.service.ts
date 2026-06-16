@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from './services/encryption.service';
 import { CostTrackerService } from './services/cost-tracker.service';
@@ -7,6 +7,7 @@ import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAIProvider } from './providers/openai.provider';
 import { LlmProvider, CompletionOptions, CompletionResult, EmbeddingOptions, EmbeddingResult } from './interfaces/llm-provider.interface';
 import { AiOrchestrator, OrchestratorCompletionOptions } from './interfaces/ai-orchestrator.interface';
+import { getPlanConfig } from '../billing/plan-features';
 
 export interface ProviderEntry {
   name: string;
@@ -117,6 +118,23 @@ export class AiOrchestratorService implements AiOrchestrator {
   }
 
   async complete(orgId: string, opts: OrchestratorCompletionOptions): Promise<CompletionResult> {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (org) {
+      const planConfig = getPlanConfig(org.plan);
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const monthCount = await this.prisma.aiUsageLog.count({
+        where: { orgId, createdAt: { gte: startOfMonth } },
+      });
+      if (monthCount >= planConfig.limits.maxAiQueriesPerMonth) {
+        throw new ForbiddenException(
+          `Monthly AI query limit reached (${planConfig.limits.maxAiQueriesPerMonth} max on ${planConfig.label} plan). ` +
+          `Upgrade to use more AI queries.`,
+        );
+      }
+    }
+
     const providers = await this.loadProviders(orgId);
     if (providers.length === 0) {
       throw new Error('No AI providers configured');

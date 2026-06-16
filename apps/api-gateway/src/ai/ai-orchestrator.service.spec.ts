@@ -40,7 +40,14 @@ describe('AiOrchestratorService', () => {
   let service: AiOrchestratorService;
   let usageService: AiUsageService;
 
-  const mockPrisma = {} as PrismaService;
+  const mockPrisma = {
+    organization: {
+      findUnique: jest.fn().mockResolvedValue({ plan: 'Enterprise' }),
+    },
+    aiUsageLog: {
+      count: jest.fn().mockResolvedValue(0),
+    },
+  } as unknown as PrismaService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({

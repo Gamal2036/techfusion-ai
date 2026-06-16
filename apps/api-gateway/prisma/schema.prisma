@@ -14,12 +14,33 @@ enum Role {
   Viewer
 }
 
+enum Plan {
+  Free
+  Pro
+  Business
+  Enterprise
+}
+
+enum SubscriptionStatus {
+  Active
+  PastDue
+  Canceled
+  Incomplete
+  IncompleteExpired
+  Trialing
+  Unpaid
+  Paused
+}
+
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String              @id @default(uuid())
+  name            String
+  slug            String              @unique
+  plan            Plan                @default(Free)
+  stripeCustomerId String?            @unique
+  subscription    Subscription?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   users  User[]
   devices Device[]
@@ -83,6 +104,7 @@ model Device {
   gpuInfo     String?
   diskTotal   BigInt?
   isLaptop    Boolean  @default(false)
+  inactive    Boolean  @default(false)
   registeredAt DateTime @default(now())
   lastSeenAt  DateTime @updatedAt
   deviceToken String   @unique
@@ -330,6 +352,46 @@ model SecurityScore {
 
   @@index([orgId, calculatedAt])
   @@index([deviceId, calculatedAt])
+}
+
+model Subscription {
+  id              String              @id @default(uuid())
+  orgId           String              @unique
+  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String?         @unique
+  stripeCustomerId String?
+  status          SubscriptionStatus  @default(Active)
+  plan            Plan                @default(Free)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean           @default(false)
+  trialEnd        DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  invoices Invoice[]
+
+  @@index([orgId])
+  @@index([stripeSubscriptionId])
+}
+
+model Invoice {
+  id               String   @id @default(uuid())
+  subscriptionId   String
+  subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  orgId            String
+  stripeInvoiceId  String?  @unique
+  amount           Int      // cents
+  currency         String   @default("usd")
+  status           String   // paid, open, uncollectible, void
+  paid             Boolean  @default(false)
+  invoicePdf       String?
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([stripeInvoiceId])
 }
 
 model ReportTemplate {

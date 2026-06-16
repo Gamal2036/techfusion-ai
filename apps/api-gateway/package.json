@@ -35,7 +35,8 @@
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.0",
     "socket.io": "^4.7.0",
-    "speakeasy": "^2.0.0"
+    "speakeasy": "^2.0.0",
+    "stripe": "^22.2.1"
   },
   "devDependencies": {
     "@nestjs/testing": "^10.4.22",

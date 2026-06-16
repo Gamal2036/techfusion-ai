@@ -6,6 +6,7 @@ import { Response } from 'express';
 import { ReportingService } from './reporting.service';
 import { GenerateReportDto, CreateTemplateDto, CreateScheduleDto } from './dto/generate-report.dto';
 import { Roles } from '../common/roles.decorator';
+import { RequireFeature } from '../common/plan.decorator';
 
 @Controller('reports')
 export class ReportingController {
@@ -59,12 +60,14 @@ export class ReportingController {
 
   // Branding
   @Get('branding')
+  @RequireFeature('customBranding')
   async getBranding(@Req() req: any) {
     return this.reporting.getBranding(req.user.orgId);
   }
 
   @Post('branding')
   @Roles('Admin', 'Owner')
+  @RequireFeature('customBranding')
   async setBranding(@Body() dto: CreateTemplateDto, @Req() req: any) {
     return this.reporting.setBranding(req.user.orgId, dto);
   }

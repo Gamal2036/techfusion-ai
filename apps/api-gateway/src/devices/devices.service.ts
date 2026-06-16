@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { MetricsPayloadDto } from './dto/metrics-payload.dto';
@@ -8,6 +8,7 @@ import { AlertsGateway } from '../alerts/alerts.gateway';
 import { NotificationService } from '../alerts/notification.service';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
+import { getPlanConfig } from '../billing/plan-features';
 
 @Injectable()
 export class DevicesService {
@@ -25,6 +26,18 @@ export class DevicesService {
     });
     if (existing) {
       return existing;
+    }
+
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (org) {
+      const planConfig = getPlanConfig(org.plan);
+      const activeCount = await this.prisma.device.count({ where: { orgId, inactive: false } });
+      if (activeCount >= planConfig.limits.maxDevices) {
+        throw new ForbiddenException(
+          `Device limit reached (${planConfig.limits.maxDevices} max on ${planConfig.label} plan). ` +
+          `Upgrade to register more devices.`,
+        );
+      }
     }
 
     const deviceToken = crypto.randomUUID();
