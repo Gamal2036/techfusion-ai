@@ -1,6 +1,7 @@
 import {
-  IsString, IsNumber, IsOptional, IsInt, Min, Max,
+  IsString, IsNumber, IsOptional, IsInt, Min, Max, IsArray, ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CpuMetricsDto {
   @IsNumber() @Min(0) @Max(100)
@@ -130,4 +131,18 @@ export class MetricsPayloadDto {
 
   @IsOptional()
   uptime?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceCheckDto)
+  services?: ServiceCheckDto[];
+}
+
+export class ServiceCheckDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  status: string;
 }

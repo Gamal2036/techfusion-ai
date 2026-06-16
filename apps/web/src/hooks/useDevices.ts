@@ -44,6 +44,8 @@ export interface DeviceMetric {
   loadAverage1Min: number | null;
   processes: number | null;
   uptime: number | null;
+  networkRxBytes: number | null;
+  networkTxBytes: number | null;
 }
 
 export interface DeviceScore {

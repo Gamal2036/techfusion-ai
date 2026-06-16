@@ -45,6 +45,13 @@ export class DevicesController {
       score: result.score,
     });
 
+    // Broadcast alerts if any were triggered
+    if (result.alerts && result.alerts.length > 0) {
+      for (const alert of result.alerts) {
+        this.devicesGateway.broadcastAlert(device.orgId, alert);
+      }
+    }
+
     return result;
   }
 

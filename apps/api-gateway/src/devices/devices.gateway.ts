@@ -43,4 +43,8 @@ export class DevicesGateway implements OnGatewayConnection, OnGatewayDisconnect 
       ...data,
     });
   }
+
+  broadcastAlert(orgId: string, data: any) {
+    this.server.to(`org:${orgId}`).emit('alerts', data);
+  }
 }

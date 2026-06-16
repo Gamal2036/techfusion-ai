@@ -3,6 +3,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { MetricsPayloadDto } from './dto/metrics-payload.dto';
 import { ScoringService } from './scoring.service';
+import { AlertEvaluationService } from '../alerts/alert-evaluation.service';
+import { AlertsGateway } from '../alerts/alerts.gateway';
+import { NotificationService } from '../alerts/notification.service';
+import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -10,6 +14,9 @@ export class DevicesService {
   constructor(
     private prisma: PrismaService,
     private scoring: ScoringService,
+    private alertEval: AlertEvaluationService,
+    private alertsGateway: AlertsGateway,
+    private notificationService: NotificationService,
   ) {}
 
   async register(orgId: string, dto: RegisterDeviceDto) {
@@ -95,6 +102,7 @@ export class DevicesService {
         loadAverage15Min: dto.cpu?.loadAverage15Min ?? null,
         processes: dto.processes ?? null,
         uptime: dto.uptime ? BigInt(dto.uptime) : null,
+        serviceChecks: dto.services ? dto.services as any : Prisma.JsonNull,
       },
     });
 
@@ -125,7 +133,41 @@ export class DevicesService {
       },
     });
 
-    return { metric, score: scoreRecord };
+    // Evaluate alert rules (non-blocking)
+    const alerts: any[] = [];
+    try {
+      const diskPercent = metric.diskTotal && metric.diskTotal > BigInt(0) && metric.diskUsed != null
+        ? Number((metric.diskUsed * BigInt(100)) / metric.diskTotal) : null;
+
+      const triggeredAlerts = await this.alertEval.evaluateMetrics(deviceId, orgId, {
+        deviceId,
+        orgId,
+        cpuUsage: dto.cpu?.usage ?? 0,
+        ramPercent: dto.memory?.percent ?? 0,
+        diskPercent,
+        tempCpu: dto.temperatures?.cpu ?? null,
+        loadAverage1Min: dto.cpu?.loadAverage1Min ?? null,
+        processes: dto.processes ?? null,
+        services: dto.services ?? null,
+      });
+
+      for (const alert of triggeredAlerts) {
+        alerts.push(alert);
+        this.alertsGateway.broadcastAlert(orgId, alert);
+
+        const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+        const rule = await this.prisma.alertRule.findUnique({ where: { id: alert.alertRuleId } });
+        if (rule) {
+          this.notificationService.notifyAlert(alert, rule, device?.name ?? deviceId).catch((e) =>
+            console.error('Notification failed:', e),
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Alert evaluation error:', err);
+    }
+
+    return { metric, score: scoreRecord, alerts };
   }
 
   async getMetrics(deviceId: string, orgId: string, minutes = 60, limit = 100) {

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use sysinfo::{
@@ -46,6 +47,13 @@ struct MetricsPayload {
     network: NetworkMetrics,
     processes: u32,
     uptime: u64,
+    services: Vec<ServiceCheck>,
+}
+
+#[derive(Serialize)]
+struct ServiceCheck {
+    name: String,
+    status: String,
 }
 
 #[derive(Serialize)]
@@ -178,6 +186,36 @@ fn register_device(client: &Client, api_url: &str) -> Option<DeviceToken> {
     }
 }
 
+fn collect_services() -> Vec<ServiceCheck> {
+    let services_var = env::var("TF_SERVICES").unwrap_or_default();
+    if services_var.is_empty() {
+        return vec![];
+    }
+
+    let mut checks = Vec::new();
+    for name in services_var.split(',') {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let status = match Command::new("systemctl")
+            .args(["is-active", name])
+            .output()
+        {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                stdout
+            }
+            Err(_) => "unknown".to_string(),
+        };
+        checks.push(ServiceCheck {
+            name: name.to_string(),
+            status,
+        });
+    }
+    checks
+}
+
 fn collect_metrics(sys: &mut System, token: &DeviceToken) -> MetricsPayload {
     // Refresh all data
     sys.refresh_cpu_specific(CpuRefreshKind::everything());
@@ -233,6 +271,8 @@ fn collect_metrics(sys: &mut System, token: &DeviceToken) -> MetricsPayload {
     // Uptime
     let uptime = sys.uptime();
 
+    let service_checks = collect_services();
+
     MetricsPayload {
         device_token: token.token.clone(),
         timestamp: Utc::now().to_rfc3339(),
@@ -261,6 +301,7 @@ fn collect_metrics(sys: &mut System, token: &DeviceToken) -> MetricsPayload {
         },
         processes: proc_count,
         uptime,
+        services: service_checks,
     }
 }
 

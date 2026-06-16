@@ -5,11 +5,12 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { MfaModule } from './mfa/mfa.module';
 import { DevicesModule } from './devices/devices.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { CombinedAuthGuard } from './common/combined-auth.guard';
 import { DemoController } from './demo.controller';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule],
   controllers: [HealthController, DemoController],
   providers: [
     {

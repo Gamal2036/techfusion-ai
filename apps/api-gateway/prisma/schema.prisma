@@ -25,6 +25,8 @@ model Organization {
   devices Device[]
   deviceMetrics DeviceMetric[]
   deviceHealthScores DeviceHealthScore[]
+  alertRules AlertRule[]
+  alerts    Alert[]
 }
 
 model User {
@@ -80,6 +82,7 @@ model Device {
   org     Organization        @relation(fields: [orgId], references: [id])
   metrics DeviceMetric[]
   scores  DeviceHealthScore[]
+  alerts  Alert[]
 
   @@index([orgId])
 }
@@ -117,12 +120,57 @@ model DeviceMetric {
   loadAverage15Min Float?
   processes   Int?
   uptime      BigInt?
+  serviceChecks Json?
 
   device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   org    Organization @relation(fields: [orgId], references: [id])
 
   @@index([deviceId, recordedAt])
   @@index([orgId, recordedAt])
+}
+
+model AlertRule {
+  id        String   @id @default(uuid())
+  orgId     String
+  name      String
+  description String?
+  metricName String
+  threshold  Float
+  operator   String   @default("gt")
+  severity   String   @default("warning")
+  debounceSeconds Int @default(300)
+  enabled    Boolean  @default(true)
+  deviceSelector String?
+  webhookUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id])
+  alerts Alert[]
+
+  @@index([orgId])
+}
+
+model Alert {
+  id          String    @id @default(uuid())
+  orgId       String
+  alertRuleId String
+  deviceId    String
+  metricValue Float
+  threshold   Float
+  severity    String
+  message     String
+  acknowledgedAt DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  org       Organization @relation(fields: [orgId], references: [id])
+  alertRule AlertRule    @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
+  device    Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, createdAt])
+  @@index([alertRuleId])
+  @@index([deviceId])
 }
 
 model DeviceHealthScore {
