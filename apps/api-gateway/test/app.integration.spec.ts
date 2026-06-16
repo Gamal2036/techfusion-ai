@@ -28,6 +28,12 @@ describe('TechFusion API (integration)', () => {
 
   beforeEach(async () => {
     // Clean all tables before each test
+    await prisma.backupRun.deleteMany();
+    await prisma.backupJob.deleteMany();
+    await prisma.driver.deleteMany();
+    await prisma.driverCatalogItem.deleteMany();
+    await prisma.softwareInventory.deleteMany();
+    await prisma.softwareCatalogItem.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     await prisma.organization.deleteMany();
@@ -213,6 +219,248 @@ describe('TechFusion API (integration)', () => {
         .post('/auth/refresh')
         .send({ refreshToken: expiredToken })
         .expect(401);
+    });
+  });
+
+  // ─── 4. Backup / Restore ─────────────────────────────────────
+  describe('backup and restore', () => {
+    async function loginAs(email: string) {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'password123' });
+      return res.body.accessToken;
+    }
+
+    describe('backup job CRUD', () => {
+      it('creates a backup job', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu@test.com', 'Admin');
+        const token = await loginAs('bu@test.com');
+
+        const res = await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Daily Backup', deviceId: 'device-001', schedule: '0 2 * * *', retention: 7 })
+          .expect(201);
+
+        expect(res.body.id).toBeDefined();
+        expect(res.body.name).toBe('Daily Backup');
+        expect(res.body.deviceId).toBe('device-001');
+        expect(res.body.type).toBe('file');
+        expect(res.body.retention).toBe(7);
+      });
+
+      it('lists backup jobs for the org', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu2@test.com', 'Admin');
+        const token = await loginAs('bu2@test.com');
+
+        await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Job 1', deviceId: 'device-001' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Job 2', deviceId: 'device-002' })
+          .expect(201);
+
+        const res = await request(app.getHttpServer())
+          .get('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(res.body)).toBe(true);
+        expect(res.body.length).toBe(2);
+      });
+
+      it('filters jobs by deviceId', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu3@test.com', 'Admin');
+        const token = await loginAs('bu3@test.com');
+
+        await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Job A', deviceId: 'device-001' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Job B', deviceId: 'device-002' })
+          .expect(201);
+
+        const res = await request(app.getHttpServer())
+          .get('/backups/jobs?deviceId=device-001')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(res.body.length).toBe(1);
+        expect(res.body[0].name).toBe('Job A');
+      });
+
+      it('returns 404 for nonexistent job', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu4@test.com', 'Admin');
+        const token = await loginAs('bu4@test.com');
+
+        await request(app.getHttpServer())
+          .get('/backups/jobs/00000000-0000-0000-0000-000000000099')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+
+      it('deletes a backup job', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu5@test.com', 'Admin');
+        const token = await loginAs('bu5@test.com');
+
+        const createRes = await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'To Delete', deviceId: 'device-001' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .delete(`/backups/jobs/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        const listRes = await request(app.getHttpServer())
+          .get('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(listRes.body.length).toBe(0);
+      });
+
+      it('returns 404 when deleting nonexistent job', async () => {
+        await seedOrg('bu-org', 'Bu Org', 'bu6@test.com', 'Admin');
+        const token = await loginAs('bu6@test.com');
+
+        await request(app.getHttpServer())
+          .delete('/backups/jobs/00000000-0000-0000-0000-000000000099')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+    });
+
+    describe('backup run execution', () => {
+      it('triggers a run and returns running status', async () => {
+        await seedOrg('run-org', 'Run Org', 'run@test.com', 'Admin');
+        const token = await loginAs('run@test.com');
+
+        const jobRes = await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Test Run', deviceId: 'device-001', type: 'full_image' })
+          .expect(201);
+
+        const runRes = await request(app.getHttpServer())
+          .post(`/backups/jobs/${jobRes.body.id}/trigger`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        expect(runRes.body.id).toBeDefined();
+        expect(runRes.body.status).toBe('running');
+        expect(runRes.body.jobId).toBe(jobRes.body.id);
+        expect(runRes.body.type).toBe('full_image');
+      });
+
+      it('returns 404 when triggering nonexistent job', async () => {
+        await seedOrg('run-org', 'Run Org', 'run2@test.com', 'Admin');
+        const token = await loginAs('run2@test.com');
+
+        await request(app.getHttpServer())
+          .post('/backups/jobs/00000000-0000-0000-0000-000000000099/trigger')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+
+      it('lists runs for an org', async () => {
+        await seedOrg('run-org', 'Run Org', 'run3@test.com', 'Admin');
+        const token = await loginAs('run3@test.com');
+
+        const jobRes = await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Run List Test', deviceId: 'device-001' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/backups/jobs/${jobRes.body.id}/trigger`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        const listRes = await request(app.getHttpServer())
+          .get('/backups/runs')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(listRes.body)).toBe(true);
+        expect(listRes.body.length).toBe(1);
+        expect(listRes.body[0].jobId).toBe(jobRes.body.id);
+      });
+    });
+
+    describe('restore workflow', () => {
+      it('returns restore points for a device', async () => {
+        await seedOrg('res-org', 'Res Org', 'res@test.com', 'Admin');
+        const token = await loginAs('res@test.com');
+
+        const jobRes = await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ name: 'Restore Test', deviceId: 'device-007' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/backups/jobs/${jobRes.body.id}/trigger`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        const pointsRes = await request(app.getHttpServer())
+          .get('/backups/restore-points/device-007')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(pointsRes.body)).toBe(true);
+        // The async execution hasn't completed yet, so points should be empty
+        expect(pointsRes.body.length).toBe(0);
+      });
+
+      it('returns 404 when restoring nonexistent run', async () => {
+        await seedOrg('res-org', 'Res Org', 'res2@test.com', 'Admin');
+        const token = await loginAs('res2@test.com');
+
+        await request(app.getHttpServer())
+          .post('/backups/runs/00000000-0000-0000-0000-000000000099/restore')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+    });
+
+    describe('cross-tenant isolation for backups', () => {
+      it('an org cannot read another orgs backup jobs', async () => {
+        const { org: orgA } = await seedOrg('biso-a', 'BIsolation A', 'bisa@test.com', 'Admin');
+        const { org: orgB } = await seedOrg('biso-b', 'BIsolation B', 'bisb@test.com', 'Admin');
+
+        const tokenA = await loginAs('bisa@test.com');
+        const tokenB = await loginAs('bisb@test.com');
+
+        // Org A creates job
+        await request(app.getHttpServer())
+          .post('/backups/jobs')
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ name: 'OrgA Job', deviceId: 'device-001' })
+          .expect(201);
+
+        // Org B should see 0 jobs
+        const resB = await request(app.getHttpServer())
+          .get('/backups/jobs')
+          .set('Authorization', `Bearer ${tokenB}`)
+          .expect(200);
+
+        expect(resB.body.length).toBe(0);
+      });
     });
   });
 });

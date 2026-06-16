@@ -16,11 +16,13 @@ use sysinfo::{
 
 mod security;
 mod network_discovery;
+mod inventory;
 
 const TOKEN_FILE: &str = ".techfusion/device_token.json";
 const DEFAULT_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SECURITY_INTERVAL_SECS: u64 = 3600;
 const DEFAULT_NETWORK_INTERVAL_SECS: u64 = 300;
+const DEFAULT_INVENTORY_INTERVAL_SECS: u64 = 1800;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct DeviceToken {
@@ -387,11 +389,16 @@ fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_NETWORK_INTERVAL_SECS);
+    let inventory_interval_secs: u64 = env::var("TF_INVENTORY_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_INVENTORY_INTERVAL_SECS);
 
     println!("API URL: {}", api_url);
     println!("Metrics interval: {}s", interval_secs);
     println!("Security interval: {}s", security_interval_secs);
     println!("Network discovery interval: {}s", network_interval_secs);
+    println!("Inventory interval: {}s", inventory_interval_secs);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -418,6 +425,8 @@ fn main() {
     let last_security_clone = last_security.clone();
     let last_network = Arc::new(AtomicU64::new(0));
     let last_network_clone = last_network.clone();
+    let last_inventory = Arc::new(AtomicU64::new(0));
+    let last_inventory_clone = last_inventory.clone();
 
     // Run initial security scan on startup
     let _ = security::send_security_report(&client, &effective_token.token, &api_url);
@@ -439,6 +448,22 @@ fn main() {
     );
     send_network_discovery(&client, &effective_token.token, &api_url, &discovery_result);
     last_network.store(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        Ordering::Relaxed,
+    );
+
+    // Run initial inventory on startup
+    let inventory_report = inventory::collect_inventory();
+    println!(
+        "[Inventory] Initial scan: {} drivers, {} packages",
+        inventory_report.driver_count,
+        inventory_report.software_count,
+    );
+    send_inventory(&client, &effective_token.token, &api_url, &inventory_report);
+    last_inventory.store(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -473,6 +498,40 @@ fn main() {
             last_network_clone.store(now, Ordering::Relaxed);
         }
 
+        let last_inv = last_inventory_clone.load(Ordering::Relaxed);
+        if now - last_inv >= inventory_interval_secs {
+            let inv = inventory::collect_inventory();
+            println!(
+                "[Inventory] Periodic scan: {} drivers, {} packages",
+                inv.driver_count,
+                inv.software_count,
+            );
+            send_inventory(&client, &effective_token.token, &api_url, &inv);
+            last_inventory_clone.store(now, Ordering::Relaxed);
+        }
+
         thread::sleep(Duration::from_secs(interval_secs));
+    }
+}
+
+fn send_inventory(client: &Client, token: &str, api_url: &str, report: &inventory::InventoryReport) {
+    let url = format!("{}/inventory/report", api_url);
+    let body = serde_json::json!({
+        "device_token": token,
+        "timestamp": Utc::now().to_rfc3339(),
+        "drivers": report.drivers,
+        "software": report.software,
+        "driver_count": report.driver_count,
+        "software_count": report.software_count,
+    });
+    match client.post(&url).json(&body).send() {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                println!("[Inventory] Report sent ({} drivers, {} packages)", report.driver_count, report.software_count);
+            } else {
+                eprintln!("[Inventory] Send failed: HTTP {}", resp.status());
+            }
+        }
+        Err(e) => eprintln!("[Inventory] Send error: {}", e),
     }
 }

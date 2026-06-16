@@ -56,6 +56,10 @@ model Organization {
   securityScores SecurityScore[]
   networkDevices  NetworkDevice[]
   networkScans    NetworkScan[]
+  drivers         Driver[]
+  softwareInventory SoftwareInventory[]
+  backupJobs      BackupJob[]
+  backupRuns      BackupRun[]
   reportTemplate  ReportTemplate?
   reports         Report[]
   reportSchedules ReportSchedule[]
@@ -398,6 +402,127 @@ model NetworkScan {
   org    Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, startedAt])
+}
+
+model DriverCatalogItem {
+  id             String   @id @default(uuid())
+  name           String
+  vendor         String?
+  minVersion     String?
+  latestVersion  String?
+  category       String?
+  downloadUrl    String?
+  checksum       String?
+  isBuiltin      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([name, vendor])
+}
+
+model Driver {
+  id             String   @id @default(uuid())
+  orgId          String
+  deviceId       String?
+  name           String
+  vendor         String?
+  version        String?
+  modulePath     String?
+  usedBy         String?
+  source         String   @default("kernel_module")
+  status         String   @default("current") // current, outdated, missing, unknown
+  lastSeenAt     DateTime @default(now())
+  firstSeenAt    DateTime @default(now())
+  metadata       Json?
+
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@unique([orgId, name])
+  @@index([orgId, status])
+}
+
+model SoftwareCatalogItem {
+  id             String   @id @default(uuid())
+  name           String
+  vendor         String?
+  minVersion     String?
+  latestVersion  String?
+  category       String?
+  downloadUrl    String?
+  isEssential    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([name, vendor])
+}
+
+model SoftwareInventory {
+  id             String   @id @default(uuid())
+  orgId          String
+  deviceId       String?
+  name           String
+  version        String?
+  vendor         String?
+  installDate    String?
+  description    String?
+  source         String   @default("deb")
+  status         String   @default("current") // current, outdated, unknown
+  lastSeenAt     DateTime @default(now())
+  firstSeenAt    DateTime @default(now())
+  metadata       Json?
+
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@unique([orgId, name])
+  @@index([orgId, status])
+}
+
+model BackupJob {
+  id              String    @id @default(uuid())
+  orgId           String
+  deviceId        String
+  name            String
+  type            String    @default("file") // file, full_image
+  schedule        String?   // cron expression, null for manual
+  sourcePaths     String?   // JSON array of paths
+  destination     String?
+  retention       Int       @default(7) // days
+  compression     Boolean   @default(true)
+  isEnabled       Boolean   @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  org    Organization @relation(fields: [orgId], references: [id])
+  runs   BackupRun[]
+
+  @@index([orgId])
+  @@index([orgId, deviceId])
+}
+
+model BackupRun {
+  id            String    @id @default(uuid())
+  jobId         String
+  orgId         String
+  deviceId      String?
+  status        String    @default("pending") // pending, running, completed, failed, cancelled
+  type          String    @default("file")
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  sizeBytes     BigInt?
+  fileCount     Int?
+  sourcePaths   String?
+  errorMessage  String?
+  metadata      Json?
+
+  job  BackupJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, startedAt])
+  @@index([jobId, startedAt])
 }
 
 model Subscription {

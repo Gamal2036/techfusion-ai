@@ -15,9 +15,11 @@ import { DemoController } from './demo.controller';
 import { BillingModule } from './billing/billing.module';
 import { RemoteSupportModule } from './remote-support/remote-support.module';
 import { NetworkModule } from './network/network.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { BackupsModule } from './backups/backups.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule],
   controllers: [HealthController, DemoController],
   providers: [
     {
