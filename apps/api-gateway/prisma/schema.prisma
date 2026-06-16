@@ -21,7 +21,10 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users  User[]
+  devices Device[]
+  deviceMetrics DeviceMetric[]
+  deviceHealthScores DeviceHealthScore[]
 }
 
 model User {
@@ -53,4 +56,86 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
   revokedAt DateTime?
+}
+
+model Device {
+  id          String   @id @default(uuid())
+  orgId       String
+  name        String
+  hostname    String?
+  os          String?
+  osVersion   String?
+  cpuModel    String?
+  cpuCores    Int?
+  cpuLogical  Int?
+  ramTotal    BigInt?
+  gpuInfo     String?
+  diskTotal   BigInt?
+  isLaptop    Boolean  @default(false)
+  registeredAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+  deviceToken String   @unique
+  metadata    Json?
+
+  org     Organization        @relation(fields: [orgId], references: [id])
+  metrics DeviceMetric[]
+  scores  DeviceHealthScore[]
+
+  @@index([orgId])
+}
+
+model DeviceMetric {
+  id          String   @id @default(uuid())
+  deviceId    String
+  orgId       String
+  recordedAt  DateTime @default(now())
+
+  cpuUsage    Float   // percentage 0-100
+  ramUsed     BigInt
+  ramTotal    BigInt
+  ramPercent  Float
+  diskUsed    BigInt?
+  diskTotal   BigInt?
+  diskReadBytes  BigInt?
+  diskWriteBytes BigInt?
+  diskSmartStatus          String?  // "PASS" or "FAIL"
+  diskSmartReallocatedSectors Int?
+  diskSmartTemperature     Float?
+  gpuUsage    Float?
+  gpuTemp     Float?
+  gpuMemoryUsed BigInt?
+  batteryPercent Int?
+  batteryStatus String?
+  tempCpu     Float?
+  tempGpu     Float?
+  tempMotherboard Float?
+  fanRpm      Int?
+  networkRxBytes  BigInt?
+  networkTxBytes  BigInt?
+  loadAverage1Min Float?
+  loadAverage5Min Float?
+  loadAverage15Min Float?
+  processes   Int?
+  uptime      BigInt?
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([deviceId, recordedAt])
+  @@index([orgId, recordedAt])
+}
+
+model DeviceHealthScore {
+  id          String   @id @default(uuid())
+  deviceId    String
+  orgId       String
+  calculatedAt DateTime @default(now())
+  healthScore    Float  // 0-100, higher = healthier
+  performanceScore Float // 0-100, higher = better
+  riskScore      Float  // 0-100, higher = riskier
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([deviceId, calculatedAt])
 }
