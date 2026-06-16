@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: techfusion-postgres
+    environment:
+      POSTGRES_USER: techfusion
+      POSTGRES_PASSWORD: techfusion
+      POSTGRES_DB: techfusion
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - techfusion
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techfusion"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: techfusion-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - techfusion
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ../../apps/api-gateway
+      dockerfile: Dockerfile
+    container_name: techfusion-api-gateway
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - techfusion
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    container_name: techfusion-web
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+    depends_on:
+      - api-gateway
+    networks:
+      - techfusion
+
+  agent:
+    build:
+      context: ../../apps/agent
+      dockerfile: Dockerfile
+    container_name: techfusion-agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - techfusion
+
+  worker:
+    build:
+      context: ../../apps/worker
+      dockerfile: Dockerfile
+    container_name: techfusion-worker
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - techfusion
+
+volumes:
+  postgres-data:
+
+networks:
+  techfusion:
+    driver: bridge

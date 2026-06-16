@@ -1,0 +1,22 @@
+{
+  "name": "@techfusion/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/main.ts",
+    "start": "node dist/main.js",
+    "lint": "tsc --noEmit",
+    "test": "echo 'no tests yet'",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0"
+  }
+}

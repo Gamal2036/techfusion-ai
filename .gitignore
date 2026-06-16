@@ -1,10 +1,11 @@
 node_modules/
-.next/
 dist/
-build/
+.next/
 target/
+*.log
 .env
 .env.local
-.turbo/
-*.log
 .DS_Store
+coverage/
+.turbo/
+*.tsbuildinfo
