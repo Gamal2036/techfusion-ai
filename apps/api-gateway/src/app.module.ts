@@ -8,11 +8,12 @@ import { DevicesModule } from './devices/devices.module';
 import { AlertsModule } from './alerts/alerts.module';
 import { AiModule } from './ai/ai.module';
 import { SecurityModule } from './security/security.module';
+import { ReportingModule } from './reporting/reporting.module';
 import { CombinedAuthGuard } from './common/combined-auth.guard';
 import { DemoController } from './demo.controller';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule],
   controllers: [HealthController, DemoController],
   providers: [
     {

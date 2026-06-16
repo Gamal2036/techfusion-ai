@@ -33,6 +33,9 @@ model Organization {
   securityScans SecurityScan[]
   securityFindings SecurityFinding[]
   securityScores SecurityScore[]
+  reportTemplate  ReportTemplate?
+  reports         Report[]
+  reportSchedules ReportSchedule[]
 }
 
 model User {
@@ -327,4 +330,58 @@ model SecurityScore {
 
   @@index([orgId, calculatedAt])
   @@index([deviceId, calculatedAt])
+}
+
+model ReportTemplate {
+  id         String   @id @default(uuid())
+  orgId      String   @unique
+  companyName String?
+  logoPath   String?
+  accentColor String  @default("#3b82f6")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+}
+
+model Report {
+  id             String   @id @default(uuid())
+  orgId          String
+  type           String   // device_health, security_executive, fleet_summary
+  format         String   // pdf, docx, html
+  title          String
+  description    String?
+  storagePath    String
+  fileSize       Int?
+  signedUrl      String?
+  urlExpiresAt   DateTime?
+  aiGenerated    Boolean  @default(false)
+  aiSummary      String?
+  sourceIds      String?  // JSON array of device/scan IDs
+  status         String   @default("completed") // generating, completed, failed
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, type])
+}
+
+model ReportSchedule {
+  id            String   @id @default(uuid())
+  orgId         String
+  type          String   // device_health, security_executive, fleet_summary
+  formats       String   @default("pdf") // comma-separated: pdf,docx,html
+  cron          String   // cron expression
+  deviceIds     String?  // JSON array for multi-device reports
+  isEnabled     Boolean  @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, nextRunAt])
 }
