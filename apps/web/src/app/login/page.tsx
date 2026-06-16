@@ -3,6 +3,8 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Button, Input, GlassPanel } from '@techfusion/ui';
+import { LogIn } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -35,43 +37,38 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 p-8">
-        <h1 className="text-3xl font-bold text-center">Sign In</h1>
-        {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <button
-          type="submit"
-          className="w-full rounded bg-blue-600 py-2 font-semibold hover:bg-blue-700"
-        >
-          Sign In
-        </button>
-        <p className="text-sm text-center text-gray-400">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-blue-400 hover:underline">
-            Sign up
-          </Link>
-        </p>
-      </form>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <GlassPanel intensity="medium" className="w-full max-w-sm p-8">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-white tracking-tight">Welcome back</h1>
+            <p className="text-sm text-white/40 mt-1">Sign in to TechFusion AI</p>
+          </div>
+          {error && (
+            <div className="rounded-lg bg-red-600/10 border border-red-500/20 px-4 py-2.5">
+              <p className="text-sm text-red-400 text-center">{error}</p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Email</label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Password</label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required />
+          </div>
+          <Button type="submit" className="w-full gap-2">
+            <LogIn className="h-4 w-4" />
+            Sign In
+          </Button>
+          <p className="text-sm text-center text-white/30">
+            Don&apos;t have an account?{' '}
+            <Link href="/signup" className="text-primary-400 hover:text-primary-300 transition-colors">
+              Sign up
+            </Link>
+          </p>
+        </form>
+      </GlassPanel>
     </div>
   );
 }

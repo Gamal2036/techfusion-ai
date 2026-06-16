@@ -1,8 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { Sidebar } from '@/components/Sidebar';
+import { Topbar } from '@/components/Topbar';
+import { CommandPalette } from '@/components/CommandPalette';
+import { AiChatDrawer } from '@/components/AiChatDrawer';
 
 export default function DashboardLayout({
   children,
@@ -11,6 +14,8 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -26,52 +31,39 @@ export default function DashboardLayout({
     }
   }, [router]);
 
-  async function handleLogout() {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      await fetch('http://localhost:3001/auth/logout', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      });
-    }
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    router.push('/login');
-  }
+  const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
+  const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    document.addEventListener('keydown', down);
+    return () => document.removeEventListener('keydown', down);
+  }, []);
 
   if (!user) return null;
 
   return (
-    <div className="flex h-screen">
-      <aside className="w-56 bg-gray-900 border-r border-gray-800 p-4 flex flex-col">
-        <h2 className="text-lg font-bold mb-6">TechFusion AI</h2>
-        <nav className="flex-1 space-y-2">
-          <Link href="/dashboard" className="block rounded px-3 py-2 text-gray-300 hover:bg-gray-800">
-            Dashboard
-          </Link>
-          <Link href="/dashboard/team" className="block rounded px-3 py-2 text-gray-300 hover:bg-gray-800">
-            Team
-          </Link>
-          <Link href="/dashboard/settings" className="block rounded px-3 py-2 text-gray-300 hover:bg-gray-800">
-            Settings
-          </Link>
-        </nav>
-        <div className="border-t border-gray-800 pt-4">
-          <p className="text-sm text-gray-400 mb-2">{user.role}</p>
-          <button
-            onClick={handleLogout}
-            className="w-full rounded bg-gray-800 py-1.5 text-sm text-gray-300 hover:bg-gray-700"
-          >
-            Sign Out
-          </button>
-        </div>
-      </aside>
-      <div className="flex-1 flex flex-col">
-        <header className="h-14 border-b border-gray-800 flex items-center px-6">
-          <span className="text-gray-400 text-sm">Dashboard / Overview</span>
-        </header>
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+    <div className="flex h-screen overflow-hidden bg-background">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar
+          onToggleChat={handleToggleChat}
+          onOpenPalette={handleOpenPalette}
+          userName={user.displayName || user.sub}
+          userRole={user.role}
+          orgName={user.orgName}
+        />
+        <main className="flex-1 overflow-y-auto p-6">
+          {children}
+        </main>
       </div>
+      <AiChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

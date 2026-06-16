@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { ThemeProvider } from 'next-themes';
+import { Toaster } from '@techfusion/ui';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -12,8 +14,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-[#0a0a0a] text-white">{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body className="min-h-screen bg-background text-foreground">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster position="bottom-right" />
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

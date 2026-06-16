@@ -2,15 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground: #ffffff;
-  --background: #0a0a0a;
+@layer base {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ffffff;
+    --card: rgba(255, 255, 255, 0.03);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --glass: rgba(255, 255, 255, 0.05);
+    --glass-border: rgba(255, 255, 255, 0.06);
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --accent: #06b6d4;
+    --surface: #0a0a0a;
+    --surface-50: #18181b;
+    --surface-100: #27272a;
+    --radius: 0.5rem;
+  }
+
+  .light {
+    --background: #ffffff;
+    --foreground: #0a0a0a;
+    --card: rgba(0, 0, 0, 0.02);
+    --card-border: rgba(0, 0, 0, 0.08);
+    --glass: rgba(0, 0, 0, 0.03);
+    --glass-border: rgba(0, 0, 0, 0.06);
+    --surface: #ffffff;
+    --surface-50: #fafafa;
+    --surface-100: #f4f4f5;
+  }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  margin: 0;
-  padding: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+@layer base {
+  * {
+    @apply border-white/[0.06];
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    @apply bg-primary-500/30 text-white;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-1.5;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-white/10 hover:bg-white/20 transition-colors;
+  }
+}
+
+@layer utilities {
+  .bg-background {
+    background-color: var(--background);
+  }
+
+  .text-foreground {
+    color: var(--foreground);
+  }
 }

@@ -3,6 +3,8 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Button, Input, GlassPanel } from '@techfusion/ui';
+import { UserPlus } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -37,63 +39,46 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 p-8">
-        <h1 className="text-3xl font-bold text-center">Create Account</h1>
-        {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Organization Name</label>
-          <input
-            type="text"
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Display Name</label>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            required
-          />
-        </div>
-        <button
-          type="submit"
-          className="w-full rounded bg-blue-600 py-2 font-semibold hover:bg-blue-700"
-        >
-          Create Account
-        </button>
-        <p className="text-sm text-center text-gray-400">
-          Already have an account?{' '}
-          <Link href="/login" className="text-blue-400 hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </form>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <GlassPanel intensity="medium" className="w-full max-w-sm p-8">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-white tracking-tight">Create Account</h1>
+            <p className="text-sm text-white/40 mt-1">Set up your organization</p>
+          </div>
+          {error && (
+            <div className="rounded-lg bg-red-600/10 border border-red-500/20 px-4 py-2.5">
+              <p className="text-sm text-red-400 text-center">{error}</p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Organization Name</label>
+            <Input type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Acme Corp" required />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Display Name</label>
+            <Input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Jane Doe" required />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Email</label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-white/50">Password</label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Create a strong password" required />
+          </div>
+          <Button type="submit" className="w-full gap-2">
+            <UserPlus className="h-4 w-4" />
+            Create Account
+          </Button>
+          <p className="text-sm text-center text-white/30">
+            Already have an account?{' '}
+            <Link href="/login" className="text-primary-400 hover:text-primary-300 transition-colors">
+              Sign in
+            </Link>
+          </p>
+        </form>
+      </GlassPanel>
     </div>
   );
 }
