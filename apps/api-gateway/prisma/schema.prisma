@@ -63,6 +63,8 @@ model Organization {
   reportTemplate  ReportTemplate?
   reports         Report[]
   reportSchedules ReportSchedule[]
+  remoteSessions  RemoteSession[]
+  auditLogs       AuditLog[]
 }
 
 model User {
@@ -617,4 +619,54 @@ model ReportSchedule {
   org Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, nextRunAt])
+}
+
+model RemoteSession {
+  id              String    @id @default(uuid())
+  orgId           String
+  deviceId        String
+  technicianId    String    // user ID of the technician
+  status          String    @default("pending") // pending, active, ended, error
+  protocol        String    @default("webrtc")  // webrtc, vnc, rdp
+  turnServer      String?
+  turnCredential  String?
+  recordingPath   String?   // object storage path to recording
+  recordingSize   BigInt?
+  recordingDuration Int?    // seconds
+  startedAt       DateTime?
+  endedAt         DateTime?
+  consentGranted  Boolean   @default(false)
+  consentMethod   String?   // "click" or "unattended_policy"
+  unattendedPolicy String?  // JSON: { "enabled": bool, "approvedUntil": date, "policyDoc": string }
+  errorMessage    String?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  org         Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, status])
+  @@index([orgId, deviceId, status])
+  @@index([deviceId, status])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  orgId      String
+  sessionId  String?  // link to RemoteSession if applicable
+  action     String   // session_start, session_end, consent_granted, input_sent, file_transferred, screen_shared, etc.
+  actorId    String?  // user who performed the action
+  targetId   String?  // target device or resource
+  details    Json?    // action-specific metadata
+  ipAddress  String?
+  userAgent  String?
+  immutable  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  org    Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([orgId, sessionId])
+  @@index([sessionId])
+  @@index([action])
 }

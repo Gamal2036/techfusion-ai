@@ -28,6 +28,8 @@ describe('TechFusion API (integration)', () => {
 
   beforeEach(async () => {
     // Clean all tables before each test
+    await prisma.auditLog.deleteMany();
+    await prisma.remoteSession.deleteMany();
     await prisma.backupRun.deleteMany();
     await prisma.backupJob.deleteMany();
     await prisma.driver.deleteMany();
@@ -459,6 +461,348 @@ describe('TechFusion API (integration)', () => {
           .set('Authorization', `Bearer ${tokenB}`)
           .expect(200);
 
+        expect(resB.body.length).toBe(0);
+      });
+    });
+  });
+
+  // ─── 5. Remote Support ───────────────────────────────────────
+  describe('remote support', () => {
+    async function loginAs(email: string) {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email, password: 'password123' });
+      return res.body.accessToken;
+    }
+
+    let orgId: string;
+    let token: string;
+
+    beforeEach(async () => {
+      const org = await seedOrg('remote-org', 'Remote Org', 'remote@test.com', 'Admin');
+      orgId = org.org.id;
+      token = await loginAs('remote@test.com');
+    });
+
+    describe('session lifecycle', () => {
+      it('creates a pending session', async () => {
+        const res = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-remote-001' })
+          .expect(201);
+
+        expect(res.body.id).toBeDefined();
+        expect(res.body.status).toBe('pending');
+        expect(res.body.deviceId).toBe('device-remote-001');
+        expect(res.body.consentGranted).toBe(false);
+      });
+
+      it('lists sessions for the org', async () => {
+        await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-001' })
+          .expect(201);
+
+        const listRes = await request(app.getHttpServer())
+          .get('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(listRes.body)).toBe(true);
+        expect(listRes.body.length).toBe(1);
+      });
+
+      it('rejects creating a second session for the same device', async () => {
+        await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-dup' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-dup' })
+          .expect(403);
+      });
+
+      it('ends a session', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-to-end' })
+          .expect(201);
+
+        const endRes = await request(app.getHttpServer())
+          .post(`/remote-support/sessions/${createRes.body.id}/end`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        expect(endRes.body.status).toBe('ended');
+
+        const getRes = await request(app.getHttpServer())
+          .get(`/remote-support/sessions/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(getRes.body.status).toBe('ended');
+      });
+
+      it('returns 404 for nonexistent session', async () => {
+        await request(app.getHttpServer())
+          .get('/remote-support/sessions/00000000-0000-0000-0000-000000000099')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+    });
+
+    describe('consent flow', () => {
+      it('agent can grant consent and activate session', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-consent' })
+          .expect(201);
+
+        const deviceToken = 'test-device-token';
+
+        const consentRes = await request(app.getHttpServer())
+          .post('/remote-support/consent')
+          .set('Authorization', `Bearer ${deviceToken}`)
+          .send({
+            sessionId: createRes.body.id,
+            deviceId: 'device-consent',
+            granted: true,
+            method: 'click',
+          })
+          .expect(201);
+
+        expect(consentRes.body.granted).toBe(true);
+
+        const getRes = await request(app.getHttpServer())
+          .get(`/remote-support/sessions/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(getRes.body.status).toBe('active');
+        expect(getRes.body.consentGranted).toBe(true);
+      });
+
+      it('agent can deny consent', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-deny' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/remote-support/consent')
+          .set('Authorization', `Bearer token-xyz`)
+          .send({
+            sessionId: createRes.body.id,
+            deviceId: 'device-deny',
+            granted: false,
+            method: 'denied',
+          })
+          .expect(201);
+
+        const getRes = await request(app.getHttpServer())
+          .get(`/remote-support/sessions/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(getRes.body.status).toBe('error');
+        expect(getRes.body.consentGranted).toBe(false);
+      });
+
+      it('agent can update session status', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-status' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/remote-support/consent')
+          .set('Authorization', `Bearer token-xyz`)
+          .send({ sessionId: createRes.body.id, deviceId: 'device-status', granted: true, method: 'click' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post('/remote-support/agent/status')
+          .set('Authorization', `Bearer token-xyz`)
+          .send({ sessionId: createRes.body.id, deviceId: 'device-status', status: 'ended' })
+          .expect(201);
+
+        const getRes = await request(app.getHttpServer())
+          .get(`/remote-support/sessions/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(getRes.body.status).toBe('ended');
+      });
+    });
+
+    describe('session recording', () => {
+      it('saves recording metadata to a session', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-rec' })
+          .expect(201);
+
+        const recRes = await request(app.getHttpServer())
+          .post(`/remote-support/recordings/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ recordingPath: '/recordings/session-123.mp4', sizeBytes: 1048576, durationSeconds: 120 })
+          .expect(201);
+
+        expect(recRes.body.status).toBe('ok');
+      });
+
+      it('lists recordings for the org', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-rec2' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/remote-support/recordings/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ recordingPath: '/recordings/session-456.mp4', sizeBytes: 2097152, durationSeconds: 300 })
+          .expect(201);
+
+        const recsRes = await request(app.getHttpServer())
+          .get('/remote-support/recordings')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(recsRes.body)).toBe(true);
+        expect(recsRes.body.length).toBe(1);
+        expect(recsRes.body[0].recordingPath).toBe('/recordings/session-456.mp4');
+      });
+
+      it('returns 404 for recording of nonexistent session', async () => {
+        await request(app.getHttpServer())
+          .get('/remote-support/recordings/00000000-0000-0000-0000-000000000099')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      });
+
+      it('stores recording frames in session metadata', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-frames' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/remote-support/recordings/${createRes.body.id}/frames`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ frameData: 'base64frame1', timestamp: new Date().toISOString() })
+          .expect(201);
+
+        const getRes = await request(app.getHttpServer())
+          .get(`/remote-support/sessions/${createRes.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(getRes.body.metadata).toBeDefined();
+      });
+    });
+
+    describe('audit logging', () => {
+      it('creates audit log entries for session actions', async () => {
+        const createRes = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-audit' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/remote-support/sessions/${createRes.body.id}/end`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        const logsRes = await request(app.getHttpServer())
+          .get('/remote-support/audit-logs')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(Array.isArray(logsRes.body)).toBe(true);
+        expect(logsRes.body.length).toBe(2); // session_start + session_end
+
+        const actions = logsRes.body.map((l: any) => l.action);
+        expect(actions).toContain('session_start');
+        expect(actions).toContain('session_end');
+      });
+
+      it('filters audit logs by sessionId', async () => {
+        const createRes1 = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-al1' })
+          .expect(201);
+
+        const createRes2 = await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ deviceId: 'device-al2' })
+          .expect(201);
+
+        await request(app.getHttpServer())
+          .post(`/remote-support/sessions/${createRes1.body.id}/end`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(201);
+
+        const logsRes = await request(app.getHttpServer())
+          .get(`/remote-support/audit-logs?sessionId=${createRes1.body.id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        for (const log of logsRes.body) {
+          expect(log.sessionId).toBe(createRes1.body.id);
+        }
+      });
+
+      it('audit logs have no update/delete endpoints', async () => {
+        const endpoints = [
+          { method: 'patch' as const, url: '/remote-support/audit-logs/some-id' },
+          { method: 'put' as const, url: '/remote-support/audit-logs/some-id' },
+          { method: 'delete' as const, url: '/remote-support/audit-logs/some-id' },
+        ];
+
+        for (const ep of endpoints) {
+          const res = await request(app.getHttpServer())
+            [ep.method](ep.url)
+            .set('Authorization', `Bearer ${token}`);
+          expect(res.status).toBe(404);
+        }
+      });
+    });
+
+    describe('cross-tenant isolation for remote', () => {
+      it('an org cannot read another orgs sessions', async () => {
+        const tokenB = await loginAs('remote@test.com');
+
+        const { org: orgA } = await seedOrg('riso-a', 'RIsolation A', 'risa@test.com', 'Admin');
+        const tokenA = await loginAs('risa@test.com');
+
+        await request(app.getHttpServer())
+          .post('/remote-support/sessions')
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ deviceId: 'device-iso-a' })
+          .expect(201);
+
+        const resB = await request(app.getHttpServer())
+          .get('/remote-support/sessions')
+          .set('Authorization', `Bearer ${tokenB}`)
+          .expect(200);
+
+        // Org B (original remote@test.com) should see 0 sessions from Org A
         expect(resB.body.length).toBe(0);
       });
     });

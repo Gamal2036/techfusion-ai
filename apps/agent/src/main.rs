@@ -17,12 +17,14 @@ use sysinfo::{
 mod security;
 mod network_discovery;
 mod inventory;
+mod remote;
 
 const TOKEN_FILE: &str = ".techfusion/device_token.json";
 const DEFAULT_INTERVAL_SECS: u64 = 10;
 const DEFAULT_SECURITY_INTERVAL_SECS: u64 = 3600;
 const DEFAULT_NETWORK_INTERVAL_SECS: u64 = 300;
 const DEFAULT_INVENTORY_INTERVAL_SECS: u64 = 1800;
+const DEFAULT_REMOTE_INTERVAL_SECS: u64 = 5;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct DeviceToken {
@@ -393,12 +395,17 @@ fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_INVENTORY_INTERVAL_SECS);
+    let remote_interval_secs: u64 = env::var("TF_REMOTE_INTERVAL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_REMOTE_INTERVAL_SECS);
 
     println!("API URL: {}", api_url);
     println!("Metrics interval: {}s", interval_secs);
     println!("Security interval: {}s", security_interval_secs);
     println!("Network discovery interval: {}s", network_interval_secs);
     println!("Inventory interval: {}s", inventory_interval_secs);
+    println!("Remote session poll: {}s", remote_interval_secs);
 
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
@@ -471,6 +478,17 @@ fn main() {
         Ordering::Relaxed,
     );
 
+    // Start remote session active indicator
+    let _active_indicator = remote::create_active_indicator();
+    let last_remote = Arc::new(AtomicU64::new(0));
+    let last_remote_clone = last_remote.clone();
+
+    // Initial remote session poll
+    let pending = remote::check_active_sessions(&client, &api_url, &effective_token.token);
+    if !pending.is_empty() {
+        println!("[Remote] {} pending session(s) at startup", pending.len());
+    }
+
     // Main loop
     loop {
         send_metrics(&client, &effective_token);
@@ -508,6 +526,43 @@ fn main() {
             );
             send_inventory(&client, &effective_token.token, &api_url, &inv);
             last_inventory_clone.store(now, Ordering::Relaxed);
+        }
+
+        let last_rem = last_remote_clone.load(Ordering::Relaxed);
+        if now - last_rem >= remote_interval_secs {
+            let pending = remote::check_active_sessions(&client, &api_url, &effective_token.token);
+            for session in &pending {
+                println!("[Remote] Pending session: {} from technician {}", session.session_id, session.technician_id);
+                let granted = remote::confirm_consent(session, true);
+                let decision = remote::ConsentDecision {
+                    session_id: session.session_id.clone(),
+                    device_id: session.device_id.clone(),
+                    granted,
+                    method: if granted { "click" } else { "denied" },
+                };
+                remote::send_consent(&client, &api_url, &effective_token.token, &decision);
+
+                if granted {
+                    println!("[Remote] Session {} active", session.session_id);
+                    let status = remote::SessionStatus {
+                        session_id: session.session_id.clone(),
+                        status: "active".to_string(),
+                        device_id: session.device_id.clone(),
+                    };
+                    remote::update_session_status(&client, &api_url, &effective_token.token, &status);
+
+                    let capture = remote::simulate_screen_capture();
+                    println!("[Remote] Screen capture: {} bytes", capture.len());
+
+                    let status_end = remote::SessionStatus {
+                        session_id: session.session_id.clone(),
+                        status: "ended".to_string(),
+                        device_id: session.device_id.clone(),
+                    };
+                    remote::update_session_status(&client, &api_url, &effective_token.token, &status_end);
+                }
+            }
+            last_remote_clone.store(now, Ordering::Relaxed);
         }
 
         thread::sleep(Duration::from_secs(interval_secs));
