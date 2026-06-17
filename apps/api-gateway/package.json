@@ -40,7 +40,14 @@
     "rxjs": "^7.8.0",
     "socket.io": "^4.7.0",
     "speakeasy": "^2.0.0",
-    "stripe": "^22.2.1"
+    "stripe": "^22.2.1",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-node": "^0.54.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.54.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.54.0",
+    "@opentelemetry/resources": "^1.27.0",
+    "@opentelemetry/semantic-conventions": "^1.27.0",
+    "prom-client": "^15.1.0"
   },
   "devDependencies": {
     "@nestjs/testing": "^10.4.22",

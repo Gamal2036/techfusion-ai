@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "techfusion.fullname" . }}-agent
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.serviceLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  replicas: {{ .Values.agent.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "techfusion.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "techfusion.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9464"
+    spec:
+      containers:
+        - name: agent
+          image: "{{ .Values.agent.image.repository }}:{{ .Values.agent.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.agent.containerPort }}
+              name: http
+            - containerPort: 9464
+              name: metrics
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgresql.user }}:{{ .Values.postgresql.user | default "techfusion" }}@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "techfusion.fullname" . }}-otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "techfusion-agent"
+          resources:
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "techfusion.fullname" . }}-agent
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.serviceLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.agent.port }}
+      targetPort: http
+      name: http
+    - port: 9464
+      targetPort: metrics
+      name: metrics
+  selector:
+    {{- include "techfusion.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: agent

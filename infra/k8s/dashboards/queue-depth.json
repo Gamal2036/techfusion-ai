@@ -1,0 +1,54 @@
+{
+  "title": "Queue Depth & Worker Performance",
+  "uid": "queue-depth",
+  "description": "BullMQ queue depth and worker metrics",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "title": "Queue Depth by Queue",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "bullmq_queue_depth",
+          "legendFormat": "{{ queue }}"
+        }
+      ]
+    },
+    {
+      "title": "Job Processing Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(bullmq_jobs_completed_total[5m])",
+          "legendFormat": "{{ queue }}"
+        }
+      ]
+    },
+    {
+      "title": "Failed Jobs Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(bullmq_jobs_failed_total[5m])",
+          "legendFormat": "{{ queue }}"
+        }
+      ]
+    },
+    {
+      "title": "Worker Utilization",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "avg(bullmq_worker_utilization) by (queue)",
+          "legendFormat": "{{ queue }}"
+        }
+      ],
+      "unit": "percentunit"
+    }
+  ]
+}

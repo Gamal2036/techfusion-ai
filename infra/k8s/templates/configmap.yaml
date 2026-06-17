@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "techfusion.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.labels" . | nindent 4 }}
+data:
+  NODE_ENV: "{{ .Values.apiGateway.env.NODE_ENV }}"
+  PORT: "{{ .Values.apiGateway.env.PORT }}"
+  API_URL: "https://{{ .Values.apiGateway.ingress.host }}"
+  REDIS_URL: "redis://{{ include "techfusion.fullname" . }}-redis:6379"
+  DATABASE_URL: "postgresql://{{ .Values.postgresql.user }}:$(POSTGRES_PASSWORD)@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ include "techfusion.fullname" . }}-otel-collector:4317"
+  OTEL_SERVICE_NAME: "techfusion-platform"
+  METRICS_PORT: "9464"

@@ -17,7 +17,6 @@ ENV NODE_ENV=production
 ENV PORT=3001
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
-COPY --from=deps /app/node_modules ./node_modules
-RUN rm -rf node_modules/@nestjs/testing
+COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3001
 CMD ["node", "dist/main.js"]

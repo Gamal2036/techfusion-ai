@@ -1,0 +1,95 @@
+{
+  "title": "TechFusion Platform Overview",
+  "uid": "techfusion-overview",
+  "description": "High-level overview of the TechFusion platform",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "title": "Request Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m]))"
+        }
+      ],
+      "unit": "reqps"
+    },
+    {
+      "title": "P95 Latency",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))"
+        }
+      ],
+      "unit": "s"
+    },
+    {
+      "title": "Error Rate",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100"
+        }
+      ],
+      "unit": "%"
+    },
+    {
+      "title": "AI Cost (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(increase(ai_provider_cost_usd_total[24h]))"
+        }
+      ],
+      "unit": "USD"
+    },
+    {
+      "title": "Active Pods",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "count(kube_pod_info)"
+        }
+      ]
+    },
+    {
+      "title": "Queue Depth",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(bullmq_queue_depth)"
+        }
+      ]
+    },
+    {
+      "title": "CPU Usage by Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"techfusion\"}[5m])) by (pod)",
+          "legendFormat": "{{ pod }}"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage by Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"techfusion\"}) by (pod)",
+          "legendFormat": "{{ pod }}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,244 @@
+# Global configuration
+global:
+  environment: staging
+  dnsDomain: techfusion.ai
+  imagePullPolicy: IfNotPresent
+
+# Image registry
+image:
+  repository: ghcr.io/techfusion-ai
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Service configurations
+apiGateway:
+  name: api-gateway
+  component: api-gateway
+  replicaCount: 3
+  port: 3001
+  containerPort: 3001
+  image:
+    repository: ghcr.io/techfusion-ai/api-gateway
+    tag: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  livenessProbe:
+    path: /health
+    initialDelaySeconds: 30
+    periodSeconds: 15
+  readinessProbe:
+    path: /health
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilization: 70
+    targetMemoryUtilization: 80
+    targetRPS: 100
+  env:
+    NODE_ENV: production
+    PORT: "3001"
+  envFromSecrets:
+    - DATABASE_URL
+    - REDIS_URL
+    - JWT_SECRET
+    - JWT_REFRESH_SECRET
+    - ENCRYPTION_KEY
+    - STRIPE_SECRET_KEY
+    - STRIPE_WEBHOOK_SECRET
+  ingress:
+    enabled: true
+    host: api.techfusion.ai
+    path: /
+
+web:
+  name: web
+  component: web
+  replicaCount: 3
+  port: 3000
+  containerPort: 3000
+  image:
+    repository: ghcr.io/techfusion-ai/web
+    tag: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 30
+    periodSeconds: 15
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+  env:
+    NODE_ENV: production
+    PORT: "3000"
+  envFromSecrets:
+    - API_URL
+
+worker:
+  name: worker
+  component: worker
+  replicaCount: 2
+  port: 3002
+  containerPort: 3002
+  image:
+    repository: ghcr.io/techfusion-ai/worker
+    tag: ""
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 70
+    targetQueueDepth: 100
+  env:
+    NODE_ENV: production
+  envFromSecrets:
+    - REDIS_URL
+
+agent:
+  name: agent
+  component: agent
+  replicaCount: 1
+  port: 3003
+  containerPort: 3003
+  image:
+    repository: ghcr.io/techfusion-ai/agent
+    tag: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  envFromSecrets:
+    - DATABASE_URL
+
+# Database
+postgresql:
+  enabled: true
+  image: timescale/timescaledb:latest-pg16
+  storageSize: 10Gi
+  storageClass: local-path
+  database: techfusion
+  user: techfusion
+  existingSecret: postgres-credentials
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storageSize: 5Gi
+  storageClass: local-path
+
+# Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  tls:
+    - hosts:
+        - techfusion.ai
+        - api.techfusion.ai
+      secretName: techfusion-tls
+
+# Observability
+prometheus:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+  server:
+    retention: 15d
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    persistentVolume:
+      enabled: true
+      size: 20Gi
+
+grafana:
+  enabled: true
+  adminPassword: admin
+  persistence:
+    enabled: true
+    size: 5Gi
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: techfusion
+          orgId: 1
+          folder: TechFusion
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/techfusion
+  dashboardsConfigMaps:
+    techfusion: techfusion-grafana-dashboards
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-server:80
+          access: proxy
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki:3100
+          access: proxy
+
+loki:
+  enabled: true
+  useTestSchema: true
+  persistence:
+    enabled: true
+    size: 10Gi
+
+cert-manager:
+  enabled: true
+
+otelCollector:
+  enabled: true
+  replicaCount: 1
+  image: otel/opentelemetry-collector-contrib:0.102.0
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Namespace
+namespace: techfusion

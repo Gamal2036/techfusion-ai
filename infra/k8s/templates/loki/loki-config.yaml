@@ -1,0 +1,42 @@
+{{- if .Values.loki.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "techfusion.fullname" . }}-loki-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.labels" . | nindent 4 }}
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    ingester:
+      lifecycler:
+        ring:
+          kvstore:
+            store: inmemory
+      chunk_idle_period: 3m
+      chunk_block_size: 262144
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /data/loki/boltdb-shipper-active
+        cache_location: /data/loki/boltdb-shipper-cache
+        cache_ttl: 24h
+        shared_store: filesystem
+      filesystem:
+        directory: /data/loki/chunks
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+{{- end }}

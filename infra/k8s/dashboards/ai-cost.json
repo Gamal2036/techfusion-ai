@@ -1,0 +1,62 @@
+{
+  "title": "AI Provider Latency & Cost",
+  "uid": "ai-cost",
+  "description": "AI provider performance and cost tracking",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "title": "AI Provider Latency (P50/P95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "ai_provider_latency_ms_p50",
+          "legendFormat": "{{ provider }} - P50"
+        },
+        {
+          "expr": "ai_provider_latency_ms_p95",
+          "legendFormat": "{{ provider }} - P95"
+        }
+      ]
+    },
+    {
+      "title": "AI Cost per Provider (USD/hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(ai_provider_cost_usd_total[1h])",
+          "legendFormat": "{{ provider }}"
+        },
+        {
+          "expr": "rate(ai_provider_cost_usd_total[1h])",
+          "legendFormat": "Total"
+        }
+      ]
+    },
+    {
+      "title": "Token Usage Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(ai_tokens_total[5m])",
+          "legendFormat": "{{ provider }} - {{ type }}"
+        }
+      ]
+    },
+    {
+      "title": "AI Provider Success Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(ai_requests_total{status!=\"error\"}[5m])) by (provider) / sum(rate(ai_requests_total[5m])) by (provider) * 100",
+          "legendFormat": "{{ provider }}"
+        }
+      ],
+      "unit": "%"
+    }
+  ]
+}

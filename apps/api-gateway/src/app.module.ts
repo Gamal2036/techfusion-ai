@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { HealthController } from './health.controller';
+import { MetricsController } from './metrics.controller';
+import { MetricsInterceptor } from './metrics.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { MfaModule } from './mfa/mfa.module';
@@ -26,8 +28,12 @@ import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule],
-  controllers: [HealthController, DemoController],
+  controllers: [HealthController, DemoController, MetricsController],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MetricsInterceptor,
+    },
     {
       provide: APP_GUARD,
       useClass: CombinedAuthGuard,

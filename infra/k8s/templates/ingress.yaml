@@ -1,0 +1,58 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "techfusion.fullname" . }}-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.labels" . | nindent 4 }}
+  annotations:
+    {{- range $key, $val := .Values.ingress.annotations }}
+    {{ $key }}: {{ $val | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  rules:
+    {{- range .Values.ingress.tls }}
+    {{- range .hosts }}
+    {{- if hasPrefix "api." . }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "techfusion.fullname" $ }}-api-gateway
+                port:
+                  number: {{ $.Values.apiGateway.port }}
+    {{- else }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "techfusion.fullname" $ }}-web
+                port:
+                  number: {{ $.Values.web.port }}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "techfusion.fullname" $ }}-api-gateway
+                port:
+                  number: {{ $.Values.apiGateway.port }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}

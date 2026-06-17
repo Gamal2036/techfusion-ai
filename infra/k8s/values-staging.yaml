@@ -1,0 +1,51 @@
+global:
+  environment: staging
+  dnsDomain: staging.techfusion.ai
+
+apiGateway:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+  hpa:
+    minReplicas: 2
+    maxReplicas: 10
+
+web:
+  replicaCount: 1
+  hpa:
+    enabled: false
+
+worker:
+  replicaCount: 1
+
+postgresql:
+  storageSize: 5Gi
+redis:
+  storageSize: 2Gi
+
+ingress:
+  enabled: true
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+  tls:
+    - hosts:
+        - staging.techfusion.ai
+        - api.staging.techfusion.ai
+      secretName: techfusion-tls-staging
+
+prometheus:
+  server:
+    retention: 7d
+
+grafana:
+  adminPassword: admin-staging
+
+loki:
+  useTestSchema: true
+  persistence:
+    size: 5Gi

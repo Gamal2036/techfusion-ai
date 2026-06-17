@@ -1,0 +1,68 @@
+global:
+  environment: production
+  dnsDomain: techfusion.ai
+
+apiGateway:
+  replicaCount: 5
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  hpa:
+    minReplicas: 5
+    maxReplicas: 30
+    targetCPUUtilization: 65
+
+web:
+  replicaCount: 5
+  resources:
+    requests:
+      cpu: 200m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilization: 65
+
+worker:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  hpa:
+    minReplicas: 3
+    maxReplicas: 15
+
+postgresql:
+  storageSize: 50Gi
+
+redis:
+  storageSize: 10Gi
+
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+prometheus:
+  server:
+    retention: 30d
+    persistentVolume:
+      size: 50Gi
+
+grafana:
+  adminPassword: "" # set via --set on deploy
+
+loki:
+  persistence:
+    size: 50Gi

@@ -1,0 +1,71 @@
+name: CD - Staging Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  KUBE_NAMESPACE: techfusion-staging
+  HELM_RELEASE: techfusion-staging
+  HELM_CHART_PATH: infra/k8s
+
+jobs:
+  deploy-staging:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.0"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30.0"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Add Helm repos
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo update
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install ${{ env.HELM_RELEASE }} ${{ env.HELM_CHART_PATH }} \
+            --namespace ${{ env.KUBE_NAMESPACE }} \
+            --create-namespace \
+            --values ${{ env.HELM_CHART_PATH }}/values-staging.yaml \
+            --set global.environment=staging \
+            --set image.tag=${{ github.sha }} \
+            --set image.repository=${{ env.REGISTRY }}/${{ github.repository }} \
+            --wait --timeout 10m
+
+      - name: Verify rollout
+        run: |
+          kubectl rollout status deployment/${HELM_RELEASE}-api-gateway -n ${{ env.KUBE_NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/${HELM_RELEASE}-web -n ${{ env.KUBE_NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/${HELM_RELEASE}-worker -n ${{ env.KUBE_NAMESPACE }} --timeout=5m
+          kubectl get pods -n ${{ env.KUBE_NAMESPACE }}
+
+      - name: Health check
+        run: |
+          sleep 10
+          kubectl run health-check --image=curlimages/curl:latest \
+            -n ${{ env.KUBE_NAMESPACE }} --restart=Never --rm -it \
+            -- curl -sf http://${HELM_RELEASE}-api-gateway:3001/health

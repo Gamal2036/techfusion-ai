@@ -1,0 +1,53 @@
+{
+  "title": "Request Latency",
+  "uid": "request-latency",
+  "description": "API Gateway request latency metrics",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "title": "P95 Latency by Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "{{ service }}"
+        }
+      ]
+    },
+    {
+      "title": "P99 Latency by Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "{{ service }}"
+        }
+      ]
+    },
+    {
+      "title": "Average Latency by Endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "{{ service }} - {{ method }}"
+        }
+      ]
+    },
+    {
+      "title": "Request Rate by Service",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (service)",
+          "legendFormat": "{{ service }}"
+        }
+      ]
+    }
+  ]
+}

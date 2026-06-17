@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: techfusion-grafana-dashboards
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  overview.json: |
+{{ .Files.Get "dashboards/overview.json" | indent 4 }}
+  request-latency.json: |
+{{ .Files.Get "dashboards/request-latency.json" | indent 4 }}
+  error-rate.json: |
+{{ .Files.Get "dashboards/error-rate.json" | indent 4 }}
+  queue-depth.json: |
+{{ .Files.Get "dashboards/queue-depth.json" | indent 4 }}
+  ai-cost.json: |
+{{ .Files.Get "dashboards/ai-cost.json" | indent 4 }}

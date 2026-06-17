@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "techfusion.fullname" . }}-api-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.serviceLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  replicas: {{ .Values.apiGateway.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "techfusion.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api-gateway
+  template:
+    metadata:
+      labels:
+        {{- include "techfusion.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3001"
+        prometheus.io/path: "/metrics"
+        sidecar.opentelemetry.io/inject: "true"
+    spec:
+      initContainers:
+        - name: prisma-migrate
+          image: "{{ .Values.apiGateway.image.repository }}:{{ .Values.apiGateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - npx
+            - prisma
+            - db
+            - push
+            - --accept-data-loss
+          env:
+            {{- range $key, $val := .Values.apiGateway.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgresql.user }}:{{ .Values.postgresql.user | default "techfusion" }}@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+            - name: REDIS_URL
+              value: "redis://{{ include "techfusion.fullname" . }}-redis:6379"
+      containers:
+        - name: api-gateway
+          image: "{{ .Values.apiGateway.image.repository }}:{{ .Values.apiGateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.apiGateway.containerPort }}
+              name: http
+            - containerPort: 9464
+              name: metrics
+          env:
+            {{- range $key, $val := .Values.apiGateway.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.postgresql.user }}:{{ .Values.postgresql.user | default "techfusion" }}@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+            - name: REDIS_URL
+              value: "redis://{{ include "techfusion.fullname" . }}-redis:6379"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "techfusion.fullname" . }}-otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "techfusion-api-gateway"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "techfusion.fullname" . }}-secrets
+                  key: JWT_SECRET
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "techfusion.fullname" . }}-secrets
+                  key: JWT_REFRESH_SECRET
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "techfusion.fullname" . }}-secrets
+                  key: ENCRYPTION_KEY
+          resources:
+            {{- toYaml .Values.apiGateway.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.apiGateway.livenessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.apiGateway.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.apiGateway.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.apiGateway.readinessProbe.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.apiGateway.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.apiGateway.readinessProbe.periodSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "techfusion.fullname" . }}-api-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "techfusion.serviceLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.apiGateway.port }}
+      targetPort: http
+      name: http
+    - port: 9464
+      targetPort: metrics
+      name: metrics
+  selector:
+    {{- include "techfusion.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
