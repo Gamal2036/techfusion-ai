@@ -18,9 +18,14 @@ import { NetworkModule } from './network/network.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { BackupsModule } from './backups/backups.module';
 import { KbModule } from './kb/kb.module';
+import { SsoModule } from './sso/sso.module';
+import { AuditModule } from './audit/audit.module';
+import { EncryptionModule } from './encryption/encryption.module';
+import { RetentionModule } from './retention/retention.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule],
   controllers: [HealthController, DemoController],
   providers: [
     {

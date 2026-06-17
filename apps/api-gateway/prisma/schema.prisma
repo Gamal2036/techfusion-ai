@@ -66,6 +66,8 @@ model Organization {
   remoteSessions     RemoteSession[]
   auditLogs          AuditLog[]
   kbArticles         KbArticle[]
+  ssoConfig          SsoConfig?
+  retentionPolicy    DataRetentionPolicy?
 }
 
 model User {
@@ -76,6 +78,8 @@ model User {
   isMfaEnabled   Boolean  @default(false)
   mfaSecret      String?
   mfaBackupCodes String?
+  ssoId          String? // SSO provider subject ID for JIT provisioning
+  ssoProvider    String? // "saml" | "oidc"
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -649,6 +653,41 @@ model RemoteSession {
   @@index([orgId, status])
   @@index([orgId, deviceId, status])
   @@index([deviceId, status])
+}
+
+model SsoConfig {
+  id                    String   @id @default(uuid())
+  orgId                 String   @unique
+  provider              String   // "saml" | "oidc"
+  issuer                String?  // IdP entity ID / issuer URL
+  entryPoint            String?  // SSO endpoint URL
+  certificate           String?  // IdP public cert (SAML) / JWKS URL (OIDC)
+  clientId              String?  // OIDC client ID
+  clientSecretEncrypted String?  // OIDC client secret (AES-256-GCM encrypted)
+  attributeMapping      Json?    // { "email": "...", "displayName": "...", "role": "..." }
+  isEnabled             Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+model DataRetentionPolicy {
+  id                        String   @id @default(uuid())
+  orgId                     String   @unique
+  metricsRetentionDays      Int      @default(90)   // DeviceMetric, DeviceHealthScore
+  recordingsRetentionDays   Int      @default(365)  // RemoteSession recordings
+  auditRetentionDays        Int      @default(730)  // AuditLog entries
+  securityScanRetentionDays Int      @default(365)  // SecurityScan, SecurityFinding
+  backupRetentionDays       Int      @default(90)   // BackupRun records
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
 }
 
 model AuditLog {
