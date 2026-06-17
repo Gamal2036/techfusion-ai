@@ -64,16 +64,18 @@ CREATE INDEX IF NOT EXISTS "Invoice_orgId_createdAt_idx" ON "Invoice"("orgId", "
 CREATE INDEX IF NOT EXISTS "Invoice_stripeInvoiceId_idx" ON "Invoice"("stripeInvoiceId");
 
 -- AddForeignKey
-ALTER TABLE "Subscription" ADD CONSTRAINT IF NOT EXISTS "Subscription_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "Invoice" ADD CONSTRAINT IF NOT EXISTS "Invoice_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Subscription" ADD CONSTRAINT "Subscription_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_subscriptionId_fkey" FOREIGN KEY ("subscriptionId") REFERENCES "Subscription"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Enable RLS
 ALTER TABLE "Subscription" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Invoice" ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies
-CREATE POLICY IF NOT EXISTS subscription_isolation ON "Subscription"
+DROP POLICY IF EXISTS subscription_isolation ON "Subscription";
+CREATE POLICY subscription_isolation ON "Subscription"
   FOR ALL USING ("orgId" = current_org_id());
 
-CREATE POLICY IF NOT EXISTS invoice_isolation ON "Invoice"
+DROP POLICY IF EXISTS invoice_isolation ON "Invoice";
+CREATE POLICY invoice_isolation ON "Invoice"
   FOR ALL USING ("orgId" = current_org_id());

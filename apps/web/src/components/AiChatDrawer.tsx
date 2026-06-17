@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, Sparkles, Trash2, StopCircle, ChevronDown } from 'lucide-react';
+import { X, Send, Bot, Sparkles, Trash2, StopCircle, ChevronDown, BookOpen } from 'lucide-react';
 import { cn } from '@techfusion/ui';
 import { Input, Button } from '@techfusion/ui';
 import { GlassPanel } from '@techfusion/ui';
@@ -143,18 +143,40 @@ export function AiChatDrawer({ open, onClose }: AiChatDrawerProps) {
                   <Bot className="h-4 w-4 text-primary-400" />
                 </div>
               )}
-              <GlassPanel
-                intensity={msg.role === 'user' ? 'heavy' : 'light'}
-                className={cn(
-                  'max-w-[85%] rounded-2xl px-4 py-3',
-                  msg.role === 'user' && 'bg-primary-600/20 border-primary-500/30',
+              <div className={cn('max-w-[85%] space-y-2', msg.role === 'user' && '')}>
+                <GlassPanel
+                  intensity={msg.role === 'user' ? 'heavy' : 'light'}
+                  className={cn(
+                    'rounded-2xl px-4 py-3',
+                    msg.role === 'user' && 'bg-primary-600/20 border-primary-500/30',
+                  )}
+                >
+                  <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">{msg.content || (streaming && msg.id === messages[messages.length - 1]?.id ? '\u200B' : '')}</p>
+                  {streaming && msg.id === messages[messages.length - 1]?.id && !msg.content && (
+                    <span className="inline-block w-2 h-4 bg-primary-400 animate-pulse ml-0.5" />
+                  )}
+                </GlassPanel>
+                {msg.citations && msg.citations.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 px-1">
+                      <BookOpen className="h-3 w-3 text-primary-400/60" />
+                      <span className="text-[10px] text-primary-400/60 font-medium uppercase tracking-wider">Sources</span>
+                    </div>
+                    {msg.citations.map((cit, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-white/60 font-medium truncate">{cit.articleTitle}</span>
+                          <span className="text-[10px] text-green-400/50 shrink-0">{(cit.similarity * 100).toFixed(0)}%</span>
+                        </div>
+                        <p className="text-[10px] text-white/30 mt-0.5 line-clamp-2">{cit.chunkText}</p>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              >
-                <p className="text-sm text-white/80 leading-relaxed whitespace-pre-wrap">{msg.content || (streaming && msg.id === messages[messages.length - 1]?.id ? '\u200B' : '')}</p>
-                {streaming && msg.id === messages[messages.length - 1]?.id && !msg.content && (
-                  <span className="inline-block w-2 h-4 bg-primary-400 animate-pulse ml-0.5" />
-                )}
-              </GlassPanel>
+              </div>
             </div>
           ))}
           <div ref={bottomRef} />

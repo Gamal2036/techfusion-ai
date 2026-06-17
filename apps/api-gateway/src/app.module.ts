@@ -17,9 +17,10 @@ import { RemoteSupportModule } from './remote-support/remote-support.module';
 import { NetworkModule } from './network/network.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { BackupsModule } from './backups/backups.module';
+import { KbModule } from './kb/kb.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule],
+  imports: [PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule],
   controllers: [HealthController, DemoController],
   providers: [
     {

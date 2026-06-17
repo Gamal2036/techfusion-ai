@@ -27,7 +27,9 @@ describe('TechFusion API (integration)', () => {
   });
 
   beforeEach(async () => {
-    // Clean all tables before each test
+    // Clean all tables in dependency order (children first, parents last)
+    await prisma.kbEmbedding.deleteMany();
+    await prisma.kbArticle.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.remoteSession.deleteMany();
     await prisma.backupRun.deleteMany();

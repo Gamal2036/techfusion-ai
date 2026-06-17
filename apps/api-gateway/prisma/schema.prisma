@@ -33,139 +33,140 @@ enum SubscriptionStatus {
 }
 
 model Organization {
-  id              String              @id @default(uuid())
-  name            String
-  slug            String              @unique
-  plan            Plan                @default(Free)
-  stripeCustomerId String?            @unique
-  subscription    Subscription?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id               String        @id @default(uuid())
+  name             String
+  slug             String        @unique
+  plan             Plan          @default(Free)
+  stripeCustomerId String?       @unique
+  subscription     Subscription?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
-  users  User[]
-  devices Device[]
-  deviceMetrics DeviceMetric[]
+  users              User[]
+  devices            Device[]
+  deviceMetrics      DeviceMetric[]
   deviceHealthScores DeviceHealthScore[]
-  alertRules AlertRule[]
-  alerts    Alert[]
-  aiProviderConfigs AiProviderConfig[]
-  aiUsageLogs AiUsageLog[]
-  aiConversations AiConversation[]
-  securityScans SecurityScan[]
-  securityFindings SecurityFinding[]
-  securityScores SecurityScore[]
-  networkDevices  NetworkDevice[]
-  networkScans    NetworkScan[]
-  drivers         Driver[]
-  softwareInventory SoftwareInventory[]
-  backupJobs      BackupJob[]
-  backupRuns      BackupRun[]
-  reportTemplate  ReportTemplate?
-  reports         Report[]
-  reportSchedules ReportSchedule[]
-  remoteSessions  RemoteSession[]
-  auditLogs       AuditLog[]
+  alertRules         AlertRule[]
+  alerts             Alert[]
+  aiProviderConfigs  AiProviderConfig[]
+  aiUsageLogs        AiUsageLog[]
+  aiConversations    AiConversation[]
+  securityScans      SecurityScan[]
+  securityFindings   SecurityFinding[]
+  securityScores     SecurityScore[]
+  networkDevices     NetworkDevice[]
+  networkScans       NetworkScan[]
+  drivers            Driver[]
+  softwareInventory  SoftwareInventory[]
+  backupJobs         BackupJob[]
+  backupRuns         BackupRun[]
+  reportTemplate     ReportTemplate?
+  reports            Report[]
+  reportSchedules    ReportSchedule[]
+  remoteSessions     RemoteSession[]
+  auditLogs          AuditLog[]
+  kbArticles         KbArticle[]
 }
 
 model User {
-  id              String   @id @default(uuid())
-  email           String   @unique
-  passwordHash    String
-  displayName     String
-  isMfaEnabled    Boolean  @default(false)
-  mfaSecret       String?
-  mfaBackupCodes  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(uuid())
+  email          String   @unique
+  passwordHash   String
+  displayName    String
+  isMfaEnabled   Boolean  @default(false)
+  mfaSecret      String?
+  mfaBackupCodes String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   orgId String
   org   Organization @relation(fields: [orgId], references: [id])
 
-  role          Role   @default(Viewer)
+  role          Role           @default(Viewer)
   refreshTokens RefreshToken[]
 
   @@unique([orgId, email])
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
+  id        String    @id @default(uuid())
+  token     String    @unique
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   orgId     String
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   revokedAt DateTime?
 }
 
 model Device {
-  id          String   @id @default(uuid())
-  orgId       String
-  name        String
-  hostname    String?
-  os          String?
-  osVersion   String?
-  cpuModel    String?
-  cpuCores    Int?
-  cpuLogical  Int?
-  ramTotal    BigInt?
-  gpuInfo     String?
-  diskTotal   BigInt?
-  isLaptop    Boolean  @default(false)
-  inactive    Boolean  @default(false)
+  id           String   @id @default(uuid())
+  orgId        String
+  name         String
+  hostname     String?
+  os           String?
+  osVersion    String?
+  cpuModel     String?
+  cpuCores     Int?
+  cpuLogical   Int?
+  ramTotal     BigInt?
+  gpuInfo      String?
+  diskTotal    BigInt?
+  isLaptop     Boolean  @default(false)
+  inactive     Boolean  @default(false)
   registeredAt DateTime @default(now())
-  lastSeenAt  DateTime @updatedAt
-  deviceToken String   @unique
-  metadata    Json?
+  lastSeenAt   DateTime @updatedAt
+  deviceToken  String   @unique
+  metadata     Json?
 
-  org     Organization        @relation(fields: [orgId], references: [id])
-  metrics DeviceMetric[]
-  scores  DeviceHealthScore[]
-  alerts  Alert[]
-  conversations AiConversation[]
-  securityScans SecurityScan[]
+  org              Organization        @relation(fields: [orgId], references: [id])
+  metrics          DeviceMetric[]
+  scores           DeviceHealthScore[]
+  alerts           Alert[]
+  conversations    AiConversation[]
+  securityScans    SecurityScan[]
   securityFindings SecurityFinding[]
-  securityScores SecurityScore[]
+  securityScores   SecurityScore[]
 
   @@index([orgId])
 }
 
 model DeviceMetric {
-  id          String   @id @default(uuid())
-  deviceId    String
-  orgId       String
-  recordedAt  DateTime @default(now())
+  id         String   @id @default(uuid())
+  deviceId   String
+  orgId      String
+  recordedAt DateTime @default(now())
 
-  cpuUsage    Float   // percentage 0-100
-  ramUsed     BigInt
-  ramTotal    BigInt
-  ramPercent  Float
-  diskUsed    BigInt?
-  diskTotal   BigInt?
-  diskReadBytes  BigInt?
-  diskWriteBytes BigInt?
-  diskSmartStatus          String?  // "PASS" or "FAIL"
+  cpuUsage                    Float // percentage 0-100
+  ramUsed                     BigInt
+  ramTotal                    BigInt
+  ramPercent                  Float
+  diskUsed                    BigInt?
+  diskTotal                   BigInt?
+  diskReadBytes               BigInt?
+  diskWriteBytes              BigInt?
+  diskSmartStatus             String? // "PASS" or "FAIL"
   diskSmartReallocatedSectors Int?
-  diskSmartTemperature     Float?
-  gpuUsage    Float?
-  gpuTemp     Float?
-  gpuMemoryUsed BigInt?
-  batteryPercent Int?
-  batteryStatus String?
-  tempCpu     Float?
-  tempGpu     Float?
-  tempMotherboard Float?
-  fanRpm      Int?
-  networkRxBytes  BigInt?
-  networkTxBytes  BigInt?
-  loadAverage1Min Float?
-  loadAverage5Min Float?
-  loadAverage15Min Float?
-  processes   Int?
-  uptime      BigInt?
-  serviceChecks Json?
+  diskSmartTemperature        Float?
+  gpuUsage                    Float?
+  gpuTemp                     Float?
+  gpuMemoryUsed               BigInt?
+  batteryPercent              Int?
+  batteryStatus               String?
+  tempCpu                     Float?
+  tempGpu                     Float?
+  tempMotherboard             Float?
+  fanRpm                      Int?
+  networkRxBytes              BigInt?
+  networkTxBytes              BigInt?
+  loadAverage1Min             Float?
+  loadAverage5Min             Float?
+  loadAverage15Min            Float?
+  processes                   Int?
+  uptime                      BigInt?
+  serviceChecks               Json?
 
-  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   org    Organization @relation(fields: [orgId], references: [id])
 
   @@index([deviceId, recordedAt])
@@ -173,20 +174,20 @@ model DeviceMetric {
 }
 
 model AlertRule {
-  id        String   @id @default(uuid())
-  orgId     String
-  name      String
-  description String?
-  metricName String
-  threshold  Float
-  operator   String   @default("gt")
-  severity   String   @default("warning")
-  debounceSeconds Int @default(300)
-  enabled    Boolean  @default(true)
-  deviceSelector String?
-  webhookUrl String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String   @id @default(uuid())
+  orgId           String
+  name            String
+  description     String?
+  metricName      String
+  threshold       Float
+  operator        String   @default("gt")
+  severity        String   @default("warning")
+  debounceSeconds Int      @default(300)
+  enabled         Boolean  @default(true)
+  deviceSelector  String?
+  webhookUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   org    Organization @relation(fields: [orgId], references: [id])
   alerts Alert[]
@@ -195,17 +196,17 @@ model AlertRule {
 }
 
 model Alert {
-  id          String    @id @default(uuid())
-  orgId       String
-  alertRuleId String
-  deviceId    String
-  metricValue Float
-  threshold   Float
-  severity    String
-  message     String
+  id             String    @id @default(uuid())
+  orgId          String
+  alertRuleId    String
+  deviceId       String
+  metricValue    Float
+  threshold      Float
+  severity       String
+  message        String
   acknowledgedAt DateTime?
-  resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
 
   org       Organization @relation(fields: [orgId], references: [id])
   alertRule AlertRule    @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
@@ -217,31 +218,31 @@ model Alert {
 }
 
 model DeviceHealthScore {
-  id          String   @id @default(uuid())
-  deviceId    String
-  orgId       String
-  calculatedAt DateTime @default(now())
-  healthScore    Float  // 0-100, higher = healthier
+  id               String   @id @default(uuid())
+  deviceId         String
+  orgId            String
+  calculatedAt     DateTime @default(now())
+  healthScore      Float // 0-100, higher = healthier
   performanceScore Float // 0-100, higher = better
-  riskScore      Float  // 0-100, higher = riskier
+  riskScore        Float // 0-100, higher = riskier
 
-  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   org    Organization @relation(fields: [orgId], references: [id])
 
   @@index([deviceId, calculatedAt])
 }
 
 model AiProviderConfig {
-  id             String   @id @default(uuid())
-  orgId          String
-  provider       String   // "anthropic", "openai"
+  id              String   @id @default(uuid())
+  orgId           String
+  provider        String // "anthropic", "openai"
   apiKeyEncrypted String
-  baseUrl        String?  // optional custom base URL
-  model          String   @default("claude-sonnet-4-20250514")
-  priority       Int      @default(1)
-  isEnabled      Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  baseUrl         String? // optional custom base URL
+  model           String   @default("claude-sonnet-4-20250514")
+  priority        Int      @default(1)
+  isEnabled       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -250,19 +251,19 @@ model AiProviderConfig {
 }
 
 model AiUsageLog {
-  id              String   @id @default(uuid())
-  orgId           String
-  conversationId  String?
-  provider        String
-  model           String
-  promptTokens    Int      @default(0)
-  completionTokens Int     @default(0)
-  totalTokens     Int      @default(0)
-  costUsd         Float    @default(0)
-  latencyMs       Int      @default(0)
-  success         Boolean  @default(true)
-  errorMessage    String?
-  createdAt       DateTime @default(now())
+  id               String   @id @default(uuid())
+  orgId            String
+  conversationId   String?
+  provider         String
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  costUsd          Float    @default(0)
+  latencyMs        Int      @default(0)
+  success          Boolean  @default(true)
+  errorMessage     String?
+  createdAt        DateTime @default(now())
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -287,7 +288,7 @@ model AiConversation {
 model AiMessage {
   id             String   @id @default(uuid())
   conversationId String
-  role           String   // "user" | "assistant" | "system"
+  role           String // "user" | "assistant" | "system"
   content        String
   tokenCount     Int?
   createdAt      DateTime @default(now())
@@ -308,8 +309,8 @@ model SecurityScan {
   error       String?
   createdAt   DateTime  @default(now())
 
-  org      Organization    @relation(fields: [orgId], references: [id])
-  device   Device          @relation(fields: [deviceId], references: [id])
+  org      Organization      @relation(fields: [orgId], references: [id])
+  device   Device            @relation(fields: [deviceId], references: [id])
   findings SecurityFinding[]
   score    SecurityScore?
 
@@ -318,17 +319,17 @@ model SecurityScan {
 }
 
 model SecurityFinding {
-  id          String   @id @default(uuid())
-  scanId      String
-  orgId       String
-  deviceId    String
-  category    String   // updates, firewall, weak_config, open_ports, password_policy
-  finding     String
-  severity    String   // low, medium, high, critical
-  status      String   @default("open") // open, remediated, false_positive
-  remediation String
-  details     Json?
-  createdAt   DateTime @default(now())
+  id           String    @id @default(uuid())
+  scanId       String
+  orgId        String
+  deviceId     String
+  category     String // updates, firewall, weak_config, open_ports, password_policy
+  finding      String
+  severity     String // low, medium, high, critical
+  status       String    @default("open") // open, remediated, false_positive
+  remediation  String
+  details      Json?
+  createdAt    DateTime  @default(now())
   remediatedAt DateTime?
 
   scan   SecurityScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
@@ -345,8 +346,8 @@ model SecurityScore {
   scanId        String   @unique
   orgId         String
   deviceId      String
-  securityScore Float    // 0-100, higher = more secure
-  riskLevel     String   // low, medium, high, critical
+  securityScore Float // 0-100, higher = more secure
+  riskLevel     String // low, medium, high, critical
   totalFindings Int      @default(0)
   criticalCount Int      @default(0)
   highCount     Int      @default(0)
@@ -363,19 +364,19 @@ model SecurityScore {
 }
 
 model NetworkDevice {
-  id              String   @id @default(uuid())
-  orgId           String
-  ip              String
-  mac             String?
-  hostname        String?
-  vendor          String?
-  interface       String?
-  source          String   @default("arp")
-  reachable       Boolean  @default(false)
-  latencyMs       Float?
-  firstSeenAt     DateTime @default(now())
-  lastSeenAt      DateTime @updatedAt
-  metadata        Json?
+  id          String   @id @default(uuid())
+  orgId       String
+  ip          String
+  mac         String?
+  hostname    String?
+  vendor      String?
+  interface   String?
+  source      String   @default("arp")
+  reachable   Boolean  @default(false)
+  latencyMs   Float?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+  metadata    Json?
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -385,162 +386,162 @@ model NetworkDevice {
 }
 
 model NetworkScan {
-  id              String   @id @default(uuid())
-  orgId           String
-  deviceId        String?
-  status          String   @default("completed")
-  gatewayIp       String?
-  gatewayMac      String?
-  localIp         String?
-  localMac        String?
-  subnet          String?
-  scanDurationMs  Int?
-  deviceCount     Int      @default(0)
-  discoveredIps   Json?
-  error           String?
-  startedAt       DateTime @default(now())
-  completedAt     DateTime @default(now())
+  id             String   @id @default(uuid())
+  orgId          String
+  deviceId       String?
+  status         String   @default("completed")
+  gatewayIp      String?
+  gatewayMac     String?
+  localIp        String?
+  localMac       String?
+  subnet         String?
+  scanDurationMs Int?
+  deviceCount    Int      @default(0)
+  discoveredIps  Json?
+  error          String?
+  startedAt      DateTime @default(now())
+  completedAt    DateTime @default(now())
 
-  org    Organization @relation(fields: [orgId], references: [id])
+  org Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, startedAt])
 }
 
 model DriverCatalogItem {
-  id             String   @id @default(uuid())
-  name           String
-  vendor         String?
-  minVersion     String?
-  latestVersion  String?
-  category       String?
-  downloadUrl    String?
-  checksum       String?
-  isBuiltin      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  vendor        String?
+  minVersion    String?
+  latestVersion String?
+  category      String?
+  downloadUrl   String?
+  checksum      String?
+  isBuiltin     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([name, vendor])
 }
 
 model Driver {
-  id             String   @id @default(uuid())
-  orgId          String
-  deviceId       String?
-  name           String
-  vendor         String?
-  version        String?
-  modulePath     String?
-  usedBy         String?
-  source         String   @default("kernel_module")
-  status         String   @default("current") // current, outdated, missing, unknown
-  lastSeenAt     DateTime @default(now())
-  firstSeenAt    DateTime @default(now())
-  metadata       Json?
+  id          String   @id @default(uuid())
+  orgId       String
+  deviceId    String?
+  name        String
+  vendor      String?
+  version     String?
+  modulePath  String?
+  usedBy      String?
+  source      String   @default("kernel_module")
+  status      String   @default("current") // current, outdated, missing, unknown
+  lastSeenAt  DateTime @default(now())
+  firstSeenAt DateTime @default(now())
+  metadata    Json?
 
-  org    Organization @relation(fields: [orgId], references: [id])
+  org Organization @relation(fields: [orgId], references: [id])
 
-  @@index([orgId])
   @@unique([orgId, name])
+  @@index([orgId])
   @@index([orgId, status])
 }
 
 model SoftwareCatalogItem {
-  id             String   @id @default(uuid())
-  name           String
-  vendor         String?
-  minVersion     String?
-  latestVersion  String?
-  category       String?
-  downloadUrl    String?
-  isEssential    Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  vendor        String?
+  minVersion    String?
+  latestVersion String?
+  category      String?
+  downloadUrl   String?
+  isEssential   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([name, vendor])
 }
 
 model SoftwareInventory {
-  id             String   @id @default(uuid())
-  orgId          String
-  deviceId       String?
-  name           String
-  version        String?
-  vendor         String?
-  installDate    String?
-  description    String?
-  source         String   @default("deb")
-  status         String   @default("current") // current, outdated, unknown
-  lastSeenAt     DateTime @default(now())
-  firstSeenAt    DateTime @default(now())
-  metadata       Json?
+  id          String   @id @default(uuid())
+  orgId       String
+  deviceId    String?
+  name        String
+  version     String?
+  vendor      String?
+  installDate String?
+  description String?
+  source      String   @default("deb")
+  status      String   @default("current") // current, outdated, unknown
+  lastSeenAt  DateTime @default(now())
+  firstSeenAt DateTime @default(now())
+  metadata    Json?
 
-  org    Organization @relation(fields: [orgId], references: [id])
+  org Organization @relation(fields: [orgId], references: [id])
 
-  @@index([orgId])
   @@unique([orgId, name])
+  @@index([orgId])
   @@index([orgId, status])
 }
 
 model BackupJob {
-  id              String    @id @default(uuid())
-  orgId           String
-  deviceId        String
-  name            String
-  type            String    @default("file") // file, full_image
-  schedule        String?   // cron expression, null for manual
-  sourcePaths     String?   // JSON array of paths
-  destination     String?
-  retention       Int       @default(7) // days
-  compression     Boolean   @default(true)
-  isEnabled       Boolean   @default(true)
-  lastRunAt       DateTime?
-  nextRunAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id          String    @id @default(uuid())
+  orgId       String
+  deviceId    String
+  name        String
+  type        String    @default("file") // file, full_image
+  schedule    String? // cron expression, null for manual
+  sourcePaths String? // JSON array of paths
+  destination String?
+  retention   Int       @default(7) // days
+  compression Boolean   @default(true)
+  isEnabled   Boolean   @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  org    Organization @relation(fields: [orgId], references: [id])
-  runs   BackupRun[]
+  org  Organization @relation(fields: [orgId], references: [id])
+  runs BackupRun[]
 
   @@index([orgId])
   @@index([orgId, deviceId])
 }
 
 model BackupRun {
-  id            String    @id @default(uuid())
-  jobId         String
-  orgId         String
-  deviceId      String?
-  status        String    @default("pending") // pending, running, completed, failed, cancelled
-  type          String    @default("file")
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
-  sizeBytes     BigInt?
-  fileCount     Int?
-  sourcePaths   String?
-  errorMessage  String?
-  metadata      Json?
+  id           String    @id @default(uuid())
+  jobId        String
+  orgId        String
+  deviceId     String?
+  status       String    @default("pending") // pending, running, completed, failed, cancelled
+  type         String    @default("file")
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  sizeBytes    BigInt?
+  fileCount    Int?
+  sourcePaths  String?
+  errorMessage String?
+  metadata     Json?
 
-  job  BackupJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  org  Organization @relation(fields: [orgId], references: [id])
+  job BackupJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  org Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, startedAt])
   @@index([jobId, startedAt])
 }
 
 model Subscription {
-  id              String              @id @default(uuid())
-  orgId           String              @unique
-  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  stripeSubscriptionId String?         @unique
-  stripeCustomerId String?
-  status          SubscriptionStatus  @default(Active)
-  plan            Plan                @default(Free)
-  currentPeriodStart DateTime?
-  currentPeriodEnd   DateTime?
-  cancelAtPeriodEnd  Boolean           @default(false)
-  trialEnd        DateTime?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  id                   String             @id @default(uuid())
+  orgId                String             @unique
+  org                  Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String?            @unique
+  stripeCustomerId     String?
+  status               SubscriptionStatus @default(Active)
+  plan                 Plan               @default(Free)
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  trialEnd             DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   invoices Invoice[]
 
@@ -549,53 +550,53 @@ model Subscription {
 }
 
 model Invoice {
-  id               String   @id @default(uuid())
-  subscriptionId   String
-  subscription     Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  orgId            String
-  stripeInvoiceId  String?  @unique
-  amount           Int      // cents
-  currency         String   @default("usd")
-  status           String   // paid, open, uncollectible, void
-  paid             Boolean  @default(false)
-  invoicePdf       String?
-  periodStart      DateTime?
-  periodEnd        DateTime?
-  createdAt        DateTime @default(now())
+  id              String       @id @default(uuid())
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  orgId           String
+  stripeInvoiceId String?      @unique
+  amount          Int // cents
+  currency        String       @default("usd")
+  status          String // paid, open, uncollectible, void
+  paid            Boolean      @default(false)
+  invoicePdf      String?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  createdAt       DateTime     @default(now())
 
   @@index([orgId, createdAt])
   @@index([stripeInvoiceId])
 }
 
 model ReportTemplate {
-  id         String   @id @default(uuid())
-  orgId      String   @unique
+  id          String   @id @default(uuid())
+  orgId       String   @unique
   companyName String?
-  logoPath   String?
-  accentColor String  @default("#3b82f6")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  logoPath    String?
+  accentColor String   @default("#3b82f6")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id])
 }
 
 model Report {
-  id             String   @id @default(uuid())
-  orgId          String
-  type           String   // device_health, security_executive, fleet_summary
-  format         String   // pdf, docx, html
-  title          String
-  description    String?
-  storagePath    String
-  fileSize       Int?
-  signedUrl      String?
-  urlExpiresAt   DateTime?
-  aiGenerated    Boolean  @default(false)
-  aiSummary      String?
-  sourceIds      String?  // JSON array of device/scan IDs
-  status         String   @default("completed") // generating, completed, failed
-  errorMessage   String?
-  createdAt      DateTime @default(now())
+  id           String    @id @default(uuid())
+  orgId        String
+  type         String // device_health, security_executive, fleet_summary
+  format       String // pdf, docx, html
+  title        String
+  description  String?
+  storagePath  String
+  fileSize     Int?
+  signedUrl    String?
+  urlExpiresAt DateTime?
+  aiGenerated  Boolean   @default(false)
+  aiSummary    String?
+  sourceIds    String? // JSON array of device/scan IDs
+  status       String    @default("completed") // generating, completed, failed
+  errorMessage String?
+  createdAt    DateTime  @default(now())
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -604,17 +605,17 @@ model Report {
 }
 
 model ReportSchedule {
-  id            String   @id @default(uuid())
-  orgId         String
-  type          String   // device_health, security_executive, fleet_summary
-  formats       String   @default("pdf") // comma-separated: pdf,docx,html
-  cron          String   // cron expression
-  deviceIds     String?  // JSON array for multi-device reports
-  isEnabled     Boolean  @default(true)
-  lastRunAt     DateTime?
-  nextRunAt     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id        String    @id @default(uuid())
+  orgId     String
+  type      String // device_health, security_executive, fleet_summary
+  formats   String    @default("pdf") // comma-separated: pdf,docx,html
+  cron      String // cron expression
+  deviceIds String? // JSON array for multi-device reports
+  isEnabled Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id])
 
@@ -622,28 +623,28 @@ model ReportSchedule {
 }
 
 model RemoteSession {
-  id              String    @id @default(uuid())
-  orgId           String
-  deviceId        String
-  technicianId    String    // user ID of the technician
-  status          String    @default("pending") // pending, active, ended, error
-  protocol        String    @default("webrtc")  // webrtc, vnc, rdp
-  turnServer      String?
-  turnCredential  String?
-  recordingPath   String?   // object storage path to recording
-  recordingSize   BigInt?
-  recordingDuration Int?    // seconds
-  startedAt       DateTime?
-  endedAt         DateTime?
-  consentGranted  Boolean   @default(false)
-  consentMethod   String?   // "click" or "unattended_policy"
-  unattendedPolicy String?  // JSON: { "enabled": bool, "approvedUntil": date, "policyDoc": string }
-  errorMessage    String?
-  metadata        Json?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  orgId             String
+  deviceId          String
+  technicianId      String // user ID of the technician
+  status            String    @default("pending") // pending, active, ended, error
+  protocol          String    @default("webrtc") // webrtc, vnc, rdp
+  turnServer        String?
+  turnCredential    String?
+  recordingPath     String? // object storage path to recording
+  recordingSize     BigInt?
+  recordingDuration Int? // seconds
+  startedAt         DateTime?
+  endedAt           DateTime?
+  consentGranted    Boolean   @default(false)
+  consentMethod     String? // "click" or "unattended_policy"
+  unattendedPolicy  String? // JSON: { "enabled": bool, "approvedUntil": date, "policyDoc": string }
+  errorMessage      String?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  org         Organization @relation(fields: [orgId], references: [id])
+  org Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, status])
   @@index([orgId, deviceId, status])
@@ -651,22 +652,55 @@ model RemoteSession {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  orgId      String
-  sessionId  String?  // link to RemoteSession if applicable
-  action     String   // session_start, session_end, consent_granted, input_sent, file_transferred, screen_shared, etc.
-  actorId    String?  // user who performed the action
-  targetId   String?  // target device or resource
-  details    Json?    // action-specific metadata
-  ipAddress  String?
-  userAgent  String?
-  immutable  Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  orgId     String
+  sessionId String? // link to RemoteSession if applicable
+  action    String // session_start, session_end, consent_granted, input_sent, file_transferred, screen_shared, etc.
+  actorId   String? // user who performed the action
+  targetId  String? // target device or resource
+  details   Json? // action-specific metadata
+  ipAddress String?
+  userAgent String?
+  immutable Boolean  @default(true)
+  createdAt DateTime @default(now())
 
-  org    Organization @relation(fields: [orgId], references: [id])
+  org Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId, createdAt])
   @@index([orgId, sessionId])
   @@index([sessionId])
   @@index([action])
+}
+
+// Knowledge Base models for RAG (Retrieval-Augmented Generation)
+// Embedding dimension: 1536 (consistent across the codebase, e.g., from text-embedding-3-small)
+// Embeddings stored as JSON float arrays, no pgvector extension required for dev/test/CI
+// Cosine similarity computed in application code
+model KbArticle {
+  id        String   @id @default(uuid())
+  orgId     String
+  title     String
+  markdown  String // Full article content in markdown
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org        Organization  @relation(fields: [orgId], references: [id])
+  embeddings KbEmbedding[]
+
+  @@index([orgId])
+  @@index([orgId, createdAt])
+}
+
+model KbEmbedding {
+  id         String   @id @default(uuid())
+  articleId  String
+  chunkIndex Int // Zero-based index of chunk within article
+  chunkText  String // The actual text chunk (for context when returning results)
+  embedding  Json // Float array, 1536 dimensions: [float, float, ...]
+  createdAt  DateTime @default(now())
+
+  article KbArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, chunkIndex])
+  @@index([articleId])
 }

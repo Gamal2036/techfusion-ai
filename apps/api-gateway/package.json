@@ -7,8 +7,12 @@
     "dev": "ts-node src/main.ts",
     "start": "node dist/main.js",
     "lint": "tsc --noEmit",
-    "test": "jest --forceExit --detectOpenHandles",
+    "test": "NODE_OPTIONS=\"--max-old-space-size=6144\" jest --forceExit --runInBand",
+    "seed": "ts-node prisma/seed.ts",
     "clean": "rm -rf dist .turbo"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",

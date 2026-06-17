@@ -217,4 +217,58 @@ export class AiOrchestratorService implements AiOrchestrator {
 
     throw new Error('All AI providers failed for embedding');
   }
+
+  /**
+   * Get embedding for a single text string
+   * Used by KB module and other features needing embeddings
+   * Falls back to deterministic local embedding when no AI provider is configured (dev/test)
+   */
+  async getEmbedding(orgId: string, text: string, dimension?: number): Promise<number[]> {
+    const dim = dimension || 1536;
+
+    try {
+      const result = await this.embed(orgId, {
+        model: 'text-embedding-3-small',
+        input: [text],
+      });
+
+      if (!result.embeddings || result.embeddings.length === 0) {
+        throw new Error('No embeddings returned from provider');
+      }
+
+      const embedding = result.embeddings[0];
+
+      if (embedding.length !== dim) {
+        throw new Error(
+          `Embedding dimension mismatch: expected ${dim}, got ${embedding.length}`,
+        );
+      }
+
+      return embedding;
+    } catch (error) {
+      this.logger.warn(`Falling back to local deterministic embedding: ${(error as Error).message}`);
+      return this.getLocalEmbedding(text, dim);
+    }
+  }
+
+  /**
+   * Deterministic hash-based embedding for dev/test when no external AI provider is configured.
+   * Produces a normalized vector of the given dimension.
+   * Not semantically meaningful - use a real embedding API in production.
+   */
+  private getLocalEmbedding(text: string, dimension: number): number[] {
+    const embedding = new Array(dimension).fill(0);
+    const chars = text.split('');
+    for (let i = 0; i < chars.length; i++) {
+      const idx = i % dimension;
+      embedding[idx] += chars[i].charCodeAt(0) / 255;
+    }
+    const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
+    if (norm > 0) {
+      for (let i = 0; i < dimension; i++) {
+        embedding[i] /= norm;
+      }
+    }
+    return embedding;
+  }
 }

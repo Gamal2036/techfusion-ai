@@ -86,7 +86,7 @@ ALTER TABLE "DeviceHealthScore" ADD CONSTRAINT "DeviceHealthScore_deviceId_fkey"
 ALTER TABLE "DeviceHealthScore" ADD CONSTRAINT "DeviceHealthScore_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Convert DeviceMetric to TimescaleDB hypertable
-SELECT create_hypertable('"DeviceMetric"', '"recordedAt"', if_not_exists => TRUE);
+SELECT create_hypertable('DeviceMetric', 'recordedAt', if_not_exists => TRUE);
 
 -- Enable RLS on new tables
 ALTER TABLE "Device" ENABLE ROW LEVEL SECURITY;

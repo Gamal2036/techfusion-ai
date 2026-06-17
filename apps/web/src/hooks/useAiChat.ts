@@ -5,10 +5,18 @@ import { useDeviceList } from './useDevices';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+export interface KbCitation {
+  articleId: string;
+  articleTitle: string;
+  similarity: number;
+  chunkText: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'assistant' | 'user';
   content: string;
+  citations?: KbCitation[];
 }
 
 function getAuthHeaders() {
@@ -85,6 +93,7 @@ export function useAiChat() {
         id: assistantId,
         role: 'assistant',
         content: '',
+        citations: [],
       };
 
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -172,6 +181,19 @@ export function useAiChat() {
                 }
               } catch {
                 // ignore
+              }
+            }
+
+            if (evt.event === 'citations') {
+              try {
+                const citations: KbCitation[] = JSON.parse(evt.data);
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId ? { ...m, citations } : m,
+                  ),
+                );
+              } catch {
+                // ignore invalid citation data
               }
             }
 
