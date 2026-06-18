@@ -46,7 +46,8 @@ export class SecurityController {
   @Post('security/scans/:deviceId/trigger')
   @HttpCode(201)
   async triggerScan(@Param('deviceId') deviceId: string, @Req() req: Request) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
+    if (!orgId) throw new Error('Organization context required');
     const scan = await this.securityService.createPendingScan(deviceId, orgId);
     return { scanId: scan.id, status: scan.status };
   }

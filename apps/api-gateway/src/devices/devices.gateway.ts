@@ -38,9 +38,12 @@ export class DevicesGateway implements OnGatewayConnection, OnGatewayDisconnect 
   }
 
   broadcastMetrics(orgId: string, deviceId: string, data: any) {
+    const safe = JSON.parse(
+      JSON.stringify(data, (_, v) => (typeof v === 'bigint' ? Number(v) : v)),
+    );
     this.server.to(`org:${orgId}`).emit('metrics', {
       deviceId,
-      ...data,
+      ...safe,
     });
   }
 

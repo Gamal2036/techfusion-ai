@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Query, Body, Req } from '@nestjs/common';
 import { NetworkService } from './network.service';
 import { NetworkGateway } from './network.gateway';
+import { Public } from '../common/public.decorator';
 
 @Controller('network')
 export class NetworkController {
@@ -9,9 +10,12 @@ export class NetworkController {
     private networkGateway: NetworkGateway,
   ) {}
 
+  @Public()
   @Post('discovery')
   async ingestDiscovery(@Req() req: any, @Body() body: any) {
-    const orgId = req.headers['x-org-id'] || req.body?.orgId || '00000000-0000-0000-0000-000000000000';
+    // Resolve org from device token or header
+    const deviceToken = body.deviceToken || req.headers['x-device-token'];
+    const orgId = req.headers['x-org-id'] || body.orgId || '00000000-0000-0000-0000-000000000000';
     const scan = await this.networkService.ingestDiscovery(orgId, body);
     const topology = await this.networkService.getTopology(orgId);
 

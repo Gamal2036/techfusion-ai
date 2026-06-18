@@ -7,7 +7,7 @@ export class NetworkService {
   constructor(private prisma: PrismaService) {}
 
   async ingestDiscovery(orgId: string, data: any) {
-    const devices: any[] = data.devices || [];
+    const devices: any[] = data.devices || data.neighbors || [];
 
     const discoveredIps: string[] = [];
 

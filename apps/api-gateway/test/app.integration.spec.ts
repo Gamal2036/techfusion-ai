@@ -41,16 +41,7 @@ describe('TechFusion API (integration)', () => {
     await prisma.networkDevice.deleteMany();
     await prisma.networkScan.deleteMany();
     await prisma.securityFinding.deleteMany();
-    await prisma.securityScore.deleteMany();
-    await prisma.securityScan.deleteMany();
-    await prisma.deviceMetric.deleteMany();
-    await prisma.deviceHealthScore.deleteMany();
-    await prisma.device.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.dataRetentionPolicy.deleteMany();
-    await prisma.ssoConfig.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.organization.deleteMany();
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Organization" CASCADE`);
   });
 
   // ─── Org A / Org B data ─────────────────────────────────────

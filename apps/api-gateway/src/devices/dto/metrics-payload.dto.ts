@@ -96,7 +96,8 @@ export class NetworkMetricsDto {
 
 export class MetricsPayloadDto {
   @IsString()
-  deviceToken: string;
+  @IsOptional()
+  deviceToken?: string;
 
   @IsOptional()
   timestamp?: string;
