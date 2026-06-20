@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NetworkDevice } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -100,7 +101,7 @@ export class NetworkService {
     });
     const latestScan = await this.getLatestScan(orgId);
 
-    const nodes = devices.map((d) => ({
+    const nodes = devices.map((d: NetworkDevice) => ({
       id: d.ip,
       label: d.hostname || d.ip,
       ip: d.ip,

@@ -11,7 +11,12 @@ import { GenerateReportDto, ReportType, ReportFormat } from './dto/generate-repo
 import { buildDeviceHealthReport, DeviceHealthInput } from './report-types/device-health.report';
 import { buildSecurityExecutiveReport, SecurityExecutiveInput } from './report-types/security-executive.report';
 import { buildFleetSummaryReport, FleetSummaryInput } from './report-types/fleet-summary.report';
+import { Alert, SecurityFinding, Prisma } from '@prisma/client';
 import { getPlanConfig } from '../billing/plan-features';
+
+type DeviceWithRelations = Prisma.DeviceGetPayload<{
+  include: { alerts: true; scores: true; securityScores: true };
+}>;
 
 @Injectable()
 export class ReportingService {
@@ -183,7 +188,7 @@ export class ReportingService {
       diskUsage: m?.diskReadBytes && m?.diskTotal ? Number(m.diskReadBytes) / Number(m.diskTotal) * 100 : 50,
       lastBoot: device.lastSeenAt,
       temperature: m?.tempCpu ?? 0,
-      alerts: device.alerts.map((a) => ({ severity: a.severity, message: a.message, timestamp: a.createdAt })),
+      alerts: device.alerts.map((a: Alert) => ({ severity: a.severity, message: a.message, timestamp: a.createdAt })),
       metrics: m ? [
         { label: 'CPU', value: m.cpuUsage, unit: '%' },
         { label: 'Memory', value: m.ramPercent, unit: '%' },
@@ -214,10 +219,10 @@ export class ReportingService {
       scanName: `Scan ${new Date(scan.createdAt).toLocaleDateString()}`,
       scanDate: scan.createdAt,
       totalFindings: scan.findings.length,
-      criticalCount: score?.criticalCount ?? scan.findings.filter((f) => f.severity === 'critical').length,
-      highCount: score?.highCount ?? scan.findings.filter((f) => f.severity === 'high').length,
-      mediumCount: score?.mediumCount ?? scan.findings.filter((f) => f.severity === 'medium').length,
-      lowCount: score?.lowCount ?? scan.findings.filter((f) => f.severity === 'low').length,
+      criticalCount: score?.criticalCount ?? scan.findings.filter((f: SecurityFinding) => f.severity === 'critical').length,
+      highCount: score?.highCount ?? scan.findings.filter((f: SecurityFinding) => f.severity === 'high').length,
+      mediumCount: score?.mediumCount ?? scan.findings.filter((f: SecurityFinding) => f.severity === 'medium').length,
+      lowCount: score?.lowCount ?? scan.findings.filter((f: SecurityFinding) => f.severity === 'low').length,
       scores: {
         critical: 100 - (score?.criticalCount ? Math.min(score.criticalCount * 20, 100) : 0),
         high: 100 - (score?.highCount ? Math.min(score.highCount * 15, 100) : 0),
@@ -225,7 +230,7 @@ export class ReportingService {
         low: 100 - (score?.lowCount ? Math.min(score.lowCount * 5, 100) : 0),
         overall: score?.securityScore ?? 100,
       },
-      findings: scan.findings.map((f) => ({
+      findings: scan.findings.map((f: SecurityFinding) => ({
         title: f.finding,
         severity: f.severity,
         description: (f.details as any)?.description ?? f.finding,
@@ -252,11 +257,11 @@ export class ReportingService {
     let totalAlerts = 0;
     let criticalAlerts = 0;
 
-    const deviceSummaries = devices.map((d) => {
+    const deviceSummaries = devices.map((d: DeviceWithRelations) => {
       const health = d.scores[0]?.healthScore ?? 0;
       const security = d.securityScores[0]?.securityScore ?? 0;
       const alerts = d.alerts.length;
-      const critical = d.alerts.filter((a) => a.severity === 'critical').length;
+      const critical = d.alerts.filter((a: Alert) => a.severity === 'critical').length;
 
       totalHealth += health;
       totalSecurity += security;
@@ -273,7 +278,7 @@ export class ReportingService {
       };
     });
 
-    const onlineCount = deviceSummaries.filter((d) => d.status === 'online').length;
+    const onlineCount = deviceSummaries.filter((d: { status: string }) => d.status === 'online').length;
 
     return {
       totalDevices: devices.length,

@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SecurityFinding, Prisma } from '@prisma/client';
 import { ScoreResult } from './services/security-scoring.service';
 import { FindingDto } from './dto/submit-findings.dto';
+
+type ScanWithScore = Prisma.SecurityScanGetPayload<{
+  include: { score: true; _count: { select: { findings: true } } };
+}>;
 
 @Injectable()
 export class SecurityService {
@@ -128,7 +133,7 @@ export class SecurityService {
       },
     });
 
-    return scans.map((s) => ({
+    return scans.map((s: ScanWithScore) => ({
       id: s.id,
       status: s.status,
       startedAt: s.startedAt,
@@ -197,7 +202,7 @@ export class SecurityService {
       mediumCount: latestScan.score.mediumCount,
       lowCount: latestScan.score.lowCount,
       scanDate: latestScan.completedAt || latestScan.startedAt,
-      findings: latestScan.findings.map((f) => ({
+      findings: latestScan.findings.map((f: SecurityFinding) => ({
         finding: f.finding,
         severity: f.severity,
         remediation: f.remediation,

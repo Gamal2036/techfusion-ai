@@ -237,7 +237,7 @@ export class RemoteSupportService {
         endedAt: true,
       },
     });
-    return rows.map((r) => ({
+    return rows.map((r: { id: string; deviceId: string; recordingPath: string | null; recordingSize: bigint | null; recordingDuration: number | null; startedAt: Date | null; endedAt: Date | null }) => ({
       ...r,
       recordingSize: r.recordingSize ? Number(r.recordingSize) : null,
     }));

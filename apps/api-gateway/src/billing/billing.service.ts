@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Device } from '@prisma/client';
 import { PLAN_CONFIGS, PlanTier, getPlanConfig } from './plan-features';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
@@ -336,7 +337,7 @@ export class BillingService {
     if (activeDevices.length > planConfig.limits.maxDevices) {
       const excessDevices = activeDevices.slice(planConfig.limits.maxDevices);
       await this.prisma.device.updateMany({
-        where: { id: { in: excessDevices.map((d) => d.id) } },
+        where: { id: { in: excessDevices.map((d: Device) => d.id) } },
         data: { inactive: true },
       });
     }
@@ -350,7 +351,7 @@ export class BillingService {
 
       if (inactiveDevices.length > 0) {
         await this.prisma.device.updateMany({
-          where: { id: { in: inactiveDevices.map((d) => d.id) } },
+          where: { id: { in: inactiveDevices.map((d: Device) => d.id) } },
           data: { inactive: false },
         });
       }

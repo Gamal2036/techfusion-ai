@@ -1,7 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiOrchestratorService } from '../ai/ai-orchestrator.service';
-import { KbArticle, KbEmbedding } from '@prisma/client';
+import { KbArticle, KbEmbedding, Prisma } from '@prisma/client';
+
+type EmbeddingWithArticle = Prisma.KbEmbeddingGetPayload<{ include: { article: true } }>;
 
 export interface CreateKbArticleDto {
   title: string;
@@ -245,7 +247,7 @@ export class KbService {
 
     // Compute cosine similarity for each embedding
     const scored = embeddings
-      .filter((emb) => {
+      .filter((emb: EmbeddingWithArticle) => {
         const stored = emb.embedding as number[];
         if (!Array.isArray(stored) || stored.length !== EMBEDDING_DIMENSION) {
           this.logger.warn(
@@ -255,7 +257,7 @@ export class KbService {
         }
         return true;
       })
-      .map((emb) => {
+      .map((emb: EmbeddingWithArticle) => {
         const similarity = this.cosineSimilarity(
           queryEmbedding,
           emb.embedding as number[],
@@ -265,11 +267,11 @@ export class KbService {
           similarity,
         };
       })
-      .sort((a, b) => b.similarity - a.similarity)
+      .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
       .slice(0, topK);
 
     // Convert to response format
-    return scored.map((item) => ({
+    return scored.map((item: { embedding: EmbeddingWithArticle; similarity: number }) => ({
       id: item.embedding.id,
       articleId: item.embedding.articleId,
       articleTitle: item.embedding.article.title,
