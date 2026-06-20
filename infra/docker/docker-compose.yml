@@ -33,14 +33,15 @@ services:
 
   api-gateway:
     build:
-      context: ../../apps/api-gateway
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/api-gateway/Dockerfile
     container_name: techfusion-api-gateway
     ports:
       - "3001:3001"
     environment:
       PORT: 3001
       NODE_ENV: development
+      DATABASE_URL: postgresql://techfusion:techfusion@postgres:5432/techfusion
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,34 +52,24 @@ services:
 
   web:
     build:
-      context: ../../apps/web
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/web/Dockerfile
     container_name: techfusion-web
     ports:
       - "3000:3000"
     environment:
       PORT: 3000
       NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001
     depends_on:
       - api-gateway
     networks:
       - techfusion
 
-  agent:
-    build:
-      context: ../../apps/agent
-      dockerfile: Dockerfile
-    container_name: techfusion-agent
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - techfusion
-
   worker:
     build:
-      context: ../../apps/worker
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
     container_name: techfusion-worker
     environment:
       REDIS_URL: redis://redis:6379
