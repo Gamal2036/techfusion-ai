@@ -9,3 +9,5 @@ target/
 coverage/
 .turbo/
 *.tsbuildinfo
+apps/api-gateway/.env
+apps/api-gateway/.env.local
