@@ -256,8 +256,16 @@ export default function CybersecurityPage() {
           <AlertTriangle className="h-12 w-12 text-white/20 mb-4" />
           <h3 className="text-lg font-medium text-white/50">No scan data available</h3>
           <p className="text-sm text-white/30 mt-1 max-w-md">
-            No security scan has been performed for this device yet. Click "Trigger Scan" to start one.
+            No security scan has been performed for this device yet.
           </p>
+          <button
+            onClick={triggerScan}
+            disabled={triggering}
+            className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {triggering ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+            {triggering ? 'Scanning...' : 'Run First Scan'}
+          </button>
         </GlassPanel>
       ) : (
         <>

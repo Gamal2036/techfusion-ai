@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Toaster } from 'sonner';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -13,9 +15,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -40,6 +48,9 @@ export default function DashboardLayout({
         e.preventDefault();
         setPaletteOpen((v) => !v);
       }
+      if (e.key === 'Escape') {
+        setChatOpen(false);
+      }
     };
     document.addEventListener('keydown', down);
     return () => document.removeEventListener('keydown', down);
@@ -58,12 +69,36 @@ export default function DashboardLayout({
           userRole={user.role}
           orgName={user.orgName}
         />
-        <main className="flex-1 overflow-y-auto p-6">
-          {children}
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <AnimatePresence mode="wait">
+            {mounted && (
+              <motion.div
+                key={pathname}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                {children}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </main>
       </div>
       <AiChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: 'rgba(10,10,10,0.95)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            color: '#fff',
+            borderRadius: '12px',
+            fontSize: '13px',
+          },
+        }}
+      />
     </div>
   );
 }

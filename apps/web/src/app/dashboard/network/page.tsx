@@ -154,8 +154,15 @@ export default function NetworkPage() {
         ) : topology && topology.nodes.length > 0 ? (
           <NetworkMap topology={topology} onNodeClick={handleNodeClick} />
         ) : (
-          <div className="h-[500px] flex items-center justify-center text-white/30 text-sm">
-            No topology data available. Run a discovery scan first.
+          <div className="h-[500px] flex flex-col items-center justify-center text-center">
+            <Network className="h-10 w-10 text-white/20 mb-3" />
+            <p className="text-white/30 text-sm">No topology data available.</p>
+            <button
+              onClick={() => refetchTopology()}
+              className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors"
+            >
+              Start Discovery
+            </button>
           </div>
         )}
       </GlassPanel>
