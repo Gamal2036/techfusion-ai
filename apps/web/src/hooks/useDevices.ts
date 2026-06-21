@@ -4,8 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
+function getAuthHeaders(): Record<string, string> {
+  let token: string | null = null;
+  try {
+    token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  } catch {
+    token = null;
+  }
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

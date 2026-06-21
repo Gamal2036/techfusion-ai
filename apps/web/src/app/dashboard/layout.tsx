@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import { Toaster } from 'sonner';
+
+const MotionDiv = dynamic(() => import('framer-motion').then((m) => m.motion.div), { ssr: false });
+const AnimatePresence = dynamic(() => import('framer-motion').then((m) => ({ default: m.AnimatePresence })), { ssr: false });
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { CommandPalette } from '@/components/CommandPalette';
@@ -70,9 +73,9 @@ export default function DashboardLayout({
           orgName={user.orgName}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <AnimatePresence mode="wait">
-            {mounted && (
-              <motion.div
+          {mounted && (
+            <AnimatePresence>
+              <MotionDiv
                 key={pathname}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -80,9 +83,9 @@ export default function DashboardLayout({
                 transition={{ duration: 0.2 }}
               >
                 {children}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </MotionDiv>
+            </AnimatePresence>
+          )}
         </main>
       </div>
       <AiChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />

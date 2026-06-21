@@ -19,8 +19,13 @@ export interface ChatMessage {
   citations?: KbCitation[];
 }
 
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
+function getAuthHeaders(): Record<string, string> {
+  let token: string | null = null;
+  try {
+    token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  } catch {
+    token = null;
+  }
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -242,7 +247,8 @@ export function useAiChat() {
         abortRef.current = null;
       }
     },
-    [streaming, selectedDeviceId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [streaming, selectedDeviceId, devices],
   );
 
   const cancelStream = useCallback(() => {
