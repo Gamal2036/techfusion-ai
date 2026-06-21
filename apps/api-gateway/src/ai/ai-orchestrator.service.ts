@@ -1,8 +1,9 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from './services/encryption.service';
 import { CostTrackerService } from './services/cost-tracker.service';
 import { AiUsageService } from './services/ai-usage.service';
+import { AiRouterService } from './router/ai-router.service';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAIProvider } from './providers/openai.provider';
 import { LlmProvider, CompletionOptions, CompletionResult, EmbeddingOptions, EmbeddingResult } from './interfaces/llm-provider.interface';
@@ -27,6 +28,7 @@ export class AiOrchestratorService implements AiOrchestrator {
     private readonly encryption: EncryptionService,
     private readonly costTracker: CostTrackerService,
     private readonly usageService: AiUsageService,
+    @Optional() private readonly aiRouter?: AiRouterService,
   ) {}
 
   setTestProviders(providers: ProviderEntry[] | null): void {
@@ -135,70 +137,166 @@ export class AiOrchestratorService implements AiOrchestrator {
       }
     }
 
-    const providers = await this.loadProviders(orgId);
-    if (providers.length === 0) {
-      throw new Error('No AI providers configured');
-    }
+    const startTime = Date.now();
 
-    const errors: string[] = [];
+    try {
+      const systemPrompt = opts.systemPrompt;
+      const prompt = opts.messages.map(m => `${m.role}: ${m.content}`).join('\n');
 
-    for (const entry of providers) {
-      const startTime = Date.now();
-      try {
-        this.logger.log(`Attempting ${entry.name} (${entry.model}) for org ${orgId}`);
+      if (opts.onStream) {
+        const providers = await this.loadProviders(orgId);
+        if (providers.length === 0) {
+          throw new Error('No AI providers configured');
+        }
 
-        const result = await entry.provider.complete({
-          ...opts,
-          model: entry.model,
-        });
+        const errors: string[] = [];
+        for (const entry of providers) {
+          try {
+            this.logger.log(`Attempting ${entry.name} (${entry.model}) for org ${orgId}`);
 
+            const result = await entry.provider.complete({
+              ...opts,
+              model: entry.model,
+            });
+
+            const latencyMs = Date.now() - startTime;
+            const costUsd = this.costTracker.calculateCost(entry.model, result.promptTokens, result.completionTokens);
+
+            await this.usageService.log({
+              orgId,
+              conversationId: undefined,
+              provider: entry.name,
+              model: entry.model,
+              promptTokens: result.promptTokens,
+              completionTokens: result.completionTokens,
+              totalTokens: result.totalTokens,
+              costUsd,
+              latencyMs,
+              success: true,
+            });
+
+            this.logger.log(`${entry.name} succeeded (${latencyMs}ms, ${result.totalTokens} tokens, $${costUsd})`);
+
+            return result;
+          } catch (err) {
+            const errorMessage = (err as Error).message;
+            this.logger.warn(`${entry.name} failed: ${errorMessage}`);
+            await this.usageService.log({
+              orgId,
+              conversationId: undefined,
+              provider: entry.name,
+              model: entry.model,
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+              costUsd: 0,
+              latencyMs: Date.now() - startTime,
+              success: false,
+              errorMessage,
+            });
+            errors.push(`${entry.name}: ${errorMessage}`);
+          }
+        }
+        throw new Error(`All AI providers failed: ${errors.join('; ')}`);
+      }
+
+      if (this.aiRouter) {
+        const response = await this.aiRouter.complete(prompt, systemPrompt);
         const latencyMs = Date.now() - startTime;
-        const costUsd = this.costTracker.calculateCost(entry.model, result.promptTokens, result.completionTokens);
 
         await this.usageService.log({
           orgId,
           conversationId: undefined,
-          provider: entry.name,
-          model: entry.model,
-          promptTokens: result.promptTokens,
-          completionTokens: result.completionTokens,
-          totalTokens: result.totalTokens,
-          costUsd,
+          provider: response.provider,
+          model: response.model,
+          promptTokens: Math.round(response.tokensUsed * 0.75),
+          completionTokens: Math.round(response.tokensUsed * 0.25),
+          totalTokens: response.tokensUsed,
+          costUsd: response.costEstimateUsd,
           latencyMs,
           success: true,
         });
 
-        this.logger.log(`${entry.name} succeeded (${latencyMs}ms, ${result.totalTokens} tokens, $${costUsd})`);
-
-        return result;
-      } catch (err) {
-        const latencyMs = Date.now() - startTime;
-        const errorMessage = (err as Error).message;
-
-        this.logger.warn(`${entry.name} failed after ${latencyMs}ms: ${errorMessage}`);
-
-        await this.usageService.log({
-          orgId,
-          conversationId: undefined,
-          provider: entry.name,
-          model: entry.model,
-          promptTokens: 0,
-          completionTokens: 0,
-          totalTokens: 0,
-          costUsd: 0,
-          latencyMs,
-          success: false,
-          errorMessage,
-        });
-
-        errors.push(`${entry.name}: ${errorMessage}`);
+        return {
+          content: response.content,
+          model: response.model,
+          promptTokens: Math.round(response.tokensUsed * 0.75),
+          completionTokens: Math.round(response.tokensUsed * 0.25),
+          totalTokens: response.tokensUsed,
+        };
       }
-    }
 
-    throw new Error(`All AI providers failed: ${errors.join('; ')}`);
+      const providers = await this.loadProviders(orgId);
+      if (providers.length === 0) {
+        throw new Error('No AI providers configured');
+      }
+
+      const errors: string[] = [];
+      for (const entry of providers) {
+        try {
+          this.logger.log(`Attempting ${entry.name} (${entry.model}) for org ${orgId}`);
+          const result = await entry.provider.complete({
+            ...opts,
+            model: entry.model,
+          });
+          const latencyMs = Date.now() - startTime;
+          const costUsd = this.costTracker.calculateCost(entry.model, result.promptTokens, result.completionTokens);
+          await this.usageService.log({
+            orgId,
+            conversationId: undefined,
+            provider: entry.name,
+            model: entry.model,
+            promptTokens: result.promptTokens,
+            completionTokens: result.completionTokens,
+            totalTokens: result.totalTokens,
+            costUsd,
+            latencyMs,
+            success: true,
+          });
+          return result;
+        } catch (err) {
+          const errorMessage = (err as Error).message;
+          this.logger.warn(`${entry.name} failed: ${errorMessage}`);
+          await this.usageService.log({
+            orgId,
+            conversationId: undefined,
+            provider: entry.name,
+            model: entry.model,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            costUsd: 0,
+            latencyMs: Date.now() - startTime,
+            success: false,
+            errorMessage,
+          });
+          errors.push(`${entry.name}: ${errorMessage}`);
+        }
+      }
+      throw new Error(`All AI providers failed: ${errors.join('; ')}`);
+    } catch (error) {
+      if (!(error instanceof ForbiddenException)) {
+        throw error;
+      }
+      throw error;
+    }
   }
 
   async embed(orgId: string, opts: EmbeddingOptions): Promise<EmbeddingResult> {
+    if (this.aiRouter) {
+      try {
+        const text = opts.input.join(' ');
+        const response = await this.aiRouter.embed(text);
+        return {
+          embeddings: [response.embedding],
+          model: response.model,
+          totalTokens: response.dimension,
+        };
+      } catch {
+        // fall through to existing logic
+      }
+    }
+
     const providers = await this.loadProviders(orgId);
     if (providers.length === 0) {
       throw new Error('No AI providers configured');
