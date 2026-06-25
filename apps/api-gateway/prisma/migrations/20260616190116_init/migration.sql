@@ -1,3 +1,6 @@
+-- Enable TimescaleDB extension (required for hypertables)
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
 -- CreateEnum
 CREATE TYPE "Role" AS ENUM ('Owner', 'Admin', 'Technician', 'Viewer');
 

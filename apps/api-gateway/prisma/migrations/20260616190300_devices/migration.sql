@@ -85,8 +85,14 @@ ALTER TABLE "DeviceMetric" ADD CONSTRAINT "DeviceMetric_orgId_fkey" FOREIGN KEY 
 ALTER TABLE "DeviceHealthScore" ADD CONSTRAINT "DeviceHealthScore_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "DeviceHealthScore" ADD CONSTRAINT "DeviceHealthScore_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- Drop primary key to allow TimescaleDB hypertable conversion
+ALTER TABLE "DeviceMetric" DROP CONSTRAINT "DeviceMetric_pkey";
+
 -- Convert DeviceMetric to TimescaleDB hypertable
-SELECT create_hypertable('DeviceMetric', 'recordedAt', if_not_exists => TRUE);
+SELECT create_hypertable('"DeviceMetric"', 'recordedAt', if_not_exists => TRUE);
+
+-- Recreate primary key as composite including partition column
+ALTER TABLE "DeviceMetric" ADD CONSTRAINT "DeviceMetric_pkey" PRIMARY KEY ("id", "recordedAt");
 
 -- Enable RLS on new tables
 ALTER TABLE "Device" ENABLE ROW LEVEL SECURITY;
