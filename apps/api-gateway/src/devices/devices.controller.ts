@@ -25,6 +25,7 @@ export class DevicesController {
     return { device, deviceToken: device.deviceToken };
   }
 
+  @Public()
   @Post('register-public')
   async registerPublic(@Req() req: any, @Body() dto: RegisterDeviceDto) {
     const device = await this.devicesService.register(
