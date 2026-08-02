@@ -1,23 +1,29 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
+import { RegisterPublicDto } from '../enrollment/dto/register-public.dto';
 import { MetricsPayloadDto } from './dto/metrics-payload.dto';
 import { ScoringService } from './scoring.service';
 import { AlertEvaluationService } from '../alerts/alert-evaluation.service';
 import { AlertsGateway } from '../alerts/alerts.gateway';
-import { NotificationService } from '../alerts/notification.service';
+import { QueueService } from '../queue/queue.service';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { getPlanConfig } from '../billing/plan-features';
 
+const IDENTITY_VERSION = 1;
+const DEVICE_TOKEN_BYTES = 32;
+
 @Injectable()
 export class DevicesService {
+  private readonly logger = new Logger(DevicesService.name);
+
   constructor(
     private prisma: PrismaService,
     private scoring: ScoringService,
     private alertEval: AlertEvaluationService,
     private alertsGateway: AlertsGateway,
-    private notificationService: NotificationService,
+    private queueService: QueueService,
   ) {}
 
   async register(orgId: string, dto: RegisterDeviceDto) {
@@ -40,7 +46,8 @@ export class DevicesService {
       }
     }
 
-    const deviceToken = crypto.randomUUID();
+    const deviceToken = this.generateSecureToken();
+    const deviceTokenHash = this.hashToken(deviceToken);
     const device = await this.prisma.device.create({
       data: {
         orgId,
@@ -48,7 +55,7 @@ export class DevicesService {
         hostname: dto.hostname,
         os: dto.os ?? null,
         osVersion: dto.osVersion ?? null,
-        cpuModel: dto.cpuModel ?? null,
+        cpuModel: dto.cpuModel?.trim() || null,
         cpuCores: dto.cpuCores ?? null,
         cpuLogical: dto.cpuLogical ?? null,
         ramTotal: dto.ramTotal ? BigInt(dto.ramTotal) : null,
@@ -56,6 +63,7 @@ export class DevicesService {
         diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
         isLaptop: dto.isLaptop ?? false,
         deviceToken,
+        deviceTokenHash,
         metadata: (dto.metadata as any) ?? undefined,
       },
     });
@@ -63,8 +71,192 @@ export class DevicesService {
     return device;
   }
 
+  async registerPublic(orgId: string, dto: RegisterPublicDto) {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) {
+      throw new BadRequestException('Invalid organization');
+    }
+
+    const planConfig = getPlanConfig(org.plan);
+    const activeCount = await this.prisma.device.count({ where: { orgId, inactive: false } });
+    if (activeCount >= planConfig.limits.maxDevices) {
+      throw new ForbiddenException(
+        `Device limit reached (${planConfig.limits.maxDevices} max on ${planConfig.label} plan).`,
+      );
+    }
+
+    const existing = await this.findExistingDevice(orgId, dto);
+    if (existing) {
+      await this.enrichDeviceFromRegistration(existing.id, dto);
+
+      const rotated = await this.rotateCredential(
+        existing.id,
+        existing.orgId,
+        'duplicate_detected',
+        { reason: 'duplicate_registration' },
+      );
+
+      const enrichedDevice = await this.prisma.device.findUnique({ where: { id: existing.id } });
+
+      if (process.env.NODE_ENV !== 'production') {
+        this.logger.log(
+          `[DEV_REGISTER_ENRICH] deviceId=${existing.id} ` +
+          `cpuModel=${enrichedDevice?.cpuModel ?? 'null'} ` +
+          `cpuCores=${enrichedDevice?.cpuCores ?? 'null'} ` +
+          `cpuLogical=${enrichedDevice?.cpuLogical ?? 'null'} ` +
+          `source=registration`
+        );
+      }
+
+      return { device: enrichedDevice ?? rotated.device, deviceToken: rotated.newToken, duplicate: true };
+    }
+
+    const deviceToken = this.generateSecureToken();
+    const deviceTokenHash = this.hashToken(deviceToken);
+    const device = await this.prisma.device.create({
+      data: {
+        orgId,
+        name: dto.name,
+        hostname: dto.hostname,
+        os: dto.os ?? null,
+        osVersion: dto.osVersion ?? null,
+        cpuModel: dto.cpuModel?.trim() || null,
+        cpuCores: dto.cpuCores ?? null,
+        cpuLogical: dto.cpuLogical ?? null,
+        ramTotal: dto.ramTotal ? BigInt(dto.ramTotal) : null,
+        gpuInfo: dto.gpuInfo ?? null,
+        diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
+        isLaptop: dto.isLaptop ?? false,
+        deviceToken,
+        deviceTokenHash,
+        identityFingerprint: dto.identityFingerprint,
+        installationId: dto.installationId ?? null,
+        agentVersion: dto.agentVersion ?? null,
+        identityVersion: dto.identityVersion ?? IDENTITY_VERSION,
+        metadata: (dto.metadata as any) ?? undefined,
+      },
+    });
+
+    return { device, deviceToken, duplicate: false };
+  }
+
+  private async enrichDeviceFromRegistration(deviceId: string, dto: RegisterPublicDto) {
+    const updateData: Record<string, any> = {};
+
+    if (dto.cpuModel != null && dto.cpuModel.trim() !== '') {
+      updateData.cpuModel = dto.cpuModel.trim();
+    }
+    if (dto.cpuCores != null) {
+      updateData.cpuCores = dto.cpuCores;
+    }
+    if (dto.cpuLogical != null) {
+      updateData.cpuLogical = dto.cpuLogical;
+    }
+    if (dto.os != null && dto.os !== '') {
+      updateData.os = dto.os;
+    }
+    if (dto.osVersion != null && dto.osVersion !== '') {
+      updateData.osVersion = dto.osVersion;
+    }
+    if (dto.hostname != null && dto.hostname !== '') {
+      updateData.hostname = dto.hostname;
+    }
+    if (dto.ramTotal != null) {
+      updateData.ramTotal = BigInt(dto.ramTotal);
+    }
+    if (dto.diskTotal != null) {
+      updateData.diskTotal = BigInt(dto.diskTotal);
+    }
+    if (dto.gpuInfo != null && dto.gpuInfo !== '') {
+      updateData.gpuInfo = dto.gpuInfo;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.device.update({
+        where: { id: deviceId },
+        data: updateData,
+      });
+    }
+  }
+
+  private async findExistingDevice(orgId: string, dto: RegisterPublicDto) {
+    if (dto.identityFingerprint) {
+      const existing = await this.prisma.device.findFirst({
+        where: { orgId, identityFingerprint: dto.identityFingerprint },
+      });
+      if (existing) return existing;
+    }
+
+    if (dto.installationId) {
+      const existing = await this.prisma.device.findFirst({
+        where: { orgId, installationId: dto.installationId },
+      });
+      if (existing) return existing;
+    }
+
+    const hostname = dto.hostname ?? dto.name;
+    if (hostname) {
+      const existing = await this.prisma.device.findFirst({
+        where: { orgId, hostname },
+      });
+      if (existing) return existing;
+    }
+
+    return null;
+  }
+
+  async rotateCredential(
+    deviceId: string,
+    orgId: string,
+    reason: string = 'rotation',
+    metadata?: Record<string, any>,
+  ): Promise<{ device: any; newToken: string }> {
+    const device = await this.prisma.device.findFirst({
+      where: { id: deviceId, orgId },
+    });
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    const oldTokenHash = this.hashToken(device.deviceToken);
+    const newToken = this.generateSecureToken();
+    const newTokenHash = this.hashToken(newToken);
+
+    const updated = await this.prisma.device.update({
+      where: { id: deviceId },
+      data: {
+        deviceToken: newToken,
+        deviceTokenHash: newTokenHash,
+        credentialVersion: { increment: 1 },
+        lastRegisteredAt: new Date(),
+      },
+    });
+
+    await this.prisma.credentialRotationEvent.create({
+      data: {
+        deviceId,
+        orgId,
+        oldTokenHash,
+        newTokenHash,
+        reason,
+        metadata: (metadata as any) ?? undefined,
+      },
+    });
+
+    return { device: updated, newToken };
+  }
+
   async findByToken(token: string) {
-    return this.prisma.device.findUnique({ where: { deviceToken: token } });
+    const tokenHash = this.hashToken(token);
+    let device = await this.prisma.device.findFirst({
+      where: { deviceTokenHash: tokenHash },
+    });
+    if (!device) {
+      device = await this.prisma.device.findUnique({
+        where: { deviceToken: token },
+      });
+    }
+    return device;
   }
 
   async findByOrg(orgId: string) {
@@ -119,13 +311,11 @@ export class DevicesService {
       },
     });
 
-    // Update lastSeenAt
     await this.prisma.device.update({
       where: { id: deviceId },
       data: { lastSeenAt: new Date() },
     });
 
-    // Compute scores
     const scores = this.scoring.computeAll({
       cpuUsage: dto.cpu?.usage ?? 0,
       ramPercent: dto.memory?.percent ?? 0,
@@ -146,7 +336,6 @@ export class DevicesService {
       },
     });
 
-    // Evaluate alert rules (non-blocking)
     const alerts: any[] = [];
     try {
       const diskPercent = metric.diskTotal && metric.diskTotal > BigInt(0) && metric.diskUsed != null
@@ -171,8 +360,13 @@ export class DevicesService {
         const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
         const rule = await this.prisma.alertRule.findUnique({ where: { id: alert.alertRuleId } });
         if (rule) {
-          this.notificationService.notifyAlert(alert, rule, device?.name ?? deviceId).catch((e) =>
-            console.error('Notification failed:', e),
+          this.queueService.addAlertNotification({
+            alert,
+            rule,
+            deviceName: device?.name ?? deviceId,
+            orgId,
+          }).catch((e) =>
+            console.error('Alert queue job failed:', e),
           );
         }
       }
@@ -210,5 +404,17 @@ export class DevicesService {
       orderBy: { recordedAt: 'desc' },
     });
     return metric;
+  }
+
+  async findFirstOrNull(where: any): Promise<any> {
+    return this.prisma.device.findFirst({ where });
+  }
+
+  generateSecureToken(): string {
+    return crypto.randomBytes(DEVICE_TOKEN_BYTES).toString('hex');
+  }
+
+  hashToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 }

@@ -186,7 +186,7 @@ prometheus:
 
 grafana:
   enabled: true
-  adminPassword: admin
+  adminPassword: "" # Must be set via --set or secrets file
   persistence:
     enabled: true
     size: 5Gi

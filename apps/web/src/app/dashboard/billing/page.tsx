@@ -12,8 +12,8 @@ const PLAN_DETAILS = [
     label: 'Free',
     price: '$0',
     period: 'forever',
-    color: 'text-white/60',
-    borderColor: 'border-white/10',
+    color: 'text-text-secondary',
+    borderColor: 'border-border',
     features: ['3 devices', '5 reports/month', '100 AI queries/month', '1 team member', '5 alert rules', 'Basic monitoring'],
   },
   {
@@ -40,7 +40,7 @@ const PLAN_DETAILS = [
     label: 'Enterprise',
     price: '$299',
     period: '/month',
-    color: 'text-amber-400',
+    color: 'text-warning',
     borderColor: 'border-amber-500/30',
     features: ['Unlimited devices', 'Unlimited reports', 'Unlimited AI queries', 'Unlimited team members', 'Unlimited alert rules', 'All features', 'SSO', 'API access', 'Premium support'],
   },
@@ -54,15 +54,15 @@ function UsageBar({ used, limit, label }: { used: number; limit: number; label: 
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between text-xs">
-        <span className="text-white/60">{label}</span>
+        <span className="text-text-secondary">{label}</span>
         <span className={cn(
           'font-medium',
-          isAtLimit ? 'text-red-400' : isNearLimit ? 'text-amber-400' : 'text-white/80',
+          isAtLimit ? 'text-danger' : isNearLimit ? 'text-warning' : 'text-text-secondary',
         )}>
           {used} / {limit === 999999 ? '∞' : limit}
         </span>
       </div>
-      <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
+      <div className="h-2 rounded-full bg-surface-muted overflow-hidden">
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',
@@ -115,7 +115,7 @@ export default function BillingPage() {
   if (planLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-white/40" />
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
       </div>
     );
   }
@@ -125,8 +125,8 @@ export default function BillingPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Billing & Plans</h1>
-          <p className="text-sm text-white/40 mt-1">Manage your subscription, view usage, and upgrade your plan.</p>
+          <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Billing & Plans</h1>
+          <p className="text-sm text-text-muted mt-1">Manage your subscription, view usage, and upgrade your plan.</p>
         </div>
         {plan?.subscription && (
           <Button variant="outline" onClick={handleManageSubscription} disabled={actionLoading === 'portal'}>
@@ -152,13 +152,13 @@ export default function BillingPage() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-white">Current Plan</h2>
+              <h2 className="text-lg font-semibold text-text-primary">Current Plan</h2>
               <Badge variant="primary">{plan?.label || 'Free'}</Badge>
               {plan?.subscription?.cancelAtPeriodEnd && (
                 <Badge variant="warning">Cancels at period end</Badge>
               )}
             </div>
-            <p className="text-sm text-white/40 mt-1">
+            <p className="text-sm text-text-muted mt-1">
               ${((plan?.price ?? 0) / 100).toFixed(2)}/month
               {plan?.subscription?.currentPeriodEnd && (
                 <> &middot; Current period ends {new Date(plan.subscription.currentPeriodEnd).toLocaleDateString()}</>
@@ -184,7 +184,7 @@ export default function BillingPage() {
 
       {/* Plan Comparison */}
       <div>
-        <h2 className="text-lg font-semibold text-white mb-4">Compare Plans</h2>
+        <h2 className="text-lg font-semibold text-text-primary mb-4">Compare Plans</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {PLAN_DETAILS.map((p) => {
             const isCurrent = p.tier === currentTier;
@@ -208,16 +208,16 @@ export default function BillingPage() {
                 <CardHeader>
                   <CardTitle className={p.color}>{p.label}</CardTitle>
                   <div className="mt-2">
-                    <span className="text-3xl font-bold text-white">{p.price}</span>
-                    <span className="text-sm text-white/40 ml-1">{p.period}</span>
+                    <span className="text-3xl font-bold text-text-primary">{p.price}</span>
+                    <span className="text-sm text-text-muted ml-1">{p.period}</span>
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col">
                   <ul className="space-y-2.5 flex-1">
                     {p.features.map((f) => (
                       <li key={f} className="flex items-start gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-400 mt-0.5 shrink-0" />
-                        <span className="text-white/70">{f}</span>
+                        <Check className="h-4 w-4 text-success mt-0.5 shrink-0" />
+                        <span className="text-text-secondary">{f}</span>
                       </li>
                     ))}
                   </ul>
@@ -257,7 +257,7 @@ export default function BillingPage() {
       {/* Billing History (Owner only) */}
       {!invoicesLoading && invoices.length > 0 && (
         <div>
-          <h2 className="text-lg font-semibold text-white mb-4">Billing History</h2>
+          <h2 className="text-lg font-semibold text-text-primary mb-4">Billing History</h2>
           <GlassPanel intensity="medium" className="overflow-hidden">
             <Table>
               <TableHeader>
@@ -271,10 +271,10 @@ export default function BillingPage() {
               <TableBody>
                 {invoices.map((inv) => (
                   <TableRow key={inv.id}>
-                    <TableCell className="text-white/70">
+                    <TableCell className="text-text-secondary">
                       {new Date(inv.createdAt).toLocaleDateString()}
                     </TableCell>
-                    <TableCell className="text-white">
+                    <TableCell className="text-text-primary">
                       ${(inv.amount / 100).toFixed(2)} {inv.currency.toUpperCase()}
                     </TableCell>
                     <TableCell>
@@ -288,13 +288,13 @@ export default function BillingPage() {
                           href={inv.invoicePdf}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-primary-400 hover:text-primary-300 text-sm flex items-center gap-1"
+                          className="text-primary hover:text-primary-300 text-sm flex items-center gap-1"
                         >
                           <ExternalLink className="h-3 w-3" />
                           PDF
                         </a>
                       ) : (
-                        <span className="text-white/30 text-sm">—</span>
+                        <span className="text-text-disabled text-sm">—</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -307,8 +307,8 @@ export default function BillingPage() {
 
       {/* Contact for Enterprise */}
       <GlassPanel intensity="light" className="p-6 text-center">
-        <h3 className="text-base font-medium text-white">Need a custom plan?</h3>
-        <p className="text-sm text-white/40 mt-1 max-w-md mx-auto">
+        <h3 className="text-base font-medium text-text-primary">Need a custom plan?</h3>
+        <p className="text-sm text-text-muted mt-1 max-w-md mx-auto">
           Contact our sales team for custom pricing, SSO, dedicated support, and more.
         </p>
         <Button variant="outline" className="mt-4" asChild>

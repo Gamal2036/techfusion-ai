@@ -23,7 +23,10 @@ export class JwtAuthGuard implements CanActivate {
     }
     const token = authHeader.slice(7);
     try {
-      const secret = process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        throw new UnauthorizedException('JWT_SECRET environment variable is not configured');
+      }
       const payload = jwt.verify(token, secret) as any;
       request.user = payload;
       return true;

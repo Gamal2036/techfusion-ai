@@ -43,7 +43,7 @@ prometheus:
     retention: 7d
 
 grafana:
-  adminPassword: admin-staging
+  adminPassword: "" # Must be set via --set or secrets file
 
 loki:
   useTestSchema: true

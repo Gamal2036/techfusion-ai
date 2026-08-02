@@ -26,11 +26,11 @@ export class AiRouterService {
     const resetMs = parseInt(process.env.AI_CIRCUIT_BREAKER_RESET_MS || '600000', 10)
     this.circuitBreaker = new CircuitBreaker(threshold, resetMs)
     this.providers = [
+      new GroqRouterProvider(),
+      new GeminiRouterProvider(),
+      new OpenRouterRouterProvider(),
       new AnthropicRouterProvider(),
       new OpenAiRouterProvider(),
-      new GeminiRouterProvider(),
-      new GroqRouterProvider(),
-      new OpenRouterRouterProvider(),
       new OllamaRouterProvider(),
     ]
   }
@@ -44,6 +44,15 @@ export class AiRouterService {
     const notBlocked = configured.filter(p => !this.circuitBreaker.isOpen(p.name))
 
     switch (strategy) {
+      case 'fast':
+        return notBlocked.sort((a, b) => a.priority - b.priority).filter(p => p.speedTier !== 'slow')
+      case 'quality':
+        return notBlocked.sort((a, b) => {
+          const qualityOrder = { Gemini: 0, OpenRouter: 1, Groq: 2, OpenAI: 3, Anthropic: 4, Ollama: 5 }
+          return (qualityOrder[a.name as keyof typeof qualityOrder] ?? 6) - (qualityOrder[b.name as keyof typeof qualityOrder] ?? 6)
+        })
+      case 'local':
+        return notBlocked.filter(p => p.name === 'Ollama')
       case 'cost-first':
         return notBlocked.sort((a, b) => {
           const order = { free: 0, low: 1, medium: 2, high: 3 }
@@ -71,6 +80,7 @@ export class AiRouterService {
     const fallbackEnabled = (process.env.AI_FALLBACK_ENABLED || 'true') === 'true'
 
     const orderedProviders = await this.selectProviders(strategy)
+    console.log(`[AI_ROUTE_START] strategy=${strategy} providers=${orderedProviders.map(p => p.name).join(',')} timeout=${timeout}ms`)
 
     if (orderedProviders.length === 0) {
       throw new Error('No AI providers configured. Please add at least one API key.')
@@ -78,9 +88,13 @@ export class AiRouterService {
 
     let lastError: Error | null = null
     let attemptCount = 0
+    const routeStart = Date.now()
 
     for (const provider of orderedProviders) {
       attemptCount++
+      const providerStart = Date.now()
+      console.log(`[AI_PROVIDER_ATTEMPT] provider=${provider.name} priority=${provider.priority} attempt=${attemptCount}/${orderedProviders.length}`)
+
       try {
         const result = await Promise.race([
           provider.complete(prompt, systemPrompt),
@@ -89,25 +103,33 @@ export class AiRouterService {
           ),
         ])
 
+        const providerMs = Date.now() - providerStart
+        const totalMs = Date.now() - routeStart
         this.circuitBreaker.recordSuccess(provider.name)
         this.updateStats(provider.name, result.latencyMs, result.costEstimateUsd, true)
 
+        console.log(`[AI_PROVIDER_SUCCESS] provider=${provider.name} model=${result.model} providerMs=${providerMs} totalMs=${totalMs} tokens=${result.tokensUsed} fallbackUsed=${attemptCount > 1}`)
+
         return { ...result, fallbackUsed: attemptCount > 1, attemptCount }
       } catch (error) {
+        const providerMs = Date.now() - providerStart
         lastError = error as Error
         this.circuitBreaker.recordFailure(provider.name)
         this.updateStats(provider.name, 0, 0, false)
-        console.error(`[AiRouter] ${provider.name} failed (attempt ${attemptCount}): ${(error as Error).message}`)
+        console.log(`[AI_PROVIDER_FAIL] provider=${provider.name} reason=${(error as Error).message} providerMs=${providerMs}`)
 
         if (!fallbackEnabled) break
       }
     }
 
+    const totalMs = Date.now() - routeStart
+    console.log(`[AI_ROUTE_COMPLETE] status=ALL_FAILED totalMs=${totalMs} attempts=${attemptCount} lastError=${lastError?.message}`)
     throw new Error(`All AI providers failed after ${attemptCount} attempts. Last error: ${lastError?.message}`)
   }
 
   async embed(text: string): Promise<EmbedResponse> {
     const strategy = this.getActiveStrategy()
+    const timeout = parseInt(process.env.AI_ROUTER_TIMEOUT_MS || '30000', 10)
     const embeddingProviders = (await this.selectProviders(strategy))
       .filter(p => p.supportsEmbedding)
 
@@ -117,7 +139,13 @@ export class AiRouterService {
 
     for (const provider of embeddingProviders) {
       try {
-        return await provider.embed(text)
+        const result = await Promise.race([
+          provider.embed(text),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Embedding timeout after ${timeout}ms`)), timeout),
+          ),
+        ])
+        return result
       } catch (error) {
         this.circuitBreaker.recordFailure(provider.name)
         console.error(`[AiRouter] Embedding failed for ${provider.name}: ${(error as Error).message}`)

@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   BadRequestException,
   NotFoundException,
@@ -45,13 +46,25 @@ export class KbController {
    * List all articles for the organization
    */
   @Get('articles')
-  async listArticles(@OrgContext() orgId: string) {
-    const articles = await this.kbService.getArticles(orgId);
+  async listArticles(
+    @OrgContext() orgId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const result = await this.kbService.getArticles(orgId, {
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
 
     return {
       success: true,
-      data: articles,
-      count: articles.length,
+      data: result.data,
+      pagination: {
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+      },
     };
   }
 
@@ -97,6 +110,26 @@ export class KbController {
         success: true,
         data: article,
       };
+    } catch (error) {
+      if (error.message.includes('not found')) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST /kb/articles/:id/reindex
+   * Re-chunk and re-embed an article
+   */
+  @Post('articles/:id/reindex')
+  async reindexArticle(
+    @Param('id') articleId: string,
+    @OrgContext() orgId: string,
+  ) {
+    try {
+      const article = await this.kbService.reindexArticle(articleId, orgId);
+      return { success: true, data: article };
     } catch (error) {
       if (error.message.includes('not found')) {
         throw new NotFoundException(error.message);

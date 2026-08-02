@@ -3,11 +3,13 @@ import { AiProviderInterface, AiResponse, EmbedResponse } from '../../types/ai-p
 
 export class GroqRouterProvider implements AiProviderInterface {
   readonly name = 'Groq'
-  readonly priority = 4
+  readonly priority = 1
   readonly costTier = 'free' as const
   readonly speedTier = 'ultrafast' as const
   readonly supportsEmbedding = false
   private client: Groq | null = null
+  private lastHealthCheck = 0
+  private lastHealthResult = false
 
   constructor() {
     const apiKey = process.env.GROQ_API_KEY
@@ -22,14 +24,19 @@ export class GroqRouterProvider implements AiProviderInterface {
 
   async isAvailable(): Promise<boolean> {
     if (!this.client) return false
+    const now = Date.now()
+    if (now - this.lastHealthCheck < 60_000) return this.lastHealthResult
+    this.lastHealthCheck = now
     try {
       await this.client.chat.completions.create({
-        model: 'llama-3.1-70b-versatile',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'ping' }],
       })
+      this.lastHealthResult = true
       return true
     } catch {
+      this.lastHealthResult = false
       return false
     }
   }
@@ -37,7 +44,7 @@ export class GroqRouterProvider implements AiProviderInterface {
   async complete(prompt: string, systemPrompt?: string, _timeoutMs?: number): Promise<AiResponse> {
     const start = Date.now()
     try {
-      const model = 'llama-3.1-70b-versatile'
+      const model = 'llama-3.3-70b-versatile'
       const messages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [
         ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
         { role: 'user' as const, content: prompt },

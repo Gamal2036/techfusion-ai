@@ -76,7 +76,7 @@ export function ScoreGauge({ value, variant, size = 'md' }: ScoreGaugeProps) {
           </span>
         </div>
       </div>
-      <span className="text-xs text-white/50 font-medium uppercase tracking-wider">{cfg.label}</span>
+      <span className="text-xs text-text-secondary font-medium uppercase tracking-wider">{cfg.label}</span>
     </div>
   );
 }

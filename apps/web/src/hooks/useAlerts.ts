@@ -1,18 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { apiFetch } from '@/lib/auth-client';
+import { subscribe } from '@/lib/socket-client';
 
 export interface AlertRule {
   id: string;
@@ -53,9 +43,7 @@ export function useAlertRules() {
 
   const fetchRules = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/alerts/rules`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/alerts/rules');
       if (res.ok) {
         setRules(await res.json());
       }
@@ -71,9 +59,8 @@ export function useAlertRules() {
   }, [fetchRules]);
 
   const createRule = useCallback(async (data: Partial<AlertRule>) => {
-    const res = await fetch(`${API_URL}/alerts/rules`, {
+    const res = await apiFetch('/alerts/rules', {
       method: 'POST',
-      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     if (res.ok) {
@@ -85,9 +72,8 @@ export function useAlertRules() {
   }, []);
 
   const updateRule = useCallback(async (id: string, data: Partial<AlertRule>) => {
-    const res = await fetch(`${API_URL}/alerts/rules/${id}`, {
+    const res = await apiFetch(`/alerts/rules/${id}`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
     if (res.ok) {
@@ -99,9 +85,8 @@ export function useAlertRules() {
   }, []);
 
   const deleteRule = useCallback(async (id: string) => {
-    const res = await fetch(`${API_URL}/alerts/rules/${id}`, {
+    const res = await apiFetch(`/alerts/rules/${id}`, {
       method: 'DELETE',
-      headers: getAuthHeaders(),
     });
     if (res.ok) {
       setRules((prev) => prev.filter((r) => r.id !== id));
@@ -117,9 +102,7 @@ export function useAlerts() {
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/alerts/latest`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/alerts/latest');
       if (res.ok) {
         setAlerts(await res.json());
       }
@@ -135,9 +118,8 @@ export function useAlerts() {
   }, [fetchAlerts]);
 
   const acknowledgeAlert = useCallback(async (id: string) => {
-    const res = await fetch(`${API_URL}/alerts/${id}/acknowledge`, {
+    const res = await apiFetch(`/alerts/${id}/acknowledge`, {
       method: 'PATCH',
-      headers: getAuthHeaders(),
     });
     if (res.ok) {
       setAlerts((prev) => prev.filter((a) => a.id !== id));
@@ -147,32 +129,13 @@ export function useAlerts() {
   return { alerts, loading, refetch: fetchAlerts, acknowledgeAlert };
 }
 
-export function useAlertWebSocket(orgId: string | undefined, onAlert: (alert: Alert) => void) {
-  const socketRef = useRef<Socket | null>(null);
+export function useAlertWebSocket(onAlert: (alert: Alert) => void) {
+  const callbackRef = useRef(onAlert);
+  callbackRef.current = onAlert;
 
   useEffect(() => {
-    if (!orgId) return;
-
-    const socket = io(`${WS_URL}/metrics`, {
-      query: { orgId },
-      transports: ['websocket', 'polling'],
+    return subscribe('/metrics', 'alerts', (alert: Alert) => {
+      callbackRef.current(alert);
     });
-
-    socket.on('connect', () => {
-      console.log('[WS] Connected to alert stream');
-    });
-
-    socket.on('alerts', (data: Alert) => {
-      onAlert(data);
-    });
-
-    socketRef.current = socket;
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [orgId, onAlert]);
-
-  return { isConnected: socketRef.current?.connected ?? false };
+  }, []);
 }

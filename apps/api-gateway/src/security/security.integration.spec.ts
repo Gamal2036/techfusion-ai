@@ -4,6 +4,10 @@ import { SecurityService } from './security.service';
 import { SecurityScoringService } from './services/security-scoring.service';
 import { SecurityReportingService } from './services/security-reporting.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueueModule } from '../queue/queue.module';
+import { QueueService } from '../queue/queue.service';
+import { MockQueueService } from '../queue/queue.service.mock';
+import { DevicesService } from '../devices/devices.service';
 
 describe('Security Integration', () => {
   let controller: SecurityController;
@@ -74,15 +78,27 @@ describe('Security Integration', () => {
       },
     };
 
+    const mockDevicesService = {
+      findByToken: jest.fn().mockImplementation(async (token: string) => {
+        if (token === 'tok-123') return mockDevice;
+        return null;
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
+      imports: [QueueModule],
       controllers: [SecurityController],
       providers: [
         SecurityService,
         SecurityScoringService,
         SecurityReportingService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: DevicesService, useValue: mockDevicesService },
       ],
-    }).compile();
+    })
+      .overrideProvider(QueueService)
+      .useClass(MockQueueService)
+      .compile();
 
     controller = module.get<SecurityController>(SecurityController);
   });
@@ -109,6 +125,7 @@ describe('Security Integration', () => {
     });
 
     it('rejects invalid device token', async () => {
+      mockPrisma.device.findFirst.mockResolvedValue(null);
       mockPrisma.device.findUnique.mockResolvedValue(null);
 
       const result = await controller.submitFindings({

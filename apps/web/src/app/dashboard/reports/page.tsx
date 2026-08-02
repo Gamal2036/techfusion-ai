@@ -1,37 +1,66 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { GlassPanel, Badge, Button } from '@techfusion/ui';
-import { BarChart3, FileText, Download, Plus, Loader2, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { GlassPanel, Badge, Button, Skeleton, EmptyState } from '@techfusion/ui';
+import { BarChart3, FileText, Download, Plus, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
 import { useReports } from '@/hooks/useReports';
+import { getApiUrl } from '@/lib/auth-client';
+import type { ReportType, ReportFormat } from '@techfusion/types';
+import { ScheduledReportsSection } from './ScheduledReportsSection';
+
+const REPORT_TYPES: { value: ReportType; label: string }[] = [
+  { value: 'device_health', label: 'Device Health' },
+  { value: 'security_executive', label: 'Security Executive' },
+  { value: 'fleet_summary', label: 'Fleet Summary' },
+  { value: 'network', label: 'Network' },
+  { value: 'inventory', label: 'Inventory' },
+  { value: 'remote_support', label: 'Remote Support' },
+];
+
+const REPORT_FORMATS: { value: ReportFormat; label: string }[] = [
+  { value: 'pdf', label: 'PDF' },
+  { value: 'docx', label: 'DOCX' },
+  { value: 'html', label: 'HTML' },
+  { value: 'csv', label: 'CSV' },
+  { value: 'json', label: 'JSON' },
+];
 
 export default function ReportsPage() {
-  const { reports, loading, generating, refetch, generateReport } = useReports();
+  const { reports, loading, generating, error, refetch, generateReport, deleteReport } = useReports();
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [newType, setNewType] = useState('health');
-  const [error, setError] = useState('');
+  const [newType, setNewType] = useState<ReportType>('device_health');
+  const [newFormat, setNewFormat] = useState<ReportFormat>('pdf');
+  const [generateAiSummary, setGenerateAiSummary] = useState(false);
 
   const handleGenerate = async () => {
     if (!newTitle.trim()) return;
-    setError('');
     try {
-      await generateReport(newTitle.trim(), newType);
+      await generateReport(newType, newFormat, {
+        title: newTitle.trim(),
+        generateAiSummary,
+      });
       setShowCreate(false);
       setNewTitle('');
-      setNewType('health');
     } catch {
-      setError('Failed to generate report. Please try again.');
+      // Error is set by the hook
     }
+  };
+
+  const buildDownloadUrl = (signedUrl: string | null) => {
+    if (!signedUrl) return null;
+    if (signedUrl.startsWith('http')) return signedUrl;
+    return `${getApiUrl()}${signedUrl}`;
   };
 
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Reports</h1>
-          <p className="text-sm text-white/40 mt-1">Analytics and reporting dashboards.</p>
+          <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Reports</h1>
+          <p className="text-sm text-text-muted mt-1">Analytics and reporting dashboards.</p>
         </div>
         <Button variant="glass" size="sm" onClick={() => setShowCreate(!showCreate)} disabled={generating}>
           {generating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
@@ -39,26 +68,48 @@ export default function ReportsPage() {
         </Button>
       </motion.div>
 
+      {error && (
+        <GlassPanel intensity="light" className="p-4 border-red-500/30">
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{error.message}</span>
+            {error.code === 'SECURITY_SCAN_REQUIRED' && (
+              <Link href="/dashboard/cybersecurity" className="ml-1 text-primary hover:text-primary-300 underline underline-offset-2 transition-colors">
+                Go to Cybersecurity
+              </Link>
+            )}
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => refetch()}>Retry</Button>
+          </div>
+        </GlassPanel>
+      )}
+
       {showCreate && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
           <GlassPanel intensity="light" className="p-5">
-            <h3 className="text-sm font-medium text-white mb-4">New Report</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <h3 className="text-sm font-medium text-text-primary mb-4">New Report</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs text-white/40 mb-1">Report Title</label>
+                <label className="block text-xs text-text-muted mb-1">Report Title</label>
                 <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="Monthly health report"
-                  className="h-10 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-primary-500/40" />
+                  className="h-10 w-full rounded-xl border border-border bg-surface-subtle px-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-primary-500/40" />
               </div>
               <div>
-                <label className="block text-xs text-white/40 mb-1">Type</label>
-                <select value={newType} onChange={(e) => setNewType(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-primary-500/40">
-                  <option value="health">Device Health</option>
-                  <option value="security">Security</option>
-                  <option value="performance">Performance</option>
-                  <option value="compliance">Compliance</option>
-                  <option value="custom">Custom</option>
+                <label className="block text-xs text-text-muted mb-1">Type</label>
+                <select value={newType} onChange={(e) => setNewType(e.target.value as ReportType)}
+                  className="h-10 w-full rounded-xl border border-border bg-surface-subtle px-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-primary-500/40">
+                  {REPORT_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Format</label>
+                <select value={newFormat} onChange={(e) => setNewFormat(e.target.value as ReportFormat)}
+                  className="h-10 w-full rounded-xl border border-border bg-surface-subtle px-3 text-sm text-text-primary outline-none focus:ring-2 focus:ring-primary-500/40">
+                  {REPORT_FORMATS.map((f) => (
+                    <option key={f.value} value={f.value}>{f.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="flex items-end gap-2">
@@ -69,7 +120,15 @@ export default function ReportsPage() {
                 <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
               </div>
             </div>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={generateAiSummary}
+                onChange={(e) => setGenerateAiSummary(e.target.checked)}
+                className="rounded border-border-strong bg-surface-subtle text-primary-500 focus:ring-primary-500/40"
+              />
+              Include AI executive summary
+            </label>
           </GlassPanel>
         </motion.div>
       )}
@@ -77,20 +136,19 @@ export default function ReportsPage() {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-32 rounded-xl bg-white/[0.04] animate-pulse" />
+            <Skeleton key={i} className="h-32 rounded-xl" />
           ))}
         </div>
       ) : reports.length === 0 ? (
-        <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
-          <BarChart3 className="h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white/50">No reports yet</h3>
-          <p className="text-sm text-white/30 mt-1 max-w-md">
-            Generate your first report to get insights about your devices and infrastructure.
-          </p>
-          <Button variant="glass" size="sm" className="mt-4" onClick={() => setShowCreate(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Generate Report
-          </Button>
-        </GlassPanel>
+        <EmptyState
+          icon={<BarChart3 className="h-12 w-12" />}
+          title="No reports yet"
+          description="Generate your first report to get insights about your devices and infrastructure."
+          primaryAction={{
+            label: 'Generate Report',
+            onClick: () => setShowCreate(true),
+          }}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {reports.map((report) => (
@@ -99,35 +157,50 @@ export default function ReportsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <div className="h-10 w-10 rounded-xl bg-primary-500/10 flex items-center justify-center shrink-0">
-                      <FileText className="h-5 w-5 text-primary-400" />
+                      <FileText className="h-5 w-5 text-primary" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-medium text-white">{report.title}</h3>
+                      <h3 className="text-sm font-medium text-text-primary">{report.title}</h3>
                       <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="primary" className="text-[10px]">{report.type}</Badge>
+                        <Badge variant="primary" className="text-[10px]">{report.type.replace(/_/g, ' ')}</Badge>
                         <Badge variant={report.status === 'completed' ? 'success' : report.status === 'generating' ? 'warning' : 'secondary'} className="text-[10px]">
                           {report.status === 'generating' ? <Loader2 className="h-3 w-3 mr-0.5 animate-spin" /> : null}
                           {report.status}
                         </Badge>
+                        {report.aiGenerated && (
+                          <Badge variant="secondary" className="text-[10px]">AI</Badge>
+                        )}
                       </div>
-                      <p className="text-xs text-white/30 mt-1.5">
+                      <p className="text-xs text-text-disabled mt-1.5">
                         Created {new Date(report.createdAt).toLocaleDateString()}
                         {report.completedAt && <> &middot; Completed {new Date(report.completedAt).toLocaleDateString()}</>}
                       </p>
                     </div>
                   </div>
-                  {report.fileUrl && (
-                    <a href={report.fileUrl} target="_blank" rel="noopener noreferrer"
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-white/40 hover:text-primary-400 hover:bg-white/[0.04] transition-all">
-                      <Download className="h-4 w-4" />
-                    </a>
-                  )}
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => {
+                      if (window.confirm('Delete this report?')) {
+                        deleteReport(report.id);
+                      }
+                    }}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-text-muted hover:text-danger hover:bg-surface-subtle transition-all">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    {report.signedUrl && (
+                      <a href={buildDownloadUrl(report.signedUrl) || '#'} target="_blank" rel="noopener noreferrer"
+                        className="h-8 w-8 rounded-lg flex items-center justify-center text-text-muted hover:text-primary hover:bg-surface-subtle transition-all">
+                        <Download className="h-4 w-4" />
+                      </a>
+                    )}
+                  </div>
                 </div>
               </GlassPanel>
             </motion.div>
           ))}
         </div>
       )}
+
+      <ScheduledReportsSection />
     </div>
   );
 }

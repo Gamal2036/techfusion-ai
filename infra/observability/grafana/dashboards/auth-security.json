@@ -1,0 +1,42 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Auth Failures by Reason",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "rate(authentication_failures_total[5m])", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "title": "Rate Limit Rejections",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(rate_limit_rejections_total[5m])", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "title": "Validation Failures",
+      "type": "stat",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "rate(validation_failures_total[5m])", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "title": "WebSocket Auth Failures",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        { "expr": "rate(websocket_auth_failures_total[5m])", "legendFormat": "{{namespace}}" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["techfusion", "auth", "security"],
+  "title": "Authentication and Security",
+  "uid": "tf-auth-security"
+}

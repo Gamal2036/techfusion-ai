@@ -1,0 +1,29 @@
+services:
+  test-postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: techfusion-test-postgres
+    environment:
+      POSTGRES_USER: techfusion_test
+      POSTGRES_PASSWORD: test_password_123
+      POSTGRES_DB: techfusion_test
+    ports:
+      - "5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U techfusion_test -d techfusion_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  test-redis:
+    image: redis:7-alpine
+    container_name: techfusion-test-redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy noeviction
+    ports:
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10

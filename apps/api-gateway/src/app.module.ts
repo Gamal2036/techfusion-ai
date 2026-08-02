@@ -1,10 +1,15 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { getRateLimitConfig } from './config/rate-limits';
 import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsInterceptor } from './metrics.interceptor';
 import { OrgContextInterceptor } from './common/org-context.interceptor';
+import { CorrelationIdInterceptor } from './common/correlation-id';
+import { RequestLoggingInterceptor } from './common/request-logging.interceptor';
+import { BigIntSerializerInterceptor } from './common/bigint-serializer.interceptor';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { MfaModule } from './mfa/mfa.module';
@@ -27,18 +32,22 @@ import { AuditModule } from './audit/audit.module';
 import { EncryptionModule } from './encryption/encryption.module';
 import { RetentionModule } from './retention/retention.module';
 import { AdminModule } from './admin/admin.module';
+import { QueueModule } from './queue/queue.module';
+import { EnrollmentModule } from './enrollment/enrollment.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([{
-      name: 'short', ttl: 1000, limit: 10,
-    }, {
-      name: 'long', ttl: 60000, limit: 100,
-    }]),
-    PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule,
+    ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot(getRateLimitConfig()),
+    PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule, QueueModule, EnrollmentModule, DashboardModule,
   ],
   controllers: [HealthController, DemoController, MetricsController],
   providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: CorrelationIdInterceptor,
+    },
     {
       provide: APP_INTERCEPTOR,
       useClass: MetricsInterceptor,
@@ -46,6 +55,10 @@ import { AdminModule } from './admin/admin.module';
     {
       provide: APP_INTERCEPTOR,
       useClass: OrgContextInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: BigIntSerializerInterceptor,
     },
     {
       provide: APP_GUARD,

@@ -1,18 +1,19 @@
-import {
-  WebSocketGateway,
-  WebSocketServer,
-} from '@nestjs/websockets';
+import { Injectable } from '@nestjs/common';
 import { Server } from 'socket.io';
 
-@WebSocketGateway({
-  cors: { origin: '*', credentials: true },
-  namespace: '/metrics',
-})
+@Injectable()
 export class AlertsGateway {
-  @WebSocketServer()
-  server: Server;
+  private server: Server | null = null;
 
-  broadcastAlert(orgId: string, data: any) {
+  setServer(server: Server): void {
+    this.server = server;
+  }
+
+  broadcastAlert(orgId: string, data: any): void {
+    if (!this.server) {
+      console.warn('[AlertsGateway] Server not initialized — alert not broadcast');
+      return;
+    }
     this.server.to(`org:${orgId}`).emit('alerts', data);
   }
 }

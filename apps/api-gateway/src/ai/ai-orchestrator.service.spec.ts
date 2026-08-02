@@ -47,6 +47,9 @@ describe('AiOrchestratorService', () => {
     aiUsageLog: {
       count: jest.fn().mockResolvedValue(0),
     },
+    aiProviderConfig: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   } as unknown as PrismaService;
 
   beforeEach(async () => {
@@ -143,6 +146,73 @@ describe('AiOrchestratorService', () => {
       expect(calls[1][0]).toHaveProperty('promptTokens');
       expect(calls[1][0]).toHaveProperty('completionTokens');
       expect(calls[1][0]).toHaveProperty('totalTokens');
+    });
+  });
+
+  describe('organization context guard', () => {
+    it('throws ForbiddenException when orgId is undefined', async () => {
+      await expect(service.complete(undefined as any, {
+        systemPrompt: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+      })).rejects.toThrow('Organization context is required');
+    });
+
+    it('throws ForbiddenException when orgId is empty string', async () => {
+      await expect(service.complete('', {
+        systemPrompt: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+      })).rejects.toThrow('Organization context is required');
+    });
+
+    it('never calls Prisma findUnique with undefined orgId', async () => {
+      await expect(service.complete(undefined as any, {
+        systemPrompt: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+      })).rejects.toThrow();
+
+      expect(mockPrisma.organization.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('rejects embedding when orgId is undefined', async () => {
+      await expect(service.embed(undefined as any, {
+        model: 'test-model',
+        input: ['hello'],
+      })).rejects.toThrow('Organization context is required');
+    });
+
+    it('rejects getEmbedding when orgId is undefined', async () => {
+      await expect(service.getEmbedding(undefined as any, 'hello')).rejects.toThrow(
+        'Organization context is required',
+      );
+    });
+  });
+
+  describe('tenant isolation', () => {
+    it('loads providers scoped to the authenticated orgId', async () => {
+      service.setTestProviders([
+        { name: 'primary', provider: new MockSuccessProvider(), model: 'mock-model', priority: 1 },
+      ]);
+
+      await service.complete('org-1', {
+        systemPrompt: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledWith({ where: { id: 'org-1' } });
+    });
+
+    it('logs usage with the authenticated orgId', async () => {
+      service.setTestProviders([
+        { name: 'primary', provider: new MockSuccessProvider(), model: 'mock-model', priority: 1 },
+      ]);
+
+      await service.complete('org-specific', {
+        systemPrompt: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+      });
+
+      const logCall = (usageService.log as jest.Mock).mock.calls[0][0];
+      expect(logCall.orgId).toBe('org-specific');
     });
   });
 });

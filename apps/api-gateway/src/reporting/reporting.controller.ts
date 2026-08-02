@@ -1,16 +1,23 @@
 import {
-  Controller, Get, Post, Delete, Param, Query, Body, Req, Res,
-  NotFoundException, ForbiddenException, StreamableFile,
+  Controller, Get, Post, Delete, Patch, Param, Query, Body, Req, Res,
+  NotFoundException, ForbiddenException, UnauthorizedException, BadRequestException,
+  ParseUUIDPipe,
+  StreamableFile,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ReportingService } from './reporting.service';
-import { GenerateReportDto, CreateTemplateDto, CreateScheduleDto } from './dto/generate-report.dto';
+import { ReportStorageService } from './services/report-storage.service';
+import { GenerateReportDto, CreateTemplateDto, CreateScheduleDto, UpdateScheduleDto } from './dto/generate-report.dto';
 import { Roles } from '../common/roles.decorator';
+import { Public } from '../common/public.decorator';
 import { RequireFeature } from '../common/plan.decorator';
 
 @Controller('reports')
 export class ReportingController {
-  constructor(private readonly reporting: ReportingService) {}
+  constructor(
+    private readonly reporting: ReportingService,
+    private readonly storage: ReportStorageService,
+  ) {}
 
   // Generate a new report
   @Post('generate')
@@ -27,35 +34,43 @@ export class ReportingController {
     return this.reporting.list(req.user.orgId, type);
   }
 
-  // Download report by signed URL
+  // Download report by signed URL (public — HMAC signature replaces JWT)
   @Get('download/:id/:format')
+  @Public()
   async download(
     @Param('id') id: string,
     @Param('format') format: string,
     @Query('expires') expires: string,
     @Query('sig') sig: string,
-    @Req() req: any,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const orgId = req.user?.orgId;
-    const result = await this.reporting.getDownloadInfo(id, format, orgId);
+    if (!expires || !sig) {
+      throw new BadRequestException('Missing required query parameters: expires, sig');
+    }
+
+    const result = await this.reporting.getDownloadInfo(id, format);
     if (!result) throw new NotFoundException('Report not found');
 
     const { buffer, report } = result;
 
+    const urlValidation = this.storage.validateSignedUrl(id, format, expires, sig, report.orgId);
+    if (!urlValidation.valid) {
+      throw new UnauthorizedException(urlValidation.reason || 'Invalid download URL');
+    }
+
     const mimeTypes: Record<string, string> = {
       pdf: 'application/pdf',
       docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      html: 'text/html',
+      html: 'text/html; charset=utf-8',
     };
 
-    res.set({
-      'Content-Type': mimeTypes[format] || 'application/octet-stream',
-      'Content-Disposition': `attachment; filename="${report.title}.${format}"`,
-      'Content-Length': buffer.length.toString(),
-    });
+    const safeFilename = report.title.replace(/[^a-zA-Z0-9_\- ]/g, '_');
 
-    return buffer;
+    return new StreamableFile(buffer, {
+      type: mimeTypes[format] || 'application/octet-stream',
+      disposition: `attachment; filename="${safeFilename}.${format}"`,
+      length: buffer.length,
+    });
   }
 
   // Branding
@@ -72,6 +87,21 @@ export class ReportingController {
     return this.reporting.setBranding(req.user.orgId, dto);
   }
 
+  @Delete(':id')
+  @Roles('Admin', 'Owner')
+  async deleteReport(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    const deleted = await this.reporting.deleteReport(id, req.user.orgId);
+    if (!deleted) {
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'REPORT_NOT_FOUND',
+        code: 'REPORT_NOT_FOUND',
+        message: 'Report not found',
+      });
+    }
+    return { deleted: true };
+  }
+
   // Schedules
   @Get('schedules')
   async listSchedules(@Req() req: any) {
@@ -84,11 +114,37 @@ export class ReportingController {
     return this.reporting.createSchedule(req.user.orgId, dto);
   }
 
+  @Patch('schedules/:id')
+  @Roles('Admin', 'Owner')
+  async updateSchedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateScheduleDto,
+    @Req() req: any,
+  ) {
+    const updated = await this.reporting.updateSchedule(id, req.user.orgId, dto);
+    if (!updated) {
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'REPORT_SCHEDULE_NOT_FOUND',
+        code: 'REPORT_SCHEDULE_NOT_FOUND',
+        message: 'Schedule not found',
+      });
+    }
+    return updated;
+  }
+
   @Delete('schedules/:id')
   @Roles('Admin', 'Owner')
-  async deleteSchedule(@Param('id') id: string, @Req() req: any) {
+  async deleteSchedule(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const deleted = await this.reporting.deleteSchedule(id, req.user.orgId);
-    if (!deleted) throw new NotFoundException('Schedule not found');
+    if (!deleted) {
+      throw new NotFoundException({
+        statusCode: 404,
+        error: 'REPORT_SCHEDULE_NOT_FOUND',
+        code: 'REPORT_SCHEDULE_NOT_FOUND',
+        message: 'Schedule not found',
+      });
+    }
     return { deleted: true };
   }
 }

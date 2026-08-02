@@ -1,21 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders(): Record<string, string> {
-  let token: string | null = null;
-  try {
-    token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
-  } catch {
-    token = null;
-  }
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { apiFetch } from '@/lib/auth-client';
+import { useSocketConnectionState } from '@/hooks/useSocketConnectionState';
 
 export interface Device {
   id: string;
@@ -62,33 +49,68 @@ export interface DeviceScore {
   riskScore: number;
 }
 
+const NORMAL_POLL_INTERVAL = 15000;
+const FAST_POLL_INTERVAL = 3000;
+const DISCONNECTED_POLL_INTERVAL = 10000;
+
 export function useDeviceList() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [fastPolling, setFastPolling] = useState(false);
+  const socketState = useSocketConnectionState('/metrics');
 
   const fetchDevices = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/devices`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/devices');
       if (res.ok) {
         const data = await res.json();
-        setDevices(data);
+        if (Array.isArray(data)) {
+          setDevices(data);
+        } else if (data && Array.isArray(data.data)) {
+          setDevices(data.data);
+        } else {
+          setDevices([]);
+        }
+        setError(null);
+      } else {
+        const errorBody = await res.text().catch(() => '');
+        setError(`Failed to fetch devices: ${res.status} ${errorBody}`.trim());
       }
     } catch (e) {
+      setError('Network error while fetching devices');
       console.error('Failed to fetch devices:', e);
     } finally {
       setLoading(false);
     }
   }, []);
 
+  const getPollInterval = useCallback(() => {
+    if (fastPolling) return FAST_POLL_INTERVAL;
+    if (socketState === 'disconnected' || socketState === 'reconnecting') {
+      return DISCONNECTED_POLL_INTERVAL;
+    }
+    return NORMAL_POLL_INTERVAL;
+  }, [fastPolling, socketState]);
+
   useEffect(() => {
     fetchDevices();
-    const interval = setInterval(fetchDevices, 15000);
+    const interval = setInterval(fetchDevices, getPollInterval());
     return () => clearInterval(interval);
-  }, [fetchDevices]);
+  }, [fetchDevices, getPollInterval]);
 
-  return { devices, loading, refetch: fetchDevices };
+  useEffect(() => {
+    if (fastPolling) {
+      const timeout = setTimeout(() => setFastPolling(false), 120000);
+      return () => clearTimeout(timeout);
+    }
+  }, [fastPolling]);
+
+  const startFastPolling = useCallback(() => {
+    setFastPolling(true);
+  }, []);
+
+  return { devices, loading, error, refetch: fetchDevices, startFastPolling, fastPolling };
 }
 
 export function useDevice(id: string | undefined) {
@@ -100,12 +122,21 @@ export function useDevice(id: string | undefined) {
   const fetchDevice = useCallback(async () => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/devices/${id}/latest`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch(`/devices/${id}/latest`);
       if (res.ok) {
         const data = await res.json();
         setDevice(data.device);
+        if (data.metrics) {
+          setMetrics((prev) => {
+            const existing = new Set(prev.map((m) => m.id));
+            const newMetrics = Array.isArray(data.metrics) ? data.metrics : [data.metrics];
+            const unique = newMetrics.filter((m: DeviceMetric) => !existing.has(m.id));
+            if (unique.length === 0) return prev;
+            const next = [...prev, ...unique];
+            if (next.length > 200) next.splice(0, next.length - 200);
+            return next;
+          });
+        }
         setScores(data.scores);
       }
     } catch (e) {
@@ -116,9 +147,7 @@ export function useDevice(id: string | undefined) {
   const fetchMetrics = useCallback(async (minutes = 60) => {
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/devices/${id}/metrics?minutes=${minutes}&limit=200`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch(`/devices/${id}/metrics?minutes=${minutes}&limit=200`);
       if (res.ok) {
         const data = await res.json();
         setMetrics(data);
@@ -137,11 +166,22 @@ export function useDevice(id: string | undefined) {
 
   const addLiveMetric = useCallback((metric: DeviceMetric, score: DeviceScore) => {
     setMetrics((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      if (existingIds.has(metric.id)) return prev;
+      
       const next = [...prev, metric];
       if (next.length > 200) next.splice(0, next.length - 200);
-      return next;
+      return next.sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
     });
     setScores(score);
+
+    setDevice((prev) => {
+      if (!prev) return prev;
+      if (metric.recordedAt && (!prev.lastSeenAt || new Date(metric.recordedAt) > new Date(prev.lastSeenAt))) {
+        return { ...prev, lastSeenAt: metric.recordedAt };
+      }
+      return prev;
+    });
   }, []);
 
   return { device, metrics, scores, loading, refetch: fetchDevice, refetchMetrics: fetchMetrics, addLiveMetric };

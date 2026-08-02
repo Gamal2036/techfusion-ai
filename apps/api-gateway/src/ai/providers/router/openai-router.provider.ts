@@ -3,7 +3,7 @@ import { AiProviderInterface, AiResponse, EmbedResponse } from '../../types/ai-p
 
 export class OpenAiRouterProvider implements AiProviderInterface {
   readonly name = 'OpenAI'
-  readonly priority = 2
+  readonly priority = 5
   readonly costTier = 'low' as const
   readonly speedTier = 'fast' as const
   readonly supportsEmbedding = true

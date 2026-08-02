@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Shield, RefreshCw, Download, AlertTriangle, CheckCircle, XCircle, ChevronDown, Activity } from 'lucide-react';
-import { cn, GlassPanel, Badge, Button, ScorePill, Card, CardHeader, CardTitle, CardContent, CardDescription } from '@techfusion/ui';
+import { Shield, Download, AlertTriangle, CheckCircle, ChevronDown, Activity } from 'lucide-react';
+import { cn, GlassPanel, Badge, Button } from '@techfusion/ui';
 import { useDeviceList } from '@/hooks/useDevices';
 import { useSecurity, SecurityFinding } from '@/hooks/useSecurity';
+import { apiFetch } from '@/lib/auth-client';
 
 const severityColors: Record<string, string> = {
   critical: '#dc2626',
@@ -74,7 +75,7 @@ function ScoreGauge({ score }: { score: number }) {
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center">
           <span className="text-2xl font-bold" style={{ color: getColor(score) }}>{score}</span>
-          <span className="text-[10px] text-white/40 block -mt-1">/ 100</span>
+          <span className="text-[10px] text-text-muted block -mt-1">/ 100</span>
         </div>
       </div>
     </div>
@@ -106,25 +107,25 @@ function FindingsSection({ findings, onRemediate }: { findings: SecurityFinding[
               {sev} ({items.length})
             </h4>
             {items.map((f) => (
-              <GlassPanel key={f.id} intensity="light" className={cn('p-4 border rounded-xl', severityBg[f.severity] || 'border-white/[0.06]')}>
+              <GlassPanel key={f.id} intensity="light" className={cn('p-4 border rounded-xl', severityBg[f.severity] || 'border-border')}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <SeverityBadge severity={f.severity} />
-                      <span className="text-[10px] text-white/30 uppercase">{categoryLabels[f.category] || f.category}</span>
-                      {f.status === 'remediated' && <CheckCircle className="h-3 w-3 text-green-400" />}
+                      <span className="text-[10px] text-text-disabled uppercase">{categoryLabels[f.category] || f.category}</span>
+                      {f.status === 'remediated' && <CheckCircle className="h-3 w-3 text-success" />}
                     </div>
-                    <p className="text-sm text-white/80 font-medium">{f.finding}</p>
+                    <p className="text-sm text-text-secondary font-medium">{f.finding}</p>
                     <div className="mt-2">
                       <button
                         onClick={() => setExpanded((prev) => ({ ...prev, [f.id]: !prev[f.id] }))}
-                        className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                        className="text-xs text-primary hover:text-primary-300 transition-colors"
                       >
                         {expanded[f.id] ? 'Hide remediation' : 'Show remediation'}
                       </button>
                       {expanded[f.id] && (
-                        <div className="mt-2 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-                          <p className="text-xs text-white/60 leading-relaxed">{f.remediation}</p>
+                        <div className="mt-2 p-3 rounded-lg bg-surface-subtle border border-border">
+                          <p className="text-xs text-text-secondary leading-relaxed">{f.remediation}</p>
                         </div>
                       )}
                     </div>
@@ -132,7 +133,7 @@ function FindingsSection({ findings, onRemediate }: { findings: SecurityFinding[
                   {f.status === 'open' && (
                     <button
                       onClick={() => onRemediate(f.id)}
-                      className="shrink-0 h-7 px-3 rounded-lg text-xs font-medium bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 transition-all"
+                      className="shrink-0 h-7 px-3 rounded-lg text-xs font-medium bg-green-500/10 text-success border border-green-500/30 hover:bg-green-500/20 transition-all"
                     >
                       Remediate
                     </button>
@@ -160,11 +161,23 @@ export default function CybersecurityPage() {
   const openFindings = latestScan?.findings?.filter((f) => f.status === 'open') || [];
   const allFindings = latestScan?.findings || [];
 
-  const handleExportPdf = useCallback(() => {
+  const handleExportPdf = useCallback(async () => {
     if (!selectedId) return;
-    const token = localStorage.getItem('accessToken');
-    const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/security/export-pdf/${selectedId}`;
-    window.open(url, '_blank');
+    try {
+      const res = await apiFetch(`/security/export-pdf/${selectedId}`);
+      if (!res.ok) throw new Error('Failed to export report');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `security-report-${selectedId.slice(0, 8)}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export failed:', e);
+    }
   }, [selectedId]);
 
   return (
@@ -172,8 +185,8 @@ export default function CybersecurityPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Cybersecurity Center</h1>
-          <p className="text-sm text-white/40 mt-1">Security posture scanning, findings, and remediation.</p>
+          <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Cybersecurity Center</h1>
+          <p className="text-sm text-text-muted mt-1">Security posture scanning, findings, and remediation.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -204,8 +217,8 @@ export default function CybersecurityPage() {
           className={cn(
             'flex items-center justify-between gap-2 w-full sm:w-80 px-4 py-2.5 rounded-xl text-sm transition-all border',
             selectedDevice
-              ? 'bg-primary-600/10 border-primary-500/30 text-white'
-              : 'bg-white/[0.03] border-white/[0.06] text-white/50 hover:text-white/70',
+              ? 'bg-primary-600/10 border-primary-500/30 text-text-primary'
+              : 'bg-surface-subtle border-border text-text-secondary hover:text-text-secondary',
           )}
         >
           <div className="flex items-center gap-2">
@@ -217,7 +230,7 @@ export default function CybersecurityPage() {
         {showDropdown && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
-            <div className="absolute top-full left-0 z-20 mt-1 w-80 rounded-xl border border-white/[0.06] bg-background/95 backdrop-blur-xl shadow-2xl max-h-60 overflow-y-auto">
+            <div className="absolute top-full left-0 z-20 mt-1 w-80 rounded-xl border border-border bg-background/95 backdrop-blur-xl shadow-2xl max-h-60 overflow-y-auto">
               {devices.map((d) => (
                 <button
                   key={d.id}
@@ -226,11 +239,11 @@ export default function CybersecurityPage() {
                     'w-full text-left px-4 py-2.5 text-sm transition-colors',
                     selectedId === d.id
                       ? 'text-primary-300 bg-primary-600/10'
-                      : 'text-white/60 hover:text-white/80 hover:bg-white/[0.04]',
+                      : 'text-text-secondary hover:text-text-secondary hover:bg-surface-subtle',
                   )}
                 >
                   {d.name}
-                  {d.hostname && <span className="text-white/20 ml-1.5 text-xs">({d.hostname})</span>}
+                  {d.hostname && <span className="text-text-disabled ml-1.5 text-xs">({d.hostname})</span>}
                 </button>
               ))}
             </div>
@@ -240,28 +253,36 @@ export default function CybersecurityPage() {
 
       {!selectedId ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
-          <Shield className="h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white/50">Select a device</h3>
-          <p className="text-sm text-white/30 mt-1 max-w-md">
+          <Shield className="h-12 w-12 text-text-disabled mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary">Select a device</h3>
+          <p className="text-sm text-text-disabled mt-1 max-w-md">
             Choose a device from the dropdown above to view its security posture and scan results.
           </p>
         </GlassPanel>
       ) : loading ? (
         <GlassPanel intensity="light" className="p-12 flex items-center justify-center">
-          <Activity className="h-5 w-5 text-white/30 animate-spin mr-3" />
-          <span className="text-sm text-white/30">Loading security data...</span>
+          <Activity className="h-5 w-5 text-text-disabled animate-spin mr-3" />
+          <span className="text-sm text-text-disabled">Loading security data...</span>
+        </GlassPanel>
+      ) : triggering ? (
+        <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
+          <Activity className="h-12 w-12 text-primary mb-4 animate-spin" />
+          <h3 className="text-lg font-medium text-text-secondary">Scan in progress</h3>
+          <p className="text-sm text-text-disabled mt-1 max-w-md">
+            Security scan is being performed on this device. Results will appear automatically when complete.
+          </p>
         </GlassPanel>
       ) : !latestScan ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
-          <AlertTriangle className="h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white/50">No scan data available</h3>
-          <p className="text-sm text-white/30 mt-1 max-w-md">
+          <AlertTriangle className="h-12 w-12 text-text-disabled mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary">No scan data available</h3>
+          <p className="text-sm text-text-disabled mt-1 max-w-md">
             No security scan has been performed for this device yet.
           </p>
           <button
             onClick={triggerScan}
             disabled={triggering}
-            className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
             {triggering ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
             {triggering ? 'Scanning...' : 'Run First Scan'}
@@ -274,7 +295,7 @@ export default function CybersecurityPage() {
             {/* Score Card */}
             <GlassPanel intensity="light" className="p-6 flex flex-col items-center">
               <ScoreGauge score={latestScan.score?.securityScore ?? 0} />
-              <p className="mt-3 text-sm font-medium text-white/60">
+              <p className="mt-3 text-sm font-medium text-text-secondary">
                 Risk Level:{' '}
                 <span
                   className="font-semibold uppercase"
@@ -287,7 +308,7 @@ export default function CybersecurityPage() {
 
             {/* Counts */}
             <GlassPanel intensity="light" className="p-6">
-              <h3 className="text-sm font-medium text-white/60 mb-4">Finding Summary</h3>
+              <h3 className="text-sm font-medium text-text-secondary mb-4">Finding Summary</h3>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { label: 'Critical', count: latestScan.score?.criticalCount || 0, color: severityColors.critical },
@@ -295,9 +316,9 @@ export default function CybersecurityPage() {
                   { label: 'Medium', count: latestScan.score?.mediumCount || 0, color: severityColors.medium },
                   { label: 'Low', count: latestScan.score?.lowCount || 0, color: severityColors.low },
                 ].map((item) => (
-                  <div key={item.label} className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3 text-center">
+                  <div key={item.label} className="rounded-xl border border-border-subtle bg-surface p-3 text-center">
                     <span className="text-xl font-bold" style={{ color: item.color }}>{item.count}</span>
-                    <p className="text-[10px] text-white/40 uppercase mt-0.5">{item.label}</p>
+                    <p className="text-[10px] text-text-muted uppercase mt-0.5">{item.label}</p>
                   </div>
                 ))}
               </div>
@@ -305,26 +326,26 @@ export default function CybersecurityPage() {
 
             {/* Scan Info */}
             <GlassPanel intensity="light" className="p-6">
-              <h3 className="text-sm font-medium text-white/60 mb-3">Last Scan</h3>
-              <div className="space-y-2 text-xs text-white/50">
-                <p>Status: <span className="text-green-400 font-medium capitalize">{latestScan.status}</span></p>
+              <h3 className="text-sm font-medium text-text-secondary mb-3">Last Scan</h3>
+              <div className="space-y-2 text-xs text-text-secondary">
+                <p>Status: <span className="text-success font-medium capitalize">{latestScan.status}</span></p>
                 <p>Started: {new Date(latestScan.startedAt).toLocaleString()}</p>
                 {latestScan.completedAt && (
                   <p>Completed: {new Date(latestScan.completedAt).toLocaleString()}</p>
                 )}
-                <p>Total findings: <span className="text-white/70">{latestScan.score?.totalFindings || 0}</span></p>
-                <p>Open findings: <span className="text-white/70">{openFindings.length}</span></p>
+                <p>Total findings: <span className="text-text-secondary">{latestScan.score?.totalFindings || 0}</span></p>
+                <p>Open findings: <span className="text-text-secondary">{openFindings.length}</span></p>
               </div>
             </GlassPanel>
           </div>
 
           {/* View Toggle */}
-          <div className="flex gap-1 rounded-xl bg-white/[0.03] border border-white/[0.06] p-1 w-fit">
+          <div className="flex gap-1 rounded-xl bg-surface-subtle border border-border p-1 w-fit">
             <button
               onClick={() => setView('findings')}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
-                view === 'findings' ? 'bg-white/[0.08] text-white' : 'text-white/40 hover:text-white/60',
+                view === 'findings' ? 'bg-surface-muted text-text-primary' : 'text-text-muted hover:text-text-secondary',
               )}
             >
               Findings
@@ -333,7 +354,7 @@ export default function CybersecurityPage() {
               onClick={() => setView('executive')}
               className={cn(
                 'px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
-                view === 'executive' ? 'bg-white/[0.08] text-white' : 'text-white/40 hover:text-white/60',
+                view === 'executive' ? 'bg-surface-muted text-text-primary' : 'text-text-muted hover:text-text-secondary',
               )}
             >
               Executive Summary
@@ -344,9 +365,9 @@ export default function CybersecurityPage() {
           {view === 'findings' && (
             allFindings.length === 0 ? (
               <GlassPanel intensity="light" className="p-12 text-center">
-                <CheckCircle className="h-10 w-10 text-green-400/50 mx-auto mb-3" />
-                <h3 className="text-sm font-medium text-white/50">No findings</h3>
-                <p className="text-xs text-white/30 mt-1">This device has a clean security posture.</p>
+                <CheckCircle className="h-10 w-10 text-success/50 mx-auto mb-3" />
+                <h3 className="text-sm font-medium text-text-secondary">No findings</h3>
+                <p className="text-xs text-text-disabled mt-1">This device has a clean security posture.</p>
               </GlassPanel>
             ) : (
               <FindingsSection findings={allFindings} onRemediate={remediateFinding} />
@@ -356,21 +377,21 @@ export default function CybersecurityPage() {
           {/* Executive Summary View */}
           {view === 'executive' && summary && (
             <GlassPanel intensity="light" className="p-6">
-              <h3 className="text-sm font-medium text-white mb-4">Executive Summary</h3>
-              <div className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] mb-4">
-                <p className="text-sm text-white/70 leading-relaxed">{summary.summaryText}</p>
+              <h3 className="text-sm font-medium text-text-primary mb-4">Executive Summary</h3>
+              <div className="p-4 rounded-xl border border-border bg-surface mb-4">
+                <p className="text-sm text-text-secondary leading-relaxed">{summary.summaryText}</p>
               </div>
 
               {summary.topFindings.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-xs font-medium text-white/50 uppercase mb-3">Top Findings</h4>
+                  <h4 className="text-xs font-medium text-text-secondary uppercase mb-3">Top Findings</h4>
                   <div className="space-y-2">
                     {summary.topFindings.map((f, i) => (
-                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-white/[0.04] bg-white/[0.02]">
+                      <div key={i} className="flex items-start gap-3 p-3 rounded-xl border border-border-subtle bg-surface">
                         <SeverityBadge severity={f.severity} />
                         <div>
-                          <p className="text-xs text-white/70">{f.finding}</p>
-                          <p className="text-[10px] text-white/40 mt-0.5">{f.remediation}</p>
+                          <p className="text-xs text-text-secondary">{f.finding}</p>
+                          <p className="text-[10px] text-text-muted mt-0.5">{f.remediation}</p>
                         </div>
                       </div>
                     ))}
@@ -380,11 +401,11 @@ export default function CybersecurityPage() {
 
               {summary.recommendations.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-xs font-medium text-white/50 uppercase mb-3">Recommendations</h4>
+                  <h4 className="text-xs font-medium text-text-secondary uppercase mb-3">Recommendations</h4>
                   <ul className="space-y-1.5">
                     {summary.recommendations.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-white/60">
-                        <span className="text-primary-400 mt-0.5">&#8594;</span>
+                      <li key={i} className="flex items-start gap-2 text-xs text-text-secondary">
+                        <span className="text-primary mt-0.5">&#8594;</span>
                         {r}
                       </li>
                     ))}
@@ -397,28 +418,28 @@ export default function CybersecurityPage() {
           {/* Scan History */}
           {scans.length > 0 && (
             <GlassPanel intensity="light" className="p-6">
-              <h3 className="text-sm font-medium text-white mb-4">Scan History</h3>
+              <h3 className="text-sm font-medium text-text-primary mb-4">Scan History</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-white/[0.06]">
-                      <th className="text-left py-2 px-3 text-white/40 font-medium">Date</th>
-                      <th className="text-left py-2 px-3 text-white/40 font-medium">Status</th>
-                      <th className="text-left py-2 px-3 text-white/40 font-medium">Score</th>
-                      <th className="text-left py-2 px-3 text-white/40 font-medium">Risk</th>
-                      <th className="text-left py-2 px-3 text-white/40 font-medium">Findings</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-3 text-text-muted font-medium">Date</th>
+                      <th className="text-left py-2 px-3 text-text-muted font-medium">Status</th>
+                      <th className="text-left py-2 px-3 text-text-muted font-medium">Score</th>
+                      <th className="text-left py-2 px-3 text-text-muted font-medium">Risk</th>
+                      <th className="text-left py-2 px-3 text-text-muted font-medium">Findings</th>
                     </tr>
                   </thead>
                   <tbody>
                     {scans.slice(0, 10).map((s) => (
-                      <tr key={s.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
-                        <td className="py-2.5 px-3 text-white/60">{new Date(s.startedAt).toLocaleDateString()}</td>
+                      <tr key={s.id} className="border-b border-border-subtle hover:bg-surface">
+                        <td className="py-2.5 px-3 text-text-secondary">{new Date(s.startedAt).toLocaleDateString()}</td>
                         <td className="py-2.5 px-3">
                           <Badge variant={s.status === 'completed' ? 'success' : s.status === 'pending' ? 'warning' : 'secondary'}>
                             {s.status}
                           </Badge>
                         </td>
-                        <td className="py-2.5 px-3 text-white/70 font-medium">{s.score?.securityScore ?? '-'}</td>
+                        <td className="py-2.5 px-3 text-text-secondary font-medium">{s.score?.securityScore ?? '-'}</td>
                         <td className="py-2.5 px-3">
                           <span
                             className="font-medium uppercase text-[10px]"
@@ -427,7 +448,7 @@ export default function CybersecurityPage() {
                             {s.score?.riskLevel || '-'}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-white/60">{s.findingCount ?? 0}</td>
+                        <td className="py-2.5 px-3 text-text-secondary">{s.findingCount ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>

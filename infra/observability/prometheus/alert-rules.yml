@@ -1,0 +1,187 @@
+groups:
+  - name: techfusion_alerts
+    rules:
+      - alert: APIGatewayUnavailable
+        expr: up{job="techfusion-api-gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Gateway is down"
+          description: "API Gateway has been unreachable for over 1 minute."
+          causes: "Process crash, OOM kill, deployment failure, network partition"
+          runbook: "Check container status, review logs, verify pod readiness probes"
+
+      - alert: APIReadinessFailing
+        expr: http_requests_total{status_code="503"} > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API Gateway readiness degraded"
+          description: "API returning 503s for sustained period."
+          causes: "Database connection pool exhaustion, Redis unavailability, dependency failure"
+          runbook: "Check /health/ready endpoint, verify PostgreSQL and Redis connectivity"
+
+      - alert: WorkerUnavailable
+        expr: up{job="techfusion-worker"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker process is down"
+          description: "BullMQ worker has been unreachable for over 1 minute."
+          causes: "Process crash, OOM, Redis connection failure"
+          runbook: "Check worker container, review worker logs, verify Redis connectivity"
+
+      - alert: RedisUnavailable
+        expr: redis_up == 0 or redis_connection_attempts_total{outcome="failure"} > 5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is unavailable"
+          description: "Redis connection has been failing."
+          causes: "Redis crash, memory exhaustion, network issue, maxmemory reached"
+          runbook: "Check Redis container, review Redis logs, verify memory limits"
+
+      - alert: PostgreSQLUnavailable
+        expr: db_connection_attempts_total{outcome="failure"} > 3
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is unavailable"
+          description: "PostgreSQL connection failures detected."
+          causes: "Database crash, connection pool exhaustion, disk full, auth failure"
+          runbook: "Check PostgreSQL container, review connection pool, verify disk space"
+
+      - alert: QueueBacklogHigh
+        expr: bullmq_queue_depth > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue backlog above threshold"
+          description: "BullMQ queue {{ $labels.queue }} has {{ $value }} pending jobs for 5+ minutes."
+          causes: "Worker slowdown, processor errors, high job volume, Redis latency"
+          runbook: "Check worker health, review processor logs, scale workers if needed"
+
+      - alert: OldestQueueJobTooOld
+        expr: bullmq_oldest_waiting_job_age_seconds > 300
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest queue job waiting too long"
+          description: "Queue {{ $labels.queue }} has a job waiting {{ $value }}s."
+          causes: "Worker not processing, all workers busy, job stuck in retry loop"
+          runbook: "Check worker status, inspect oldest job, verify queue processor health"
+
+      - alert: SustainedJobFailureRate
+        expr: rate(bullmq_jobs_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained job failure rate in queue {{ $labels.queue }}"
+          description: "Job failure rate is {{ $value }} jobs/sec for 5+ minutes."
+          causes: "Processor bug, dependency failure, invalid job data, timeout"
+          runbook: "Review failed job error messages, check API connectivity, inspect job payloads"
+
+      - alert: ElevatedHttp5xxRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx error rate above 5%"
+          description: "5xx error rate is {{ $value | humanizePercentage }}."
+          causes: "Application bug, dependency failure, resource exhaustion, OOM"
+          runbook: "Check application logs, review exception patterns, inspect resource usage"
+
+      - alert: HighAuthFailureRate
+        expr: rate(authentication_failures_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Auth failures at {{ $value }}/sec."
+          causes: "Credential stuffing, expired tokens, client misconfiguration, clock skew"
+          runbook: "Review auth failure patterns, check for brute force, verify JWT config"
+
+      - alert: HighRateLimitRejectionRate
+        expr: rate(rate_limit_rejections_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Elevated rate limit rejections"
+          description: "Rate limiting rejecting {{ $value }}/sec requests."
+          causes: "Legitimate traffic spike, misconfigured clients, DDoS attempt"
+          runbook: "Review rate limit config, check client behavior, consider adjusting limits"
+
+      - alert: WebSocketAuthFailures
+        expr: rate(websocket_auth_failures_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket authentication failures rising"
+          description: "WS auth failures at {{ $value }}/sec."
+          causes: "Expired tokens, client bug, clock skew, invalid token format"
+          runbook: "Review WS auth middleware logs, check token expiry settings"
+
+      - alert: MetricsIngestionFailures
+        expr: rate(metrics_ingestion_outcomes_total{outcome="failure"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Device metrics ingestion failing"
+          description: "Metrics ingestion failure rate elevated."
+          causes: "Payload too large, validation failure, database write error, auth issue"
+          runbook: "Review devices controller logs, check payload size limits, verify DB writes"
+
+      - alert: SecurityReportIngestionFailures
+        expr: rate(security_report_outcomes_total{outcome="failure"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Security report ingestion failing"
+          description: "Security report processing failures detected."
+          causes: "Invalid report data, storage failure, database error"
+          runbook: "Review security controller logs, check report storage, verify DB writes"
+
+      - alert: RemoteSupportFailureSpike
+        expr: rate(remote_support_sessions_created_total[5m]) == 0 and rate(remote_support_consent_outcomes_total{outcome="rejected"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Remote support consent rejection spike"
+          description: "Multiple remote support consents being rejected."
+          causes: "User denying access, expired session, permission issue"
+          runbook: "Review remote support logs, verify consent flow, check session validity"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1048576 > 512
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage: {{ $value }}MB"
+          causes: "Memory leak, large payload processing, connection pool exhaustion"
+          runbook: "Check heap usage, review garbage collection, inspect large allocations"
+
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          causes: "Compute-heavy operations, infinite loop, garbage collection pressure"
+          runbook: "Profile CPU usage, check for hot loops, review recent deployments"

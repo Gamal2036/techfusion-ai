@@ -3,44 +3,50 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { GlassPanel, Badge, Button } from '@techfusion/ui';
-import { Users, Plus, Mail, Shield, UserCog, Trash2, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Shield, UserCog, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch, getCurrentUser, isAdminOrAbove, isOwner } from '@/lib/auth-client';
+import type { TeamMember, TeamRole } from '@techfusion/types';
 
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+const ROLE_OPTIONS: TeamRole[] = ['Owner', 'Admin', 'Technician', 'Viewer'];
 
-interface TeamMember {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-  status: string;
-  createdAt: string;
+function roleBadgeVariant(role: string): 'primary' | 'success' | 'warning' | 'secondary' {
+  switch (role) {
+    case 'Owner': return 'primary';
+    case 'Admin': return 'success';
+    case 'Technician': return 'warning';
+    default: return 'secondary';
+  }
 }
 
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showInvite, setShowInvite] = useState(false);
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState('viewer');
-  const [inviting, setInviting] = useState(false);
+  const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const currentUser = getCurrentUser();
+  const canManage = isAdminOrAbove(currentUser);
+  const canChangeRoles = isOwner(currentUser);
 
   const fetchMembers = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await fetch(`${API_URL}/team/members`, { headers: getAuthHeaders() });
+      const res = await apiFetch('/admin/users');
       if (res.ok) {
         const data = await res.json();
-        setMembers(Array.isArray(data) ? data : data.data || data.members || []);
+        setMembers(Array.isArray(data) ? data : data.data || []);
+      } else if (res.status === 403) {
+        setError('You do not have permission to view team members.');
+      } else if (res.status === 401) {
+        setError('Authentication required. Please log in again.');
+      } else {
+        const body = await res.json().catch(() => null);
+        setError(body?.message || `Failed to load team members (${res.status}).`);
       }
-    } catch (e) {
-      console.error('Failed to fetch team members:', e);
+    } catch {
+      setError('Network error. Could not load team members.');
     } finally {
       setLoading(false);
     }
@@ -48,125 +54,151 @@ export default function TeamPage() {
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
-  const handleInvite = async () => {
-    if (!email.trim()) return;
-    setInviting(true);
+  const handleRoleChange = async (userId: string, newRole: TeamRole) => {
+    setActionLoading(userId);
     try {
-      const res = await fetch(`${API_URL}/team/members`, {
+      const res = await apiFetch(`/admin/users/${userId}/role`, {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {
-        setShowInvite(false);
-        setEmail('');
         fetchMembers();
+      } else {
+        const body = await res.json().catch(() => null);
+        setError(body?.message || `Failed to update role (${res.status}).`);
       }
-    } catch (e) {
-      console.error('Failed to invite member:', e);
+    } catch {
+      setError('Network error. Could not update role.');
     } finally {
-      setInviting(false);
+      setActionLoading(null);
     }
   };
 
-  const handleRemove = async (id: string) => {
+  const handleRemove = async (userId: string) => {
+    setActionLoading(userId);
     try {
-      const res = await fetch(`${API_URL}/team/members/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
+      const res = await apiFetch(`/admin/users/${userId}/remove`, {
+        method: 'POST',
       });
-      if (res.ok) fetchMembers();
-    } catch (e) {
-      console.error('Failed to remove member:', e);
+      if (res.ok) {
+        fetchMembers();
+      } else {
+        const body = await res.json().catch(() => null);
+        setError(body?.message || `Failed to remove member (${res.status}).`);
+      }
+    } catch {
+      setError('Network error. Could not remove member.');
+    } finally {
+      setActionLoading(null);
     }
+  };
+
+  const getRoleBadge = (member: TeamMember) => {
+    if (member.role === 'Owner') {
+      return <Badge variant="primary" className="text-[10px]"><Shield className="h-3 w-3 mr-0.5 inline" />{member.role}</Badge>;
+    }
+    return <Badge variant={roleBadgeVariant(member.role)} className="text-[10px]">{member.role}</Badge>;
   };
 
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Team</h1>
-          <p className="text-sm text-white/40 mt-1">Manage your team members and their roles.</p>
+          <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Team</h1>
+          <p className="text-sm text-text-secondary mt-1">Manage your team members and their roles.</p>
         </div>
-        <Button variant="glass" size="sm" onClick={() => setShowInvite(!showInvite)}>
-          <Plus className="h-4 w-4 mr-1" /> Invite Member
-        </Button>
+        {!canManage && (
+          <div className="flex items-center gap-2 text-xs text-text-secondary">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Invite members through your organization admin.</span>
+          </div>
+        )}
       </motion.div>
 
-      {showInvite && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-          <GlassPanel intensity="light" className="p-5">
-            <h3 className="text-sm font-medium text-white mb-4">Invite Team Member</h3>
-            <div className="flex gap-3">
-              <input value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@example.com"
-                className="flex-1 h-10 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-primary-500/40" />
-              <select value={role} onChange={(e) => setRole(e.target.value)}
-                className="h-10 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-white outline-none focus:ring-2 focus:ring-primary-500/40">
-                <option value="viewer">Viewer</option>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-              <Button variant="glass" size="sm" onClick={handleInvite} disabled={!email.trim() || inviting}>
-                {inviting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Mail className="h-4 w-4 mr-1" />}
-                Invite
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowInvite(false)}>Cancel</Button>
-            </div>
-          </GlassPanel>
-        </motion.div>
+      {error && (
+        <GlassPanel intensity="light" className="p-4 border-red-500/30">
+          <div className="flex items-center gap-2 text-sm text-danger">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setError('')}>Dismiss</Button>
+          </div>
+        </GlassPanel>
       )}
 
       {loading ? (
         <div className="space-y-3">
-          {[1, 2, 3].map((i) => <div key={i} className="h-20 rounded-xl bg-white/[0.04] animate-pulse" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-20 rounded-xl bg-surface-subtle animate-pulse" />)}
         </div>
       ) : members.length === 0 ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
-          <Users className="h-12 w-12 text-white/20 mb-4" />
-          <h3 className="text-lg font-medium text-white/50">No team members</h3>
-          <p className="text-sm text-white/30 mt-1 max-w-md">
-            Invite team members to collaborate on managing your devices and infrastructure.
+          <Users className="h-12 w-12 text-text-disabled mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary">No team members</h3>
+          <p className="text-sm text-text-secondary mt-1 max-w-md">
+            {canManage
+              ? 'Add team members through your organization settings to get started.'
+              : 'Contact your organization owner to add team members.'}
           </p>
-          <Button variant="glass" size="sm" className="mt-4" onClick={() => setShowInvite(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Invite Member
-          </Button>
         </GlassPanel>
       ) : (
         <div className="space-y-2">
-          {members.map((member) => (
-            <GlassPanel key={member.id} intensity="light" className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary-600/20 border border-primary-500/30 flex items-center justify-center">
-                    <span className="text-sm font-medium text-primary-400">
-                      {(member.displayName || member.email).charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white">{member.displayName || member.email}</span>
-                      <Badge variant={member.role === 'admin' ? 'primary' : member.role === 'member' ? 'success' : 'secondary'} className="text-[10px]">
-                        {member.role}
-                      </Badge>
+          {members.map((member) => {
+            const isSelf = member.id === currentUser?.sub;
+            const isTargetOwner = member.role === 'Owner';
+            const canRemoveThis = canManage && !isSelf && !isTargetOwner;
+            const canChangeThisRole = canChangeRoles && !isTargetOwner;
+
+            return (
+              <GlassPanel key={member.id} intensity="light" className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-primary-600/20 border border-primary-500/30 flex items-center justify-center">
+                      <span className="text-sm font-medium text-primary">
+                        {(member.displayName || member.email).charAt(0).toUpperCase()}
+                      </span>
                     </div>
-                    <p className="text-xs text-white/40 mt-0.5">{member.email}</p>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text-primary">
+                          {member.displayName || member.email}
+                          {isSelf && <span className="text-xs text-text-secondary ml-1">(you)</span>}
+                        </span>
+                        {getRoleBadge(member)}
+                      </div>
+                      <p className="text-xs text-text-secondary mt-0.5">{member.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {canChangeThisRole && (
+                      <select
+                        value={member.role}
+                        onChange={(e) => handleRoleChange(member.id, e.target.value as TeamRole)}
+                        disabled={actionLoading === member.id}
+                        className="h-8 rounded-lg border border-border bg-surface-subtle px-2 text-xs text-text-primary outline-none focus:ring-2 focus:ring-primary-500/40 disabled:opacity-50"
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    )}
+                    {canRemoveThis && (
+                      <button
+                        onClick={() => handleRemove(member.id)}
+                        disabled={actionLoading === member.id}
+                        className="h-8 w-8 rounded-lg flex items-center justify-center text-text-secondary hover:text-danger hover:bg-surface-subtle transition-all disabled:opacity-50"
+                        title={`Remove ${member.displayName || member.email}`}
+                      >
+                        {actionLoading === member.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={member.status === 'active' ? 'success' : 'warning'} className="text-[10px]">
-                    {member.status}
-                  </Badge>
-                  {member.role !== 'admin' && (
-                    <button onClick={() => handleRemove(member.id)}
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-white/30 hover:text-red-400 hover:bg-white/[0.04] transition-all">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </GlassPanel>
-          ))}
+              </GlassPanel>
+            );
+          })}
         </div>
       )}
     </div>

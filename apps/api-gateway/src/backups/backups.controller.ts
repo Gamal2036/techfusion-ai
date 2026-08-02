@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Query, Body, Req } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body, Req, Res } from '@nestjs/common';
 import { BackupsService } from './backups.service';
 
 @Controller('backups')
@@ -73,5 +73,26 @@ export class BackupsController {
     const orgId = req.user?.orgId;
     if (!orgId) return null;
     return this.backupsService.restoreRun(orgId, id);
+  }
+
+  @Post('runs/:id/verify')
+  async verifyRun(@Req() req: any, @Param('id') id: string) {
+    const orgId = req.user?.orgId;
+    if (!orgId) return null;
+    return this.backupsService.verifyRun(orgId, id);
+  }
+
+  @Get('artifacts/:runId')
+  async getArtifact(@Req() req: any, @Param('runId') runId: string, @Res() res: any) {
+    const orgId = req.user?.orgId;
+    if (!orgId) return res.status(401).json({ error: 'Unauthorized' });
+    return this.backupsService.getArtifact(orgId, runId, res);
+  }
+
+  @Post('enforce-retention')
+  async enforceRetention(@Req() req: any) {
+    const orgId = req.user?.orgId;
+    if (!orgId) return { deleted: 0 };
+    return this.backupsService.enforceRetention(orgId);
   }
 }

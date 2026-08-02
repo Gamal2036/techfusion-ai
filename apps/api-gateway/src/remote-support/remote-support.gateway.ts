@@ -4,8 +4,14 @@ import {
   SubscribeMessage,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { createWsAuthMiddleware } from '../common/ws-auth.middleware';
+import { getWsCorsOrigins } from '../common/ws-cors';
+import { PrismaService } from '../prisma/prisma.service';
+import { Logger } from '@nestjs/common';
+import { trackWsConnection, trackWsDisconnection, trackWsAuthFailure, trackRemoteSupportSession, trackRemoteSupportSessionEnd } from '../metrics.interceptor';
 
 interface PeerEntry {
   socketId: string;
@@ -15,32 +21,71 @@ interface PeerEntry {
 }
 
 @WebSocketGateway({
-  cors: { origin: '*', credentials: true },
+  cors: { origin: getWsCorsOrigins(), credentials: true },
   namespace: '/remote',
 })
-export class RemoteSupportGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RemoteSupportGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private peers = new Map<string, PeerEntry>();
   private sessionPeers = new Map<string, { technician?: string; device?: string }>();
+  private readonly logger = new Logger(RemoteSupportGateway.name);
 
-  handleConnection(client: Socket) {
-    const orgId = client.handshake.query.orgId as string;
+  constructor(private prisma: PrismaService) {}
+
+  afterInit(server: Server) {
+    server.use(createWsAuthMiddleware());
+  }
+
+  async handleConnection(client: Socket) {
+    const user = client.data.user;
+    if (!user || !user.orgId) {
+      trackWsAuthFailure('/remote');
+      this.logger.warn('WS connection rejected: no user data', { socketId: client.id });
+      client.disconnect(true);
+      return;
+    }
+
+    const orgId = user.orgId;
     const sessionId = client.handshake.query.sessionId as string;
     const role = client.handshake.query.role as string;
 
-    if (orgId && sessionId && (role === 'technician' || role === 'device')) {
-      this.peers.set(client.id, { socketId: client.id, orgId, sessionId, role });
-      client.join(`session:${sessionId}`);
-      client.join(`org:${orgId}`);
-
-      if (!this.sessionPeers.has(sessionId)) {
-        this.sessionPeers.set(sessionId, {});
-      }
-      const sp = this.sessionPeers.get(sessionId)!;
-      sp[role] = client.id;
+    if (!sessionId || (role !== 'technician' && role !== 'device')) {
+      trackWsAuthFailure('/remote');
+      this.logger.warn('WS connection rejected: invalid session/role', { socketId: client.id, namespace: '/remote' });
+      client.disconnect(true);
+      return;
     }
+
+    const session = await this.prisma.remoteSession.findFirst({
+      where: { id: sessionId, orgId },
+    });
+    if (!session) {
+      trackWsAuthFailure('/remote');
+      this.logger.warn('WS connection rejected: session not found', { socketId: client.id, namespace: '/remote' });
+      client.disconnect(true);
+      return;
+    }
+
+    this.peers.set(client.id, {
+      socketId: client.id,
+      orgId,
+      sessionId,
+      role,
+    });
+    client.join(`session:${sessionId}`);
+    client.join(`org:${orgId}`);
+
+    if (!this.sessionPeers.has(sessionId)) {
+      this.sessionPeers.set(sessionId, {});
+      trackRemoteSupportSession();
+    }
+    const sp = this.sessionPeers.get(sessionId)!;
+    sp[role] = client.id;
+
+    trackWsConnection('/remote');
+    this.logger.debug('WS client connected', { socketId: client.id, namespace: '/remote', role, sessionId });
   }
 
   handleDisconnect(client: Socket) {
@@ -50,9 +95,13 @@ export class RemoteSupportGateway implements OnGatewayConnection, OnGatewayDisco
       if (sp) {
         if (sp.technician === client.id) delete sp.technician;
         if (sp.device === client.id) delete sp.device;
-        if (!sp.technician && !sp.device) this.sessionPeers.delete(peer.sessionId);
+        if (!sp.technician && !sp.device) {
+          this.sessionPeers.delete(peer.sessionId);
+          trackRemoteSupportSessionEnd();
+        }
       }
       this.peers.delete(client.id);
+      trackWsDisconnection('/remote', 'client_initiated');
     }
   }
 

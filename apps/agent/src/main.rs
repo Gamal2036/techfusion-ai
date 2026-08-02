@@ -2,10 +2,16 @@ mod agent;
 mod client;
 mod collector;
 mod config;
+mod identity;
+mod inventory;
+mod network_discovery;
 mod registration;
+mod remote;
+mod security;
 
 use agent::Agent;
 use config::AgentConfig;
+use registration::RegistrationSource;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -18,14 +24,28 @@ async fn main() -> anyhow::Result<()> {
 
     let config = AgentConfig::from_env()?;
 
+    println!();
+    println!("  TechFusion AI Agent v{}", config.agent_version);
+    println!("  ─────────────────────────────────────────");
+    println!("  API URL:     {}", config.api_url);
+    println!("  Hostname:    {}", config.hostname);
+    println!("  Interval:    {}s telemetry", config.interval_secs);
+    println!("  Security:    {}s scan", config.security_interval_secs);
+    println!("  Inventory:   {}s sync", config.inventory_interval_secs);
+    if config.network_discovery_enabled {
+        println!("  Network:     ENABLED");
+    }
+    println!();
+
     tracing::info!("Pinging API at {}...", config.api_url);
     {
         let ping_client = crate::client::ApiClient::new(config.api_url.clone());
         if let Err(e) = ping_client.ping().await {
-            eprintln!(
-                "ERROR: Cannot reach API at {}: {}",
-                config.api_url, e
-            );
+            eprintln!("ERROR: Cannot reach API at {}: {}", config.api_url, e);
+            eprintln!();
+            eprintln!("  Make sure the API gateway is running:");
+            eprintln!("    cd apps/api-gateway && pnpm dev");
+            eprintln!();
             std::process::exit(1);
         }
     }
@@ -33,17 +53,19 @@ async fn main() -> anyhow::Result<()> {
 
     let mut agent = Agent::new(config.clone()).await?;
 
-    let token_preview = if config.device_token.len() > 12 {
-        format!("{}...", &config.device_token[..12])
-    } else {
-        config.device_token.clone()
-    };
-
-    println!("TechFusion AI Agent v{}", env!("CARGO_PKG_VERSION"));
-    println!("Connected to: {}", config.api_url);
-    println!("Device: {}", config.hostname);
-    println!("Token: {}", token_preview);
-    println!("Sending metrics every {}s", config.interval_secs);
+    match agent.registration_source() {
+        RegistrationSource::Environment => {
+            println!("  Device authenticated from environment token");
+        }
+        RegistrationSource::Disk => {
+            println!("  Device restored from saved token (use TF_ORG_TOKEN to re-register)");
+        }
+        RegistrationSource::FreshRegistration => {
+            println!("  Device registered and authenticated successfully");
+        }
+    }
+    println!("  Starting telemetry collection...");
+    println!();
 
     agent.run().await
 }

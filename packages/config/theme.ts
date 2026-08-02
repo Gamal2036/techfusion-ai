@@ -26,30 +26,6 @@ export const theme = {
       900: '#164e63',
       950: '#083344',
     },
-    surface: {
-      DEFAULT: '#0a0a0a',
-      50: '#18181b',
-      100: '#27272a',
-      200: '#3f3f46',
-      300: '#52525b',
-      400: '#71717a',
-      500: '#a1a1aa',
-      600: '#d4d4d8',
-      700: '#e4e4e7',
-      800: '#f4f4f5',
-      900: '#fafafa',
-      950: '#ffffff',
-    },
-    glass: {
-      DEFAULT: 'rgba(255, 255, 255, 0.05)',
-      border: 'rgba(255, 255, 255, 0.08)',
-      hover: 'rgba(255, 255, 255, 0.1)',
-      light: {
-        DEFAULT: 'rgba(0, 0, 0, 0.03)',
-        border: 'rgba(0, 0, 0, 0.08)',
-        hover: 'rgba(0, 0, 0, 0.05)',
-      },
-    },
     score: {
       health: {
         low: '#22c55e',

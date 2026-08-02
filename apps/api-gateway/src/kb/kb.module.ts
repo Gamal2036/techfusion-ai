@@ -2,9 +2,10 @@ import { Module, forwardRef } from '@nestjs/common';
 import { KbService } from './kb.service';
 import { KbController } from './kb.controller';
 import { AiModule } from '../ai/ai.module';
+import { QueueModule } from '../queue/queue.module';
 
 @Module({
-  imports: [forwardRef(() => AiModule)],
+  imports: [forwardRef(() => AiModule), QueueModule],
   providers: [KbService],
   controllers: [KbController],
   exports: [KbService],

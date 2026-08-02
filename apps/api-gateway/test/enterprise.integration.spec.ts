@@ -4,10 +4,18 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuditService } from '../src/audit/audit.service';
+import { QueueService } from '../src/queue/queue.service';
+import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
-const JWT_SECRET = () => process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
+const JWT_SECRET = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required for tests');
+  }
+  return secret;
+};
 
 describe('Enterprise Phase 13 Integration', () => {
   let app: INestApplication;
@@ -17,7 +25,10 @@ describe('Enterprise Phase 13 Integration', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(QueueService)
+      .useClass(MockQueueService)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     prisma = moduleFixture.get<PrismaService>(PrismaService);
@@ -432,21 +443,14 @@ describe('Enterprise Phase 13 Integration', () => {
         })
         .expect(201);
 
-      // Enforce
+      // Enforce (now async — dispatches to queue)
       const enforceRes = await request(app.getHttpServer())
         .post('/admin/retention/enforce')
         .set('Authorization', `Bearer ${token}`)
         .expect(201);
 
-      // Old data should be deleted
-      const remainingMetrics = await prisma.deviceMetric.findMany({ where: { orgId: org.id } });
-      const remainingAudit = await prisma.auditLog.findMany({ where: { orgId: org.id } });
-
-      // Only recent records should remain (the ones from 2040)
-      expect(remainingMetrics.length).toBe(1);
-      expect(remainingMetrics[0].cpuUsage).toBe(30);
-      expect(remainingAudit.length).toBe(1);
-      expect(remainingAudit[0].action).toBe('recent_action');
+      expect(enforceRes.body.status).toBe('queued');
+      expect(enforceRes.body.orgId).toBe(org.id);
     });
 
     it('enforce-all processes all orgs', async () => {
@@ -460,7 +464,7 @@ describe('Enterprise Phase 13 Integration', () => {
         .set('Authorization', `Bearer ${token1}`)
         .expect(201);
 
-      expect(enforceAllRes.body.orgsProcessed).toBeGreaterThanOrEqual(2);
+      expect(enforceAllRes.body.status).toBe('queued');
     });
   });
 

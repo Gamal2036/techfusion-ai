@@ -3,7 +3,7 @@ import { AiProviderInterface, AiResponse, EmbedResponse } from '../../types/ai-p
 
 export class AnthropicRouterProvider implements AiProviderInterface {
   readonly name = 'Anthropic'
-  readonly priority = 1
+  readonly priority = 4
   readonly costTier = 'high' as const
   readonly speedTier = 'medium' as const
   readonly supportsEmbedding = false

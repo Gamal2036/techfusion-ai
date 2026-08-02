@@ -1,11 +1,156 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NetworkDevice } from '@prisma/client';
-import * as crypto from 'crypto';
+import { execFileSync } from 'child_process';
+
+function sanitizeTarget(value: string): string {
+  if (!value || typeof value !== 'string') {
+    throw new BadRequestException('Invalid target');
+  }
+  const sanitized = value.replace(/[^a-zA-Z0-9.\-:\/]/g, '');
+  if (sanitized.length === 0 || sanitized.length > 255) {
+    throw new BadRequestException('Invalid target format');
+  }
+  return sanitized;
+}
+
+function sanitizeHostname(value: string): string {
+  if (!value || typeof value !== 'string') {
+    throw new BadRequestException('Invalid hostname');
+  }
+  const sanitized = value.replace(/[^a-zA-Z0-9.\-]/g, '');
+  if (sanitized.length === 0 || sanitized.length > 255) {
+    throw new BadRequestException('Invalid hostname format');
+  }
+  return sanitized;
+}
+
+function isPrivateIp(ip: string): boolean {
+  const parts = ip.split('.');
+  if (parts.length !== 4) return false;
+  const [a, b] = parts.map(Number);
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 127) return true;
+  if (a === 0) return true;
+  return false;
+}
+
+function parsePingLatency(stdout: string): number | null {
+  const match = stdout.match(/time[=<](\d+(?:\.\d+)?)\s*ms/i);
+  if (match) {
+    return parseFloat(match[1]);
+  }
+  return null;
+}
+
+function parseDigResult(stdout: string): { addresses: string[]; timeMs: number } {
+  const addresses: string[] = [];
+  let timeMs = 0;
+
+  const queryTimeMatch = stdout.match(/Query time:\s*(\d+)/);
+  if (queryTimeMatch) {
+    timeMs = parseInt(queryTimeMatch[1], 10);
+  }
+
+  const lines = stdout.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith(';') || trimmed === '' || trimmed.startsWith(';;')) continue;
+
+    const ipMatch = trimmed.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (ipMatch) {
+      addresses.push(ipMatch[1]);
+    }
+  }
+
+  return { addresses, timeMs };
+}
 
 @Injectable()
 export class NetworkService {
+  private readonly logger = new Logger(NetworkService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  async createDiscoveryCommand(orgId: string, deviceId?: string) {
+    const existingRunning = await this.prisma.networkScan.findFirst({
+      where: {
+        orgId,
+        status: { in: ['pending', 'running'] },
+        ...(deviceId && { deviceId }),
+      },
+    });
+
+    if (existingRunning) {
+      this.logger.log(`Discovery already in progress: ${existingRunning.id}`);
+      return existingRunning;
+    }
+
+    const scan = await this.prisma.networkScan.create({
+      data: {
+        orgId,
+        deviceId: deviceId || null,
+        status: 'pending',
+        startedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Network discovery command ${scan.id} created for org ${orgId}`);
+    return scan;
+  }
+
+  async getPendingDiscoveryCommands(deviceId: string) {
+    return this.prisma.networkScan.findMany({
+      where: {
+        status: 'pending',
+      },
+      orderBy: { startedAt: 'asc' },
+    });
+  }
+
+  async cleanupStaleScans() {
+    const staleThreshold = new Date(Date.now() - 3 * 60 * 1000);
+    const staleScans = await this.prisma.networkScan.findMany({
+      where: {
+        status: { in: ['pending', 'running'] },
+        startedAt: { lt: staleThreshold },
+      },
+    });
+
+    if (staleScans.length > 0) {
+      this.logger.log(`Cleaning up ${staleScans.length} stale scans`);
+      await this.prisma.networkScan.updateMany({
+        where: {
+          status: { in: ['pending', 'running'] },
+          startedAt: { lt: staleThreshold },
+        },
+        data: {
+          status: 'failed',
+          error: 'Scan timed out — exceeded maximum allowed duration',
+          completedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  async updateDiscoveryStatus(scanId: string, status: string, error?: string) {
+    return this.prisma.networkScan.update({
+      where: { id: scanId },
+      data: {
+        status,
+        ...(error && { error }),
+        ...(status === 'completed' || status === 'failed' ? { completedAt: new Date() } : {}),
+      },
+    });
+  }
+
+  async getScanById(scanId: string) {
+    return this.prisma.networkScan.findUnique({
+      where: { id: scanId },
+    });
+  }
 
   async ingestDiscovery(orgId: string, data: any) {
     const devices: any[] = data.devices || data.neighbors || [];
@@ -146,21 +291,32 @@ export class NetworkService {
   }
 
   async runLatencyCheck(orgId: string, targetIp: string, count = 4) {
-    const results: { seq: number; latencyMs: number | null; error?: string }[] = [];
+    const sanitizedIp = sanitizeTarget(targetIp);
+    if (!sanitizedIp.match(/^[a-zA-Z0-9.\-:\/]+$/)) {
+      throw new BadRequestException('Invalid target IP');
+    }
 
-    for (let i = 0; i < count; i++) {
-      const start = Date.now();
+    const results: { seq: number; latencyMs: number | null; error?: string }[] = [];
+    const clampedCount = Math.min(Math.max(1, count), 10);
+
+    for (let i = 0; i < clampedCount; i++) {
       try {
-        const { execSync } = require('child_process');
-        const stdout = execSync(`ping -c 1 -W 2 ${targetIp}`, {
-          timeout: 3000,
+        const stdout = execFileSync('ping', ['-c', '1', '-W', '2', sanitizedIp], {
+          timeout: 5000,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
-        const elapsed = Date.now() - start;
-        results.push({ seq: i + 1, latencyMs: elapsed });
+        const latency = parsePingLatency(stdout);
+        results.push({ seq: i + 1, latencyMs: latency });
       } catch (e: any) {
-        results.push({ seq: i + 1, latencyMs: null, error: e.stderr?.trim() || 'timeout' });
+        const stderr = e.stderr || '';
+        if (stderr.includes('100% packet loss') || e.status === 1) {
+          results.push({ seq: i + 1, latencyMs: null, error: 'unreachable' });
+        } else if (e.killed || e.signal === 'SIGTERM') {
+          results.push({ seq: i + 1, latencyMs: null, error: 'timeout' });
+        } else {
+          results.push({ seq: i + 1, latencyMs: null, error: 'failed' });
+        }
       }
     }
 
@@ -171,41 +327,43 @@ export class NetworkService {
         : null;
     const min = succeeded.length > 0 ? Math.min(...succeeded.map((r) => r.latencyMs ?? 0)) : null;
     const max = succeeded.length > 0 ? Math.max(...succeeded.map((r) => r.latencyMs ?? 0)) : null;
-    const loss = count > 0 ? ((count - succeeded.length) / count) * 100 : 0;
+    const loss = clampedCount > 0 ? ((clampedCount - succeeded.length) / clampedCount) * 100 : 0;
 
-    return { targetIp, results, avg, min, max, packetLoss: loss, count, timestamp: new Date().toISOString() };
+    return { targetIp: sanitizedIp, results, avg, min, max, packetLoss: loss, count: clampedCount, timestamp: new Date().toISOString() };
   }
 
   async resolveDns(orgId: string, hostname: string, resolvers?: string[]) {
-    const dnsResolvers = resolvers?.length ? resolvers : ['1.1.1.1', '8.8.8.8', '9.9.9.9'];
+    const safeHostname = sanitizeHostname(hostname);
+    const validResolvers = (resolvers || ['1.1.1.1', '8.8.8.8', '9.9.9.9'])
+      .slice(0, 5)
+      .map(r => sanitizeTarget(r))
+      .filter(r => r.match(/^[a-zA-Z0-9.\-:\/]+$/));
+    const dnsResolvers = validResolvers.length ? validResolvers : ['1.1.1.1', '8.8.8.8', '9.9.9.9'];
     const results: { resolver: string; addresses: string[]; timeMs: number; error?: string }[] = [];
 
     for (const resolver of dnsResolvers) {
-      const start = Date.now();
       try {
-        const { execSync } = require('child_process');
-        const stdout = execSync(`dig @${resolver} ${hostname} +short`, {
+        const stdout = execFileSync('dig', [resolver, safeHostname, '+short'], {
           timeout: 5000,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
-        const elapsed = Date.now() - start;
-        const addresses = stdout.trim().split('\n').filter((l: string) => l && !l.startsWith(';'));
-        results.push({ resolver, addresses, timeMs: elapsed });
+        const parsed = parseDigResult(stdout);
+        results.push({ resolver, addresses: parsed.addresses, timeMs: parsed.timeMs });
       } catch (e: any) {
-        results.push({ resolver, addresses: [], timeMs: Date.now() - start, error: e.stderr?.trim() || 'failed' });
+        results.push({ resolver, addresses: [], timeMs: 0, error: 'failed' });
       }
     }
 
-    return { hostname, results, timestamp: new Date().toISOString() };
+    return { hostname: safeHostname, results, timestamp: new Date().toISOString() };
   }
 
   async runTraceroute(orgId: string, target: string) {
+    const safeTarget = sanitizeTarget(target);
     const hops: { hop: number; ip: string; latencyMs: number | null }[] = [];
 
     try {
-      const { execSync } = require('child_process');
-      const stdout = execSync(`traceroute -n -q 1 -w 2 ${target}`, {
+      const stdout = execFileSync('traceroute', ['-n', '-q', '1', '-w', '2', safeTarget], {
         timeout: 30000,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -227,33 +385,34 @@ export class NetworkService {
         }
       }
     } catch (e: any) {
-      console.error('Traceroute failed:', e.message);
+      if (!e.stdout) {
+        throw new BadRequestException('Traceroute command not available or failed');
+      }
     }
 
-    return { target, hops, timestamp: new Date().toISOString() };
+    return { target: safeTarget, hops, timestamp: new Date().toISOString() };
   }
 
   async runConnectivityCheck(orgId: string) {
     const endpoints = [
-      { name: 'Cloudflare', url: '1.1.1.1' },
-      { name: 'Google DNS', url: '8.8.8.8' },
-      { name: 'Internet', url: 'google.com' },
+      { name: 'Cloudflare', host: '1.1.1.1' },
+      { name: 'Google DNS', host: '8.8.8.8' },
+      { name: 'Internet', host: 'google.com' },
     ];
 
     const results: { name: string; reachable: boolean; latencyMs: number | null; error?: string }[] = [];
 
     for (const ep of endpoints) {
-      const start = Date.now();
       try {
-        const { execSync } = require('child_process');
-        execSync(`ping -c 1 -W 3 ${ep.url}`, {
+        const stdout = execFileSync('ping', ['-c', '1', '-W', '3', ep.host], {
           timeout: 5000,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'pipe'],
         });
-        results.push({ name: ep.name, reachable: true, latencyMs: Date.now() - start });
+        const latency = parsePingLatency(stdout);
+        results.push({ name: ep.name, reachable: true, latencyMs: latency });
       } catch {
-        results.push({ name: ep.name, reachable: false, latencyMs: null, error: 'timeout' });
+        results.push({ name: ep.name, reachable: false, latencyMs: null, error: 'unreachable' });
       }
     }
 

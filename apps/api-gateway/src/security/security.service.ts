@@ -1,8 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SecurityFinding, Prisma } from '@prisma/client';
 import { ScoreResult } from './services/security-scoring.service';
 import { FindingDto } from './dto/submit-findings.dto';
+import { QueueService } from '../queue/queue.service';
+import { DevicesService } from '../devices/devices.service';
 
 type ScanWithScore = Prisma.SecurityScanGetPayload<{
   include: { score: true; _count: { select: { findings: true } } };
@@ -12,10 +14,14 @@ type ScanWithScore = Prisma.SecurityScanGetPayload<{
 export class SecurityService {
   private readonly logger = new Logger(SecurityService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queueService: QueueService,
+    private readonly devicesService: DevicesService,
+  ) {}
 
   async findDeviceByToken(token: string) {
-    return this.prisma.device.findUnique({ where: { deviceToken: token } });
+    return this.devicesService.findByToken(token);
   }
 
   async createScan(
@@ -71,6 +77,26 @@ export class SecurityService {
       `Security scan ${scan.id} for device ${device.id}: score=${scoreResult.securityScore}, risk=${scoreResult.riskLevel}, findings=${scoreResult.totalFindings}`,
     );
 
+    await this.queueService.addSecurityScanComplete({
+      scanId: scan.id,
+      orgId: device.orgId,
+      deviceId: device.id,
+      score: scoreResult,
+      findingCount: scoreResult.totalFindings,
+    });
+
+    for (const f of findingRecords) {
+      if (f.severity === 'critical' || f.severity === 'high') {
+        await this.queueService.addSecurityFindingAlert({
+          findingId: f.id,
+          orgId: device.orgId,
+          deviceId: device.id,
+          severity: f.severity,
+          finding: f.finding,
+        });
+      }
+    }
+
     return {
       scanId: scan.id,
       scoreId: score.id,
@@ -84,7 +110,16 @@ export class SecurityService {
     });
 
     if (!device) {
-      throw new Error('Device not found in this organization');
+      throw new NotFoundException(`Device ${deviceId} not found in this organization`);
+    }
+
+    const existingPending = await this.prisma.securityScan.findFirst({
+      where: { deviceId, orgId, status: { in: ['pending', 'running'] } },
+    });
+
+    if (existingPending) {
+      this.logger.log(`Scan already in progress for device ${deviceId}: ${existingPending.id}`);
+      return existingPending;
     }
 
     const scan = await this.prisma.securityScan.create({
@@ -98,6 +133,113 @@ export class SecurityService {
 
     this.logger.log(`Pending security scan ${scan.id} triggered for device ${deviceId}`);
     return scan;
+  }
+
+  async getPendingScansForAgent(deviceId: string) {
+    return this.prisma.securityScan.findMany({
+      where: {
+        deviceId,
+        status: 'pending',
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async updateScanStatus(
+    scanId: string,
+    status: string,
+    options?: { error?: string; completedAt?: Date },
+  ) {
+    return this.prisma.securityScan.update({
+      where: { id: scanId },
+      data: {
+        status,
+        ...(options?.error && { error: options.error }),
+        ...(options?.completedAt && { completedAt: options.completedAt }),
+      },
+    });
+  }
+
+  async completePendingScan(
+    scanId: string,
+    findings: FindingDto[],
+    scoreResult: ScoreResult,
+  ) {
+    const scan = await this.prisma.securityScan.findFirst({
+      where: { id: scanId, status: { in: ['pending', 'running'] } },
+    });
+
+    if (!scan) {
+      this.logger.warn(`Scan ${scanId} not found or already completed`);
+      return null;
+    }
+
+    await this.prisma.securityScan.update({
+      where: { id: scanId },
+      data: {
+        status: 'completed',
+        completedAt: new Date(),
+      },
+    });
+
+    const findingRecords = [];
+    for (const f of findings) {
+      const rec = await this.prisma.securityFinding.create({
+        data: {
+          scanId: scan.id,
+          orgId: scan.orgId,
+          deviceId: scan.deviceId,
+          category: f.category,
+          finding: f.finding,
+          severity: f.severity,
+          status: 'open',
+          remediation: f.remediation,
+          details: (f.details as any) || undefined,
+        },
+      });
+      findingRecords.push(rec);
+    }
+
+    const score = await this.prisma.securityScore.create({
+      data: {
+        scanId: scan.id,
+        orgId: scan.orgId,
+        deviceId: scan.deviceId,
+        securityScore: scoreResult.securityScore,
+        riskLevel: scoreResult.riskLevel,
+        totalFindings: scoreResult.totalFindings,
+        criticalCount: scoreResult.criticalCount,
+        highCount: scoreResult.highCount,
+        mediumCount: scoreResult.mediumCount,
+        lowCount: scoreResult.lowCount,
+      },
+    });
+
+    this.logger.log(
+      `Security scan ${scanId} completed: score=${scoreResult.securityScore}, findings=${scoreResult.totalFindings}`,
+    );
+
+    await this.queueService.addSecurityScanComplete({
+      scanId: scan.id,
+      orgId: scan.orgId,
+      deviceId: scan.deviceId,
+      score: scoreResult,
+      findingCount: scoreResult.totalFindings,
+    });
+
+    for (const f of findingRecords) {
+      if (f.severity === 'critical' || f.severity === 'high') {
+        await this.queueService.addSecurityFindingAlert({
+          findingId: f.id,
+          orgId: scan.orgId,
+          deviceId: scan.deviceId,
+          severity: f.severity,
+          finding: f.finding,
+        });
+      }
+    }
+
+    return { scanId: scan.id, scoreId: score.id, score: scoreResult };
   }
 
   async getLatestScan(deviceId: string, orgId: string) {

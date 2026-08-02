@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiOrchestratorService } from '../ai/ai-orchestrator.service';
+import { QueueService } from '../queue/queue.service';
 import { KbArticle, KbEmbedding, Prisma } from '@prisma/client';
 
 type EmbeddingWithArticle = Prisma.KbEmbeddingGetPayload<{ include: { article: true } }>;
@@ -20,6 +21,19 @@ export interface KbQueryRequest {
   topK?: number; // Number of results to return, default 5
 }
 
+export interface KbPaginationRequest {
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export interface RetrievedChunk {
   id: string;
   articleId: string;
@@ -34,6 +48,22 @@ export interface RetrievedChunk {
 // Dev/test fallback also produces 1536-dim vectors
 const EMBEDDING_DIMENSION = 1536;
 
+// --- In-memory cache for article listings ---
+interface CacheEntry<T> { data: T; expiresAt: number; }
+const articleCache = new Map<string, CacheEntry<KbArticle[]>>();
+const ARTICLE_CACHE_TTL_MS = 10000; // 10s cache
+
+function getCachedArticles(orgId: string): KbArticle[] | null {
+  const entry = articleCache.get(orgId);
+  if (entry && Date.now() < entry.expiresAt) return entry.data;
+  articleCache.delete(orgId);
+  return null;
+}
+
+function setCachedArticles(orgId: string, data: KbArticle[]): void {
+  articleCache.set(orgId, { data, expiresAt: Date.now() + ARTICLE_CACHE_TTL_MS });
+}
+
 @Injectable()
 export class KbService {
   private readonly logger = new Logger(KbService.name);
@@ -41,38 +71,72 @@ export class KbService {
   constructor(
     private prisma: PrismaService,
     private aiOrchestrator: AiOrchestratorService,
+    private queueService: QueueService,
   ) {}
 
   /**
-   * Create a new KB article and automatically chunk and embed it
+   * Create a new KB article and queue async embedding
    */
   async createArticle(
     orgId: string,
     dto: CreateKbArticleDto,
   ): Promise<KbArticle> {
-    // Create the article
+    const dup = await this.prisma.kbArticle.findFirst({
+      where: { orgId, title: dto.title, markdown: dto.markdown },
+    });
+    if (dup) {
+      throw new ConflictException('An identical article already exists');
+    }
+
     const article = await this.prisma.kbArticle.create({
-      data: {
-        orgId,
-        title: dto.title,
-        markdown: dto.markdown,
-      },
+      data: { orgId, title: dto.title, markdown: dto.markdown },
     });
 
-    // Chunk and embed the markdown
-    await this.chunkAndEmbedArticle(orgId, article.id);
+    articleCache.delete(orgId);
+
+    await this.queueService.addKbEmbedding({ orgId, articleId: article.id });
 
     return article;
   }
 
   /**
-   * Get all articles for an organization
+   * Get all articles for an organization (with pagination)
    */
-  async getArticles(orgId: string): Promise<KbArticle[]> {
-    return this.prisma.kbArticle.findMany({
-      where: { orgId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async getArticles(orgId: string, pagination?: KbPaginationRequest): Promise<PaginatedResult<KbArticle>> {
+    const page = pagination?.page || 1;
+    const limit = Math.min(pagination?.limit || 50, 100);
+    const skip = (page - 1) * limit;
+
+    // Use cache for default page
+    if (page === 1 && limit === 50) {
+      const cached = getCachedArticles(orgId);
+      if (cached) {
+        return { data: cached.slice(0, limit), total: cached.length, page, limit, totalPages: Math.ceil(cached.length / limit) };
+      }
+    }
+
+    const [articles, total] = await Promise.all([
+      this.prisma.kbArticle.findMany({
+        where: { orgId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+        select: { id: true, orgId: true, title: true, markdown: true, createdAt: true, updatedAt: true },
+      }),
+      this.prisma.kbArticle.count({ where: { orgId } }),
+    ]);
+
+    if (page === 1 && limit === 50) {
+      setCachedArticles(orgId, articles as KbArticle[]);
+    }
+
+    return {
+      data: articles as KbArticle[],
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /**
@@ -105,17 +169,27 @@ export class KbService {
       },
     });
 
-    // If markdown changed, re-chunk and embed
     if (dto.markdown !== undefined) {
-      // Delete old embeddings
-      await this.prisma.kbEmbedding.deleteMany({
-        where: { articleId },
-      });
-      // Create new embeddings
-      await this.chunkAndEmbedArticle(orgId, articleId);
+      await this.prisma.kbEmbedding.deleteMany({ where: { articleId } });
+      await this.queueService.addKbEmbedding({ orgId, articleId });
     }
 
+    articleCache.delete(orgId);
+
     return updated;
+  }
+
+  /**
+   * Reindex an article (re-chunk and re-embed)
+   */
+  async reindexArticle(articleId: string, orgId: string): Promise<KbArticle> {
+    const article = await this.getArticle(articleId, orgId);
+    if (!article) {
+      throw new Error(`Article ${articleId} not found`);
+    }
+    await this.prisma.kbEmbedding.deleteMany({ where: { articleId } });
+    await this.queueService.addKbEmbedding({ orgId, articleId });
+    return article;
   }
 
   /**
@@ -130,6 +204,9 @@ export class KbService {
     await this.prisma.kbArticle.delete({
       where: { id: articleId },
     });
+
+    // Invalidate cache
+    articleCache.delete(orgId);
   }
 
   /**

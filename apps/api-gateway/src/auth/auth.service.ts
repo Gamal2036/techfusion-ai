@@ -3,15 +3,28 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
+import * as speakeasy from 'speakeasy';
 
-const JWT_SECRET = () => process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
-const JWT_REFRESH_SECRET = () =>
-  process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret-change-in-production-xyz789';
+const JWT_SECRET = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required');
+  }
+  return secret;
+};
+const JWT_REFRESH_SECRET = () => {
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET environment variable is required');
+  }
+  return secret;
+};
 
 interface SignupInput {
   email: string;
@@ -29,8 +42,21 @@ function generateRefreshToken(): string {
   return crypto.randomBytes(48).toString('hex');
 }
 
+const MAX_SLUG_RETRIES = 10;
+
+export function normalizeSlug(input: string): string {
+  let slug = input
+    .toLowerCase()
+    .replace(/[^a-z0-9\u00C0-\u024F]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+  return slug || 'organization';
+}
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async signup(input: SignupInput) {
@@ -39,28 +65,51 @@ export class AuthService {
       throw new ConflictException('Email already in use');
     }
 
-    const passwordHash = await bcrypt.hash(input.password, 12);
-    const slug = input.orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'org';
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    const baseSlug = normalizeSlug(input.orgName);
 
-    const org = await this.prisma.organization.create({
-      data: { name: input.orgName, slug },
-    });
+    let lastError: unknown = null;
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: input.email,
-        passwordHash,
-        displayName: input.displayName,
-        orgId: org.id,
-        role: 'Owner',
-      },
-    });
+    for (let attempt = 0; attempt <= MAX_SLUG_RETRIES; attempt++) {
+      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
 
-    const tokens = await this.generateTokens(user.id, org.id, user.role);
-    return {
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: org.id },
-      ...tokens,
-    };
+      try {
+        const result = await this.prisma.$transaction(async (tx) => {
+          const org = await tx.organization.create({
+            data: { name: input.orgName, slug },
+          });
+
+          const user = await tx.user.create({
+            data: {
+              email: input.email,
+              passwordHash,
+              displayName: input.displayName,
+              orgId: org.id,
+              role: 'Owner',
+            },
+          });
+
+          return { org, user };
+        });
+
+        this.logger.debug(`Signup complete with slug "${slug}"`);
+        const tokens = await this.generateTokens(result.user.id, result.org.id, result.user.role);
+        return {
+          user: { id: result.user.id, email: result.user.email, displayName: result.user.displayName, role: result.user.role, orgId: result.org.id },
+          ...tokens,
+        };
+      } catch (err: any) {
+        if (err?.code === 'P2002' && attempt < MAX_SLUG_RETRIES) {
+          this.logger.debug(`Slug collision on "${slug}", retrying (attempt ${attempt + 1})`);
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    this.logger.error(`Failed to generate unique slug after ${MAX_SLUG_RETRIES + 1} attempts`);
+    throw lastError || new Error('Failed to generate unique slug');
   }
 
   async login(input: LoginInput) {
@@ -72,6 +121,33 @@ export class AuthService {
     const valid = await bcrypt.compare(input.password, user.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.isMfaEnabled) {
+      return { mfaRequired: true, userId: user.id };
+    }
+
+    const tokens = await this.generateTokens(user.id, user.orgId, user.role);
+    return {
+      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: user.orgId },
+      ...tokens,
+    };
+  }
+
+  async verifyLoginMfa(userId: string, token: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isMfaEnabled || !user.mfaSecret) {
+      throw new UnauthorizedException('MFA verification required');
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: user.mfaSecret,
+      encoding: 'base32',
+      token,
+    });
+
+    if (!verified) {
+      throw new UnauthorizedException('Invalid MFA code');
     }
 
     const tokens = await this.generateTokens(user.id, user.orgId, user.role);

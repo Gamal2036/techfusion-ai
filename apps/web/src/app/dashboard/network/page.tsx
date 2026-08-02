@@ -1,14 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { GlassPanel, Badge, Card, CardHeader, CardTitle, CardContent } from '@techfusion/ui';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { cn, GlassPanel, Badge } from '@techfusion/ui';
 import {
   Network,
   Activity,
   Wifi,
-  Globe,
   Search,
-  Zap,
   BarChart3,
   Clock,
   Server,
@@ -21,35 +19,30 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from 'recharts';
 import { NetworkMap } from '@/components/NetworkMap';
 import {
   useNetworkDevices,
   useNetworkTopology,
   useNetworkScans,
+  useStartDiscovery,
   useLatencyCheck,
   useDnsResolution,
   useTraceroute,
   useConnectivityCheck,
+  useNetworkWebSocket,
   TopologyNode,
-  NetworkDevice,
 } from '@/hooks/useNetwork';
 
 type Tab = 'map' | 'devices' | 'diagnostics' | 'scans';
 type DiagTab = 'latency' | 'dns' | 'traceroute' | 'connectivity';
 
-function cn(...classes: any[]) {
-  return classes.filter(Boolean).join(' ');
-}
-
 const TAB_STYLE = (active: boolean) =>
   cn(
     'px-4 py-2 rounded-lg text-sm font-medium transition-all',
     active
-      ? 'bg-primary-600/15 text-primary-400'
-      : 'text-white/40 hover:text-white/60 hover:bg-white/[0.04]',
+      ? 'bg-primary-600/15 text-primary'
+      : 'text-text-muted hover:text-text-secondary hover:bg-surface-subtle',
   );
 
 export default function NetworkPage() {
@@ -60,11 +53,82 @@ export default function NetworkPage() {
 
   const { devices, loading: devicesLoading, refetch: refetchDevices } = useNetworkDevices();
   const { topology, loading: topoLoading, refetch: refetchTopology } = useNetworkTopology();
-  const { scans, loading: scansLoading } = useNetworkScans();
+  const { scans, loading: scansLoading, refetch: refetchScans } = useNetworkScans();
+  const { starting: discoveryStarting, startDiscovery } = useStartDiscovery();
   const latency = useLatencyCheck();
   const dns = useDnsResolution();
   const traceroute = useTraceroute();
   const connectivity = useConnectivityCheck();
+
+  const [discoveryPolling, setDiscoveryPolling] = useState(false);
+  const discoveryPollRef = useRef<NodeJS.Timeout | null>(null);
+
+  const stopDiscoveryPolling = useCallback(() => {
+    if (discoveryPollRef.current) {
+      clearInterval(discoveryPollRef.current);
+      discoveryPollRef.current = null;
+      setDiscoveryPolling(false);
+    }
+  }, []);
+
+  const handleStartDiscovery = useCallback(async () => {
+    const result = await startDiscovery();
+    if (result && result.scanId) {
+      setDiscoveryPolling(true);
+      const scanId = result.scanId;
+      discoveryPollRef.current = setInterval(() => {
+        refetchTopology();
+        refetchDevices();
+        refetchScans();
+      }, 5000);
+
+      const pollCheck = setInterval(async () => {
+        try {
+          const resp = await fetch('/api/network/scans');
+          const data = await resp.json();
+          if (Array.isArray(data) && data.length > 0) {
+            const latest = data.find((s: any) => s.id === scanId);
+            if (latest && (latest.status === 'completed' || latest.status === 'failed')) {
+              clearInterval(pollCheck);
+              stopDiscoveryPolling();
+              refetchTopology();
+              refetchDevices();
+              refetchScans();
+            }
+          }
+        } catch {
+          // ignore polling errors
+        }
+      }, 3000);
+
+      setTimeout(() => {
+        clearInterval(pollCheck);
+        stopDiscoveryPolling();
+        refetchTopology();
+        refetchDevices();
+        refetchScans();
+      }, 65000);
+    }
+  }, [startDiscovery, refetchTopology, refetchDevices, refetchScans, stopDiscoveryPolling]);
+
+  useNetworkWebSocket({
+    onTopology: useCallback(
+      (liveTopology: any) => {
+        if (liveTopology && liveTopology.nodes) {
+          refetchTopology();
+          refetchDevices();
+        }
+      },
+      [refetchTopology, refetchDevices],
+    ),
+    onDiagnostics: useCallback(() => {
+      refetchDevices();
+    }, [refetchDevices]),
+    onScanStatus: useCallback(() => {
+      refetchScans();
+      refetchDevices();
+    }, [refetchScans, refetchDevices]),
+  });
 
   const [latencyTarget, setLatencyTarget] = useState('8.8.8.8');
   const [dnsHostname, setDnsHostname] = useState('google.com');
@@ -83,6 +147,14 @@ export default function NetworkPage() {
     }
   }, [activeTab, diagTab]);
 
+  useEffect(() => {
+    return () => {
+      if (discoveryPollRef.current) {
+        clearInterval(discoveryPollRef.current);
+      }
+    };
+  }, []);
+
   const connectedCount = devices.filter((d) => d.reachable).length;
   const offlineCount = devices.filter((d) => !d.reachable).length;
 
@@ -92,33 +164,33 @@ export default function NetworkPage() {
         <GlassPanel intensity="light" className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-primary-500/10 flex items-center justify-center">
-              <Wifi className="h-5 w-5 text-primary-400" />
+              <Wifi className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{topology?.nodes.length ?? 0}</p>
-              <p className="text-xs text-white/40">Discovered Nodes</p>
+              <p className="text-2xl font-bold text-text-primary">{topology?.nodes.length ?? 0}</p>
+              <p className="text-xs text-text-muted">Discovered Nodes</p>
             </div>
           </div>
         </GlassPanel>
         <GlassPanel intensity="light" className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center">
-              <Activity className="h-5 w-5 text-green-400" />
+              <Activity className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-green-400">{connectedCount}</p>
-              <p className="text-xs text-white/40">Reachable</p>
+              <p className="text-2xl font-bold text-success">{connectedCount}</p>
+              <p className="text-xs text-text-muted">Reachable</p>
             </div>
           </div>
         </GlassPanel>
         <GlassPanel intensity="light" className="p-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center">
-              <Activity className="h-5 w-5 text-red-400" />
+              <Activity className="h-5 w-5 text-danger" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-red-400">{offlineCount}</p>
-              <p className="text-xs text-white/40">Offline</p>
+              <p className="text-2xl font-bold text-danger">{offlineCount}</p>
+              <p className="text-xs text-text-muted">Offline</p>
             </div>
           </div>
         </GlassPanel>
@@ -131,7 +203,7 @@ export default function NetworkPage() {
               <p className="text-2xl font-bold text-cyan-400">
                 {topology?.scan?.subnet || 'N/A'}
               </p>
-              <p className="text-xs text-white/40">Subnet</p>
+              <p className="text-xs text-text-muted">Subnet</p>
             </div>
           </div>
         </GlassPanel>
@@ -139,29 +211,31 @@ export default function NetworkPage() {
 
       <GlassPanel intensity="light" className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-white">Network Topology</h3>
+          <h3 className="text-sm font-medium text-text-primary">Network Topology</h3>
           <button
             onClick={() => refetchTopology()}
-            className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+            className="text-xs text-primary hover:text-primary-300 transition-colors"
           >
             Refresh
           </button>
         </div>
         {topoLoading && !topology ? (
-          <div className="h-[500px] flex items-center justify-center text-white/30 text-sm">
+          <div className="h-[500px] flex items-center justify-center text-text-disabled text-sm">
             Loading topology...
           </div>
         ) : topology && topology.nodes.length > 0 ? (
           <NetworkMap topology={topology} onNodeClick={handleNodeClick} />
         ) : (
           <div className="h-[500px] flex flex-col items-center justify-center text-center">
-            <Network className="h-10 w-10 text-white/20 mb-3" />
-            <p className="text-white/30 text-sm">No topology data available.</p>
+            <Network className="h-10 w-10 text-text-disabled mb-3" />
+            <p className="text-text-disabled text-sm">No topology data available.</p>
             <button
-              onClick={() => refetchTopology()}
-              className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors"
+              onClick={handleStartDiscovery}
+              disabled={discoveryStarting || discoveryPolling}
+              className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
-              Start Discovery
+              {(discoveryStarting || discoveryPolling) && <Activity className="h-3.5 w-3.5 animate-spin" />}
+              {discoveryStarting ? 'Starting...' : discoveryPolling ? 'Discovering...' : 'Start Discovery'}
             </button>
           </div>
         )}
@@ -172,37 +246,37 @@ export default function NetworkPage() {
   const renderDevicesTab = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-white/40">{devices.length} devices</p>
+        <p className="text-sm text-text-muted">{devices.length} devices</p>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-disabled" />
           <input
             type="text"
             placeholder="Search by IP, hostname, vendor..."
             value={deviceSearch}
             onChange={(e) => setDeviceSearch(e.target.value)}
-            className="h-10 w-72 rounded-xl border border-white/[0.06] bg-white/[0.03] pl-10 pr-4 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-primary-500/40 transition-all"
+            className="h-10 w-72 rounded-xl border border-border bg-surface-subtle pl-10 pr-4 text-sm text-text-primary placeholder:text-text-disabled outline-none focus:ring-2 focus:ring-primary-500/40 transition-all"
           />
         </div>
       </div>
 
       {devicesLoading && devices.length === 0 ? (
         <GlassPanel intensity="light" className="p-12 text-center">
-          <Activity className="h-8 w-8 text-white/20 mx-auto mb-3 animate-pulse" />
-          <p className="text-sm text-white/30">Loading devices...</p>
+          <Activity className="h-8 w-8 text-text-disabled mx-auto mb-3 animate-pulse" />
+          <p className="text-sm text-text-disabled">Loading devices...</p>
         </GlassPanel>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">IP</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Hostname</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">MAC</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Vendor</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Latency</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Source</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Last Seen</th>
+              <tr className="border-b border-border bg-surface">
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Status</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">IP</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Hostname</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">MAC</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Vendor</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Latency</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Source</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Last Seen</th>
               </tr>
             </thead>
             <tbody>
@@ -215,27 +289,27 @@ export default function NetworkPage() {
                     (d.vendor && d.vendor.toLowerCase().includes(deviceSearch.toLowerCase())),
                 )
                 .map((d) => (
-                  <tr key={d.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                  <tr key={d.id} className="border-b border-border-subtle hover:bg-surface transition-colors">
                     <td className="px-4 py-3">
                       <div className={cn('h-2.5 w-2.5 rounded-full', d.reachable ? 'bg-green-400' : 'bg-gray-500')} />
                     </td>
-                    <td className="px-4 py-3 text-white font-mono text-xs">{d.ip}</td>
-                    <td className="px-4 py-3 text-white/70">{d.hostname || '-'}</td>
-                    <td className="px-4 py-3 text-white/50 font-mono text-xs">{d.mac || '-'}</td>
+                    <td className="px-4 py-3 text-text-primary font-mono text-xs">{d.ip}</td>
+                    <td className="px-4 py-3 text-text-secondary">{d.hostname || '-'}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono text-xs">{d.mac || '-'}</td>
                     <td className="px-4 py-3">
                       {d.vendor ? (
                         <Badge variant="primary" className="text-[10px]">{d.vendor}</Badge>
                       ) : (
-                        <span className="text-white/30">-</span>
+                        <span className="text-text-disabled">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-white/70">
+                    <td className="px-4 py-3 text-text-secondary">
                       {d.latencyMs != null ? `${d.latencyMs.toFixed(1)}ms` : '-'}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant="secondary" className="text-[10px]">{d.source}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-white/40 text-xs">
+                    <td className="px-4 py-3 text-text-muted text-xs">
                       {new Date(d.lastSeenAt).toLocaleTimeString()}
                     </td>
                   </tr>
@@ -259,19 +333,19 @@ export default function NetworkPage() {
 
       {diagTab === 'latency' && (
         <GlassPanel intensity="light" className="p-5">
-          <h3 className="text-sm font-medium text-white mb-4">Latency Check</h3>
+          <h3 className="text-sm font-medium text-text-primary mb-4">Latency Check</h3>
           <div className="flex gap-3 mb-4">
             <input
               type="text"
               value={latencyTarget}
               onChange={(e) => setLatencyTarget(e.target.value)}
               placeholder="Target IP..."
-              className="h-10 flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-primary-500/40"
+              className="h-10 flex-1 rounded-xl border border-border bg-surface-subtle px-4 text-sm text-text-primary placeholder:text-text-disabled outline-none focus:ring-2 focus:ring-primary-500/40"
             />
             <button
               onClick={() => latency.run(latencyTarget, 4)}
               disabled={latency.running}
-              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-sm font-medium transition-colors disabled:opacity-50"
             >
               {latency.running ? 'Running...' : 'Run'}
             </button>
@@ -279,27 +353,27 @@ export default function NetworkPage() {
           {latency.result && (
             <div className="space-y-3">
               <div className="grid grid-cols-4 gap-3">
-                <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 text-center">
-                  <p className="text-xs text-white/40">Avg</p>
-                  <p className="text-lg font-bold text-white">
+                <div className="rounded-xl bg-surface-subtle border border-border p-3 text-center">
+                  <p className="text-xs text-text-muted">Avg</p>
+                  <p className="text-lg font-bold text-text-primary">
                     {latency.result.avg != null ? `${latency.result.avg.toFixed(1)}ms` : 'N/A'}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 text-center">
-                  <p className="text-xs text-white/40">Min</p>
-                  <p className="text-lg font-bold text-green-400">
+                <div className="rounded-xl bg-surface-subtle border border-border p-3 text-center">
+                  <p className="text-xs text-text-muted">Min</p>
+                  <p className="text-lg font-bold text-success">
                     {latency.result.min != null ? `${latency.result.min.toFixed(1)}ms` : 'N/A'}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 text-center">
-                  <p className="text-xs text-white/40">Max</p>
-                  <p className="text-lg font-bold text-red-400">
+                <div className="rounded-xl bg-surface-subtle border border-border p-3 text-center">
+                  <p className="text-xs text-text-muted">Max</p>
+                  <p className="text-lg font-bold text-danger">
                     {latency.result.max != null ? `${latency.result.max.toFixed(1)}ms` : 'N/A'}
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3 text-center">
-                  <p className="text-xs text-white/40">Packet Loss</p>
-                  <p className={cn('text-lg font-bold', latency.result.packetLoss > 0 ? 'text-red-400' : 'text-green-400')}>
+                <div className="rounded-xl bg-surface-subtle border border-border p-3 text-center">
+                  <p className="text-xs text-text-muted">Packet Loss</p>
+                  <p className={cn('text-lg font-bold', latency.result.packetLoss > 0 ? 'text-danger' : 'text-success')}>
                     {latency.result.packetLoss.toFixed(0)}%
                   </p>
                 </div>
@@ -336,19 +410,19 @@ export default function NetworkPage() {
 
       {diagTab === 'dns' && (
         <GlassPanel intensity="light" className="p-5">
-          <h3 className="text-sm font-medium text-white mb-4">DNS Resolution</h3>
+          <h3 className="text-sm font-medium text-text-primary mb-4">DNS Resolution</h3>
           <div className="flex gap-3 mb-4">
             <input
               type="text"
               value={dnsHostname}
               onChange={(e) => setDnsHostname(e.target.value)}
               placeholder="Hostname..."
-              className="h-10 flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-primary-500/40"
+              className="h-10 flex-1 rounded-xl border border-border bg-surface-subtle px-4 text-sm text-text-primary placeholder:text-text-disabled outline-none focus:ring-2 focus:ring-primary-500/40"
             />
             <button
               onClick={() => dns.run(dnsHostname)}
               disabled={dns.running}
-              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-sm font-medium transition-colors disabled:opacity-50"
             >
               {dns.running ? 'Resolving...' : 'Resolve'}
             </button>
@@ -356,13 +430,13 @@ export default function NetworkPage() {
           {dns.result && (
             <div className="space-y-3">
               {dns.result.results.map((r, i) => (
-                <div key={i} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
+                <div key={i} className="rounded-xl bg-surface-subtle border border-border p-3">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-white">{r.resolver}</span>
-                    <span className="text-xs text-white/40">{r.timeMs}ms</span>
+                    <span className="text-sm font-medium text-text-primary">{r.resolver}</span>
+                    <span className="text-xs text-text-muted">{r.timeMs}ms</span>
                   </div>
                   {r.error ? (
-                    <p className="text-xs text-red-400">{r.error}</p>
+                    <p className="text-xs text-danger">{r.error}</p>
                   ) : r.addresses.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {r.addresses.map((addr, j) => (
@@ -370,7 +444,7 @@ export default function NetworkPage() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-white/30">No records found</p>
+                    <p className="text-xs text-text-disabled">No records found</p>
                   )}
                 </div>
               ))}
@@ -381,26 +455,26 @@ export default function NetworkPage() {
 
       {diagTab === 'traceroute' && (
         <GlassPanel intensity="light" className="p-5">
-          <h3 className="text-sm font-medium text-white mb-4">Traceroute</h3>
+          <h3 className="text-sm font-medium text-text-primary mb-4">Traceroute</h3>
           <div className="flex gap-3 mb-4">
             <input
               type="text"
               value={traceTarget}
               onChange={(e) => setTraceTarget(e.target.value)}
               placeholder="Target hostname or IP..."
-              className="h-10 flex-1 rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 text-sm text-white placeholder:text-white/30 outline-none focus:ring-2 focus:ring-primary-500/40"
+              className="h-10 flex-1 rounded-xl border border-border bg-surface-subtle px-4 text-sm text-text-primary placeholder:text-text-disabled outline-none focus:ring-2 focus:ring-primary-500/40"
             />
             <button
               onClick={() => traceroute.run(traceTarget)}
               disabled={traceroute.running}
-              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+              className="h-10 px-5 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-sm font-medium transition-colors disabled:opacity-50"
             >
               {traceroute.running ? 'Running...' : 'Trace'}
             </button>
           </div>
           {traceroute.result && (
             <div className="space-y-1">
-              <div className="flex items-center gap-4 px-3 py-2 text-xs text-white/30 font-medium">
+              <div className="flex items-center gap-4 px-3 py-2 text-xs text-text-disabled font-medium">
                 <span className="w-8">Hop</span>
                 <span className="flex-1">IP</span>
                 <span className="w-20 text-right">Latency</span>
@@ -408,11 +482,11 @@ export default function NetworkPage() {
               {traceroute.result.hops.map((hop) => (
                 <div
                   key={hop.hop}
-                  className="flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-white/[0.03] transition-colors"
+                  className="flex items-center gap-4 px-3 py-2 rounded-lg hover:bg-surface-subtle transition-colors"
                 >
-                  <span className="w-8 text-xs text-white/40 font-mono">{hop.hop}</span>
-                  <span className="flex-1 text-sm text-white font-mono text-xs">{hop.ip}</span>
-                  <span className="w-20 text-right text-xs text-white/60">
+                  <span className="w-8 text-xs text-text-muted font-mono">{hop.hop}</span>
+                  <span className="flex-1 text-sm text-text-primary font-mono text-xs">{hop.ip}</span>
+                  <span className="w-20 text-right text-xs text-text-secondary">
                     {hop.latencyMs != null ? `${hop.latencyMs.toFixed(1)}ms` : '*'}
                   </span>
                 </div>
@@ -425,11 +499,11 @@ export default function NetworkPage() {
       {diagTab === 'connectivity' && (
         <GlassPanel intensity="light" className="p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-white">Connectivity Check</h3>
+            <h3 className="text-sm font-medium text-text-primary">Connectivity Check</h3>
             <button
               onClick={() => connectivity.run()}
               disabled={connectivity.running}
-              className="h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors disabled:opacity-50"
+              className="h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50"
             >
               {connectivity.running ? 'Running...' : 'Run Check'}
             </button>
@@ -439,13 +513,13 @@ export default function NetworkPage() {
               {connectivity.result.results.map((r, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between rounded-xl bg-white/[0.03] border border-white/[0.06] p-4"
+                  className="flex items-center justify-between rounded-xl bg-surface-subtle border border-border p-4"
                 >
                   <div className="flex items-center gap-3">
                     <div className={cn('h-3 w-3 rounded-full', r.reachable ? 'bg-green-400' : 'bg-red-400')} />
-                    <span className="text-sm text-white font-medium">{r.name}</span>
+                    <span className="text-sm text-text-primary font-medium">{r.name}</span>
                   </div>
-                  <span className="text-xs text-white/50">
+                  <span className="text-xs text-text-secondary">
                     {r.reachable ? `${r.latencyMs?.toFixed(0)}ms` : r.error || 'Unreachable'}
                   </span>
                 </div>
@@ -459,31 +533,31 @@ export default function NetworkPage() {
 
   const renderScansTab = () => (
     <GlassPanel intensity="light" className="p-5">
-      <h3 className="text-sm font-medium text-white mb-4">Scan History</h3>
+      <h3 className="text-sm font-medium text-text-primary mb-4">Scan History</h3>
       {scansLoading && scans.length === 0 ? (
-        <p className="text-sm text-white/30 text-center py-8">Loading...</p>
+        <p className="text-sm text-text-disabled text-center py-8">Loading...</p>
       ) : scans.length === 0 ? (
-        <p className="text-sm text-white/30 text-center py-8">No scans recorded yet</p>
+        <p className="text-sm text-text-disabled text-center py-8">No scans recorded yet</p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/[0.06]">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Time</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Subnet</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Devices</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Gateway</th>
-                <th className="text-left px-4 py-3 text-xs text-white/30 font-medium uppercase tracking-wider">Duration</th>
+              <tr className="border-b border-border bg-surface">
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Time</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Subnet</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Devices</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Gateway</th>
+                <th className="text-left px-4 py-3 text-xs text-text-disabled font-medium uppercase tracking-wider">Duration</th>
               </tr>
             </thead>
             <tbody>
               {scans.map((s) => (
-                <tr key={s.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                  <td className="px-4 py-3 text-white/70 text-xs">{new Date(s.startedAt).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-white font-mono text-xs">{s.subnet || '-'}</td>
-                  <td className="px-4 py-3 text-white font-mono text-xs">{s.deviceCount}</td>
-                  <td className="px-4 py-3 text-white/50 font-mono text-xs">{s.gatewayIp || '-'}</td>
-                  <td className="px-4 py-3 text-white/70 text-xs">{s.scanDurationMs ? `${s.scanDurationMs}ms` : '-'}</td>
+                <tr key={s.id} className="border-b border-border-subtle hover:bg-surface transition-colors">
+                  <td className="px-4 py-3 text-text-secondary text-xs">{new Date(s.startedAt).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-text-primary font-mono text-xs">{s.subnet || '-'}</td>
+                  <td className="px-4 py-3 text-text-primary font-mono text-xs">{s.deviceCount}</td>
+                  <td className="px-4 py-3 text-text-secondary font-mono text-xs">{s.gatewayIp || '-'}</td>
+                  <td className="px-4 py-3 text-text-secondary text-xs">{s.scanDurationMs ? `${s.scanDurationMs}ms` : '-'}</td>
                 </tr>
               ))}
             </tbody>
@@ -496,8 +570,8 @@ export default function NetworkPage() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-semibold text-white tracking-tight">Network Center</h1>
-        <p className="text-sm text-white/40 mt-1">
+        <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Network Center</h1>
+        <p className="text-sm text-text-muted mt-1">
           Local network discovery, topology mapping, and connectivity diagnostics.
         </p>
       </div>

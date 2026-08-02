@@ -1,15 +1,39 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RemoteSupportGateway } from './remote-support.gateway';
 
+const REMOTE_SUPPORT_ACTIONS = [
+  'session_start',
+  'session_end',
+  'consent_granted',
+  'consent_denied',
+  'input_sent',
+  'screen_shared',
+  'recording_saved',
+  'recording_started',
+  'recording_stopped',
+  'recording_downloaded',
+  'input_control_enabled',
+  'input_control_disabled',
+];
+
 @Injectable()
 export class RemoteSupportService {
+  private readonly logger = new Logger(RemoteSupportService.name);
+
   constructor(
     private prisma: PrismaService,
     private gateway: RemoteSupportGateway,
   ) {}
 
   async createSession(orgId: string, technicianId: string, deviceId: string, unattendedPolicy?: string) {
+    const device = await this.prisma.device.findFirst({
+      where: { id: deviceId, orgId },
+    });
+    if (!device) {
+      throw new NotFoundException('Device not found or does not belong to your organization');
+    }
+
     const existingActive = await this.prisma.remoteSession.findFirst({
       where: { orgId, deviceId, status: { in: ['pending', 'active'] } },
     });
@@ -61,9 +85,9 @@ export class RemoteSupportService {
     return session;
   }
 
-  async getPendingForDevice(deviceToken: string, deviceId: string) {
+  async getPendingForDevice(orgId: string, deviceId: string) {
     return this.prisma.remoteSession.findMany({
-      where: { deviceId, status: 'pending', consentGranted: false },
+      where: { orgId, deviceId, status: 'pending', consentGranted: false },
       select: {
         id: true,
         deviceId: true,
@@ -72,9 +96,9 @@ export class RemoteSupportService {
     });
   }
 
-  async handleConsent(deviceToken: string, body: { sessionId: string; deviceId: string; granted: boolean; method: string }) {
+  async handleConsent(orgId: string, body: { sessionId: string; deviceId: string; granted: boolean; method: string }) {
     const session = await this.prisma.remoteSession.findFirst({
-      where: { id: body.sessionId, deviceId: body.deviceId },
+      where: { id: body.sessionId, deviceId: body.deviceId, orgId },
     });
     if (!session) throw new NotFoundException('Session not found');
     if (session.status !== 'pending') throw new ForbiddenException('Session is not pending');
@@ -111,9 +135,9 @@ export class RemoteSupportService {
     return { status: 'ok', sessionId: body.sessionId, granted: body.granted };
   }
 
-  async updateAgentStatus(deviceToken: string, body: { sessionId: string; status: string; deviceId: string }) {
+  async updateAgentStatus(orgId: string, body: { sessionId: string; status: string; deviceId: string }) {
     const session = await this.prisma.remoteSession.findFirst({
-      where: { id: body.sessionId, deviceId: body.deviceId },
+      where: { id: body.sessionId, deviceId: body.deviceId, orgId },
     });
     if (!session) throw new NotFoundException('Session not found');
 
@@ -170,7 +194,7 @@ export class RemoteSupportService {
   }
 
   async getAuditLogs(orgId: string, sessionId?: string, limit = 50) {
-    const where: any = { orgId };
+    const where: any = { orgId, action: { in: REMOTE_SUPPORT_ACTIONS } };
     if (sessionId) where.sessionId = sessionId;
     return this.prisma.auditLog.findMany({
       where,
@@ -280,5 +304,55 @@ export class RemoteSupportService {
     });
 
     return { status: 'ok', frameCount: trimmed.length };
+  }
+
+  async cleanupStaleSessions() {
+    const staleThreshold = new Date(Date.now() - 5 * 60 * 1000);
+    const stale = await this.prisma.remoteSession.updateMany({
+      where: {
+        status: { in: ['pending'] },
+        createdAt: { lt: staleThreshold },
+      },
+      data: { status: 'expired', errorMessage: 'Session expired: no response from device' },
+    });
+
+    const stuckConnecting = await this.prisma.remoteSession.updateMany({
+      where: {
+        status: 'active',
+        startedAt: null,
+        createdAt: { lt: staleThreshold },
+      },
+      data: { status: 'failed', errorMessage: 'Session failed: stuck in connecting state', endedAt: new Date() },
+    });
+
+    if (stale.count > 0 || stuckConnecting.count > 0) {
+      this.logger.log(`[REMOTE] Cleaned up ${stale.count} stale pending sessions, ${stuckConnecting.count} stuck sessions`);
+    }
+
+    return { expired: stale.count, failed: stuckConnecting.count };
+  }
+
+  async getSessionWithDevice(orgId: string, sessionId: string) {
+    const session = await this.prisma.remoteSession.findFirst({
+      where: { id: sessionId, orgId },
+      include: {
+        org: {
+          select: {
+            devices: {
+              where: { id: { equals: undefined } },
+              select: { id: true, hostname: true, os: true, lastSeenAt: true },
+            },
+          },
+        },
+      },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const device = await this.prisma.device.findFirst({
+      where: { id: session.deviceId, orgId },
+      select: { id: true, hostname: true, os: true, osVersion: true, lastSeenAt: true },
+    });
+
+    return { ...session, device };
   }
 }

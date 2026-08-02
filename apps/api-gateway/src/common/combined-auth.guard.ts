@@ -25,7 +25,10 @@ export class CombinedAuthGuard implements CanActivate {
     const token = authHeader.slice(7);
     let user: any;
     try {
-      const secret = process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        throw new UnauthorizedException('JWT_SECRET environment variable is not configured');
+      }
       user = jwt.verify(token, secret);
       request.user = user;
     } catch {

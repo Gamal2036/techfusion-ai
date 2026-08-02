@@ -4,7 +4,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const STORAGE_DIR = process.env.REPORT_STORAGE_DIR || './report-storage';
-const SIGNED_URL_SECRET = process.env.REPORT_URL_SECRET || 'report-signing-secret-dev';
+
+function getSignedUrlSecret(): string {
+  const secret = process.env.REPORT_URL_SECRET;
+  if (!secret) {
+    throw new Error('REPORT_URL_SECRET environment variable is required');
+  }
+  return secret;
+}
+
 const URL_EXPIRY_HOURS = 24;
 
 @Injectable()
@@ -56,12 +64,12 @@ export class ReportStorageService {
     const expiresAt = Math.floor(Date.now() / 1000) + URL_EXPIRY_HOURS * 3600;
     const payload = `${orgId}:${reportId}:${format}:${expiresAt}`;
     const signature = crypto
-      .createHmac('sha256', SIGNED_URL_SECRET)
+      .createHmac('sha256', getSignedUrlSecret())
       .update(payload)
       .digest('hex')
       .slice(0, 16);
 
-    return `/api/reports/download/${reportId}/${format}?expires=${expiresAt}&sig=${signature}`;
+    return `/reports/download/${reportId}/${format}?expires=${expiresAt}&sig=${signature}`;
   }
 
   validateSignedUrl(
@@ -80,7 +88,7 @@ export class ReportStorageService {
 
     const payload = `${orgId}:${reportId}:${format}:${expires}`;
     const expectedSig = crypto
-      .createHmac('sha256', SIGNED_URL_SECRET)
+      .createHmac('sha256', getSignedUrlSecret())
       .update(payload)
       .digest('hex')
       .slice(0, 16);

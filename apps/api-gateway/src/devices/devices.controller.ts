@@ -1,6 +1,7 @@
 import {
-  Controller, Get, Post, Param, Query, Body, UseGuards, Req,
+  Controller, Get, Post, Delete, Param, Query, Body, UseGuards, Req, Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { MetricsPayloadDto } from './dto/metrics-payload.dto';
@@ -10,12 +11,19 @@ import { Public } from '../common/public.decorator';
 import { Roles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
 import { DevicesGateway } from './devices.gateway';
+import { EnrollmentService } from '../enrollment/enrollment.service';
+import { throttle } from '../config/rate-limits';
+import { RegisterPublicDto } from '../enrollment/dto/register-public.dto';
+import { ForbiddenException } from '@nestjs/common';
 
 @Controller('devices')
 export class DevicesController {
+  private readonly logger = new Logger(DevicesController.name);
+
   constructor(
     private devicesService: DevicesService,
     private devicesGateway: DevicesGateway,
+    private enrollmentService: EnrollmentService,
   ) {}
 
   @Post('register')
@@ -26,53 +34,164 @@ export class DevicesController {
   }
 
   @Public()
+  @Throttle(throttle(10, 60000))
   @Post('register-public')
-  async registerPublic(@Req() req: any, @Body() dto: RegisterDeviceDto) {
-    const device = await this.devicesService.register(
-      req.headers['x-org-id'] || '00000000-0000-0000-0000-000000000000',
-      dto,
-    );
-    return { device, deviceToken: device.deviceToken };
+  async registerPublic(@Req() req: any, @Body() dto: RegisterPublicDto) {
+    let orgId: string;
+
+    if (dto.enrollmentToken) {
+      orgId = await this.enrollmentService.validateToken(dto.enrollmentToken);
+    } else {
+      return {
+        error: 'Enrollment token is required. Contact your organization admin to obtain one.',
+        code: 'ENROLLMENT_REQUIRED',
+      };
+    }
+
+    const result = await this.devicesService.registerPublic(orgId, dto);
+    return {
+      device: result.device,
+      deviceToken: result.deviceToken,
+      duplicate: result.duplicate,
+    };
   }
 
   @Public()
+  @Throttle(throttle(5, 60000))
+  @Post('recover-credential')
+  async recoverCredential(@Req() req: any, @Body() body: { identityFingerprint?: string; installationId?: string; hostname?: string; deviceId?: string }) {
+    if (!body.identityFingerprint && !body.installationId && !body.hostname && !body.deviceId) {
+      return {
+        error: 'Provide at least one identity attribute: identityFingerprint, installationId, hostname, or deviceId.',
+        code: 'IDENTITY_REQUIRED',
+      };
+    }
+
+    const orgToken = req.headers['x-org-token'] as string;
+    if (!orgToken) {
+      return {
+        error: 'Organization token (x-org-token) is required for credential recovery.',
+        code: 'ORG_TOKEN_REQUIRED',
+      };
+    }
+
+    let orgId: string;
+    try {
+      orgId = await this.enrollmentService.validateToken(orgToken);
+    } catch {
+      return {
+        error: 'Invalid or expired organization token.',
+        code: 'INVALID_ORG_TOKEN',
+      };
+    }
+
+    const where: any = { orgId };
+    if (body.identityFingerprint) where.identityFingerprint = body.identityFingerprint;
+    else if (body.installationId) where.installationId = body.installationId;
+    else if (body.deviceId) where.id = body.deviceId;
+    else where.hostname = body.hostname;
+
+    const device = await this.devicesService['findFirstOrNull'](where);
+    if (!device) {
+      return {
+        error: 'No device found matching the provided identity attributes.',
+        code: 'DEVICE_NOT_FOUND',
+      };
+    }
+
+    const rotated = await this.devicesService.rotateCredential(
+      device.id,
+      orgId,
+      'recovery',
+      { recoveryMethod: 'credential_recovery_endpoint' },
+    );
+
+    return {
+      device: {
+        id: rotated.device.id,
+        name: rotated.device.name,
+        hostname: rotated.device.hostname,
+      },
+      deviceToken: rotated.newToken,
+    };
+  }
+
+  @Public()
+  @Throttle(throttle(120, 60000))
   @Post('metrics')
   @UseGuards(DeviceTokenGuard)
   async ingestMetrics(@Req() req: any, @Body() dto: MetricsPayloadDto) {
     const device = req.device;
+    const previousLastSeenAt = device.lastSeenAt;
     const result = await this.devicesService.ingestMetrics(device.id, device.orgId, dto);
 
-    // Convert BigInts to numbers for serialization
-    const safeResult = JSON.parse(JSON.stringify(result, (_, v) =>
-      typeof v === 'bigint' ? Number(v) : v,
-    ));
+    const updatedLastSeenAt = result.metric?.recordedAt ?? new Date();
 
-    // Push live update via WebSocket
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(
+        `[DEV_METRIC_INGEST] deviceId=${device.id} orgId=${device.orgId} ` +
+        `hostname=${device.hostname} ` +
+        `metricRecordedAt=${result.metric?.recordedAt?.toISOString() ?? 'N/A'} ` +
+        `previousLastSeenAt=${previousLastSeenAt?.toISOString() ?? 'null'} ` +
+        `updatedLastSeenAt=${updatedLastSeenAt?.toISOString() ?? 'N/A'}`
+      );
+    }
+
     this.devicesGateway.broadcastMetrics(device.orgId, device.id, {
-      metric: safeResult.metric,
-      score: safeResult.score,
+      metric: result.metric,
+      score: result.score,
+      lastSeenAt: updatedLastSeenAt.toISOString(),
     });
 
-    // Broadcast alerts if any were triggered
-    if (safeResult.alerts && safeResult.alerts.length > 0) {
-      for (const alert of safeResult.alerts) {
+    if (result.alerts && result.alerts.length > 0) {
+      for (const alert of result.alerts) {
         this.devicesGateway.broadcastAlert(device.orgId, alert);
       }
     }
 
-    return safeResult;
+    return result;
   }
 
   @Get()
   async listDevices(@Req() req: any) {
     const orgId = req.user?.orgId;
+    const userId = req.user?.sub;
     if (!orgId) return [];
-    return this.devicesService.findByOrg(orgId);
+
+    const devices = await this.devicesService.findByOrg(orgId);
+    const safe = devices.map((d: any) => ({
+      id: d.id,
+      orgId: d.orgId,
+      name: d.name,
+      hostname: d.hostname,
+      os: d.os,
+      osVersion: d.osVersion,
+      cpuModel: d.cpuModel,
+      cpuCores: d.cpuCores,
+      cpuLogical: d.cpuLogical,
+      ramTotal: d.ramTotal,
+      gpuInfo: d.gpuInfo,
+      diskTotal: d.diskTotal,
+      isLaptop: d.isLaptop,
+      inactive: d.inactive,
+      registeredAt: d.registeredAt,
+      lastSeenAt: d.lastSeenAt,
+      agentVersion: d.agentVersion,
+    }));
+
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(
+        `[DEV] GET /devices userId=${userId} orgId=${orgId} count=${safe.length} ids=${safe.map((d: any) => d.id).join(',')} hostnames=${safe.map((d: any) => d.hostname).join(',')}`
+      );
+    }
+
+    return safe;
   }
 
   @Get(':id')
   async getDevice(@Req() req: any, @Param('id') id: string) {
-    return this.devicesService.findById(id, req.user.orgId);
+    const device = await this.devicesService.findById(id, req.user.orgId);
+    return this.sanitizeDevice(device);
   }
 
   @Get(':id/metrics')
@@ -101,6 +220,12 @@ export class DevicesController {
       this.devicesService.getLatestMetrics(id, req.user.orgId),
       this.devicesService.getLatestScores(id, req.user.orgId),
     ]);
-    return { device, metrics, scores };
+    return { device: this.sanitizeDevice(device), metrics, scores };
+  }
+
+  private sanitizeDevice(device: any) {
+    if (!device) return device;
+    const { deviceToken, deviceTokenHash, metadata, ...safe } = device;
+    return safe;
   }
 }

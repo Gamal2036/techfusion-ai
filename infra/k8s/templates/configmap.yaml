@@ -14,3 +14,4 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://{{ include "techfusion.fullname" . }}-otel-collector:4317"
   OTEL_SERVICE_NAME: "techfusion-platform"
   METRICS_PORT: "9464"
+  WS_ALLOWED_ORIGINS: "https://techfusion.ai,https://www.techfusion.ai"

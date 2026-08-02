@@ -1,0 +1,34 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Remote Support Active Sessions",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "remote_support_active_sessions", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "title": "Sessions Created",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(remote_support_sessions_created_total[5m])", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "title": "Consent Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "rate(remote_support_consent_outcomes_total[5m])", "legendFormat": "{{outcome}}" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["techfusion", "remote", "support"],
+  "title": "Remote Support",
+  "uid": "tf-remote-support"
+}

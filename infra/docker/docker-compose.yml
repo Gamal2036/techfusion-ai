@@ -3,11 +3,11 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: techfusion-postgres
     environment:
-      POSTGRES_USER: techfusion
-      POSTGRES_PASSWORD: techfusion
-      POSTGRES_DB: techfusion
+      POSTGRES_USER: ${POSTGRES_USER:-techfusion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techfusion}
+      POSTGRES_DB: ${POSTGRES_DB:-techfusion}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -17,12 +17,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: techfusion-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - techfusion
     healthcheck:
@@ -30,6 +32,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   api-gateway:
     build:
@@ -41,7 +44,8 @@ services:
     environment:
       PORT: 3001
       NODE_ENV: development
-      DATABASE_URL: postgresql://techfusion:techfusion@postgres:5432/techfusion
+      DATABASE_URL: postgresql://${POSTGRES_USER:-techfusion}:${POSTGRES_PASSWORD:-techfusion}@postgres:5432/${POSTGRES_DB:-techfusion}
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +53,7 @@ services:
         condition: service_healthy
     networks:
       - techfusion
+    restart: unless-stopped
 
   web:
     build:
@@ -65,6 +70,7 @@ services:
       - api-gateway
     networks:
       - techfusion
+    restart: unless-stopped
 
   worker:
     build:
@@ -73,11 +79,13 @@ services:
     container_name: techfusion-worker
     environment:
       REDIS_URL: redis://redis:6379
+      TF_API_URL: http://api-gateway:3001
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - techfusion
+    restart: unless-stopped
 
 volumes:
   postgres-data:

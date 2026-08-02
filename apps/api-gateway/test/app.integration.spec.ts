@@ -3,10 +3,19 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { QueueService } from '../src/queue/queue.service';
+import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
+import * as crypto from 'crypto';
 
-const JWT_SECRET = () => process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
+const JWT_SECRET = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required for tests');
+  }
+  return secret;
+};
 
 describe('TechFusion API (integration)', () => {
   let app: INestApplication;
@@ -15,7 +24,10 @@ describe('TechFusion API (integration)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(QueueService)
+      .useClass(MockQueueService)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     prisma = moduleFixture.get<PrismaService>(PrismaService);
@@ -478,13 +490,42 @@ describe('TechFusion API (integration)', () => {
       return res.body.accessToken;
     }
 
+    async function createDeviceForOrg(orgId: string, name: string): Promise<{ id: string; deviceToken: string }> {
+      const deviceToken = `token-${name}-${Math.random().toString(36).slice(2)}`;
+      const deviceTokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex');
+      const device = await prisma.device.create({
+        data: {
+          orgId,
+          name,
+          deviceToken,
+          deviceTokenHash,
+        },
+      });
+      return { id: device.id, deviceToken };
+    }
+
     let orgId: string;
     let token: string;
+    let deviceIds: Record<string, string>;
+    let deviceTokens: Record<string, string>;
 
     beforeEach(async () => {
       const org = await seedOrg('remote-org', 'Remote Org', 'remote@test.com', 'Admin');
       orgId = org.org.id;
       token = await loginAs('remote@test.com');
+
+      const names = [
+        'device-remote-001', 'device-001', 'device-dup', 'device-to-end',
+        'device-consent', 'device-deny', 'device-status', 'device-rec',
+        'device-rec2', 'device-frames', 'device-audit', 'device-al1', 'device-al2',
+      ];
+      deviceIds = {};
+      deviceTokens = {};
+      for (const name of names) {
+        const { id, deviceToken } = await createDeviceForOrg(orgId, name);
+        deviceIds[name] = id;
+        deviceTokens[name] = deviceToken;
+      }
     });
 
     describe('session lifecycle', () => {
@@ -492,12 +533,12 @@ describe('TechFusion API (integration)', () => {
         const res = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-remote-001' })
+          .send({ deviceId: deviceIds['device-remote-001'] })
           .expect(201);
 
         expect(res.body.id).toBeDefined();
         expect(res.body.status).toBe('pending');
-        expect(res.body.deviceId).toBe('device-remote-001');
+        expect(res.body.deviceId).toBe(deviceIds['device-remote-001']);
         expect(res.body.consentGranted).toBe(false);
       });
 
@@ -505,7 +546,7 @@ describe('TechFusion API (integration)', () => {
         await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-001' })
+          .send({ deviceId: deviceIds['device-001'] })
           .expect(201);
 
         const listRes = await request(app.getHttpServer())
@@ -521,13 +562,13 @@ describe('TechFusion API (integration)', () => {
         await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-dup' })
+          .send({ deviceId: deviceIds['device-dup'] })
           .expect(201);
 
         await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-dup' })
+          .send({ deviceId: deviceIds['device-dup'] })
           .expect(403);
       });
 
@@ -535,7 +576,7 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-to-end' })
+          .send({ deviceId: deviceIds['device-to-end'] })
           .expect(201);
 
         const endRes = await request(app.getHttpServer())
@@ -566,17 +607,15 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-consent' })
+          .send({ deviceId: deviceIds['device-consent'] })
           .expect(201);
-
-        const deviceToken = 'test-device-token';
 
         const consentRes = await request(app.getHttpServer())
           .post('/remote-support/consent')
-          .set('Authorization', `Bearer ${deviceToken}`)
+          .set('Authorization', `Bearer ${deviceTokens['device-consent']}`)
           .send({
             sessionId: createRes.body.id,
-            deviceId: 'device-consent',
+            deviceId: deviceIds['device-consent'],
             granted: true,
             method: 'click',
           })
@@ -597,15 +636,15 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-deny' })
+          .send({ deviceId: deviceIds['device-deny'] })
           .expect(201);
 
         await request(app.getHttpServer())
           .post('/remote-support/consent')
-          .set('Authorization', `Bearer token-xyz`)
+          .set('Authorization', `Bearer ${deviceTokens['device-deny']}`)
           .send({
             sessionId: createRes.body.id,
-            deviceId: 'device-deny',
+            deviceId: deviceIds['device-deny'],
             granted: false,
             method: 'denied',
           })
@@ -624,19 +663,19 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-status' })
+          .send({ deviceId: deviceIds['device-status'] })
           .expect(201);
 
         await request(app.getHttpServer())
           .post('/remote-support/consent')
-          .set('Authorization', `Bearer token-xyz`)
-          .send({ sessionId: createRes.body.id, deviceId: 'device-status', granted: true, method: 'click' })
+          .set('Authorization', `Bearer ${deviceTokens['device-status']}`)
+          .send({ sessionId: createRes.body.id, deviceId: deviceIds['device-status'], granted: true, method: 'click' })
           .expect(201);
 
         await request(app.getHttpServer())
           .post('/remote-support/agent/status')
-          .set('Authorization', `Bearer token-xyz`)
-          .send({ sessionId: createRes.body.id, deviceId: 'device-status', status: 'ended' })
+          .set('Authorization', `Bearer ${deviceTokens['device-status']}`)
+          .send({ sessionId: createRes.body.id, deviceId: deviceIds['device-status'], status: 'ended' })
           .expect(201);
 
         const getRes = await request(app.getHttpServer())
@@ -653,7 +692,7 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-rec' })
+          .send({ deviceId: deviceIds['device-rec'] })
           .expect(201);
 
         const recRes = await request(app.getHttpServer())
@@ -669,7 +708,7 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-rec2' })
+          .send({ deviceId: deviceIds['device-rec2'] })
           .expect(201);
 
         await request(app.getHttpServer())
@@ -699,7 +738,7 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-frames' })
+          .send({ deviceId: deviceIds['device-frames'] })
           .expect(201);
 
         await request(app.getHttpServer())
@@ -722,7 +761,7 @@ describe('TechFusion API (integration)', () => {
         const createRes = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-audit' })
+          .send({ deviceId: deviceIds['device-audit'] })
           .expect(201);
 
         await request(app.getHttpServer())
@@ -736,7 +775,7 @@ describe('TechFusion API (integration)', () => {
           .expect(200);
 
         expect(Array.isArray(logsRes.body)).toBe(true);
-        expect(logsRes.body.length).toBe(2); // session_start + session_end
+        expect(logsRes.body.length).toBe(2);
 
         const actions = logsRes.body.map((l: any) => l.action);
         expect(actions).toContain('session_start');
@@ -747,13 +786,13 @@ describe('TechFusion API (integration)', () => {
         const createRes1 = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-al1' })
+          .send({ deviceId: deviceIds['device-al1'] })
           .expect(201);
 
         const createRes2 = await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${token}`)
-          .send({ deviceId: 'device-al2' })
+          .send({ deviceId: deviceIds['device-al2'] })
           .expect(201);
 
         await request(app.getHttpServer())
@@ -794,10 +833,12 @@ describe('TechFusion API (integration)', () => {
         const { org: orgA } = await seedOrg('riso-a', 'RIsolation A', 'risa@test.com', 'Admin');
         const tokenA = await loginAs('risa@test.com');
 
+        const { id: isoDeviceId } = await createDeviceForOrg(orgA.id, 'device-iso-a');
+
         await request(app.getHttpServer())
           .post('/remote-support/sessions')
           .set('Authorization', `Bearer ${tokenA}`)
-          .send({ deviceId: 'device-iso-a' })
+          .send({ deviceId: isoDeviceId })
           .expect(201);
 
         const resB = await request(app.getHttpServer())
@@ -805,7 +846,6 @@ describe('TechFusion API (integration)', () => {
           .set('Authorization', `Bearer ${tokenB}`)
           .expect(200);
 
-        // Org B (original remote@test.com) should see 0 sessions from Org A
         expect(resB.body.length).toBe(0);
       });
     });

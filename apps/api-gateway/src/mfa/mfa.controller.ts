@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Body, Req } from '@nestjs/common';
 import { MfaService } from './mfa.service';
+import { VerifyMfaDto } from './dto/verify-mfa.dto';
 
 @Controller('mfa')
 export class MfaController {
@@ -11,7 +12,7 @@ export class MfaController {
   }
 
   @Post('verify')
-  async verify(@Req() req: any, @Body() body: { token: string }) {
+  async verify(@Req() req: any, @Body() body: VerifyMfaDto) {
     return this.mfaService.verify(req.user.sub, body.token);
   }
 

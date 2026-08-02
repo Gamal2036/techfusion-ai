@@ -11,9 +11,11 @@ export class OllamaRouterProvider implements AiProviderInterface {
   readonly speedTier = 'slow' as const
   readonly supportsEmbedding = true
   private baseUrl: string
+  private model: string
 
   constructor() {
     this.baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+    this.model = process.env.OLLAMA_MODEL || 'llama3'
   }
 
   isConfigured(): boolean {
@@ -25,7 +27,7 @@ export class OllamaRouterProvider implements AiProviderInterface {
       const res = await fetch(`${this.baseUrl}/api/tags`, { signal: AbortSignal.timeout(5000) })
       if (!res.ok) return false
       const data: OllamaTagResponse = await res.json()
-      return data.models?.some(m => m.name.startsWith('llama3.2') || m.name.startsWith('llama3')) ?? false
+      return (data.models?.length ?? 0) > 0
     } catch {
       return false
     }
@@ -34,18 +36,22 @@ export class OllamaRouterProvider implements AiProviderInterface {
   async complete(prompt: string, systemPrompt?: string, _timeoutMs?: number): Promise<AiResponse> {
     const start = Date.now()
     try {
-      const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
-      const res = await fetch(`${this.baseUrl}/api/generate`, {
+      const messages = []
+      if (systemPrompt) {
+        messages.push({ role: 'system', content: systemPrompt })
+      }
+      messages.push({ role: 'user', content: prompt })
+      const res = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'llama3.2', prompt: fullPrompt, stream: false }),
+        body: JSON.stringify({ model: this.model, messages, stream: false }),
       })
       if (!res.ok) throw new Error(`Ollama returned ${res.status}`)
       const data = await res.json()
       return {
-        content: data.response || '',
+        content: data.message?.content || '',
         provider: this.name,
-        model: 'llama3.2',
+        model: this.model,
         tokensUsed: (data.prompt_eval_count || 0) + (data.eval_count || 0),
         latencyMs: Date.now() - start,
         costEstimateUsd: 0,

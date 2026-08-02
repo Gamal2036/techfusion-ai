@@ -3,14 +3,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Device } from '@prisma/client';
 import { PLAN_CONFIGS, PlanTier, getPlanConfig } from './plan-features';
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder';
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_placeholder';
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 @Injectable()
 export class BillingService {
   private stripe: any;
 
   constructor(private prisma: PrismaService) {
+    if (!STRIPE_SECRET_KEY) {
+      throw new Error('STRIPE_SECRET_KEY environment variable is required for billing service');
+    }
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Stripe = require('stripe');
     this.stripe = new Stripe(STRIPE_SECRET_KEY);

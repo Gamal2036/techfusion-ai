@@ -1,6 +1,6 @@
 export type CostTier = 'free' | 'low' | 'medium' | 'high'
 export type SpeedTier = 'ultrafast' | 'fast' | 'medium' | 'slow'
-export type RouterStrategy = 'smart' | 'cost-first' | 'speed-first' | 'round-robin'
+export type RouterStrategy = 'smart' | 'fast' | 'quality' | 'local' | 'cost-first' | 'speed-first' | 'round-robin'
 
 export interface AiResponse {
   content: string

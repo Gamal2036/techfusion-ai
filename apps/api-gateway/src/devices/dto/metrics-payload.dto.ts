@@ -7,16 +7,16 @@ export class CpuMetricsDto {
   @IsNumber() @Min(0) @Max(100)
   usage: number;
 
-  @IsInt() @IsOptional()
+  @IsInt() @IsOptional() @Min(1)
   cores?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   loadAverage1Min?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   loadAverage5Min?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   loadAverage15Min?: number;
 }
 
@@ -32,16 +32,16 @@ export class MemoryMetricsDto {
 }
 
 export class DiskMetricsDto {
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   total?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   used?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   readBytes?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   writeBytes?: number;
 
   @IsString()
@@ -49,10 +49,10 @@ export class DiskMetricsDto {
   smartStatus?: string;
 
   @IsInt()
-  @IsOptional()
+  @IsOptional() @Min(0)
   smartReallocatedSectors?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber()
   smartTemperature?: number;
 }
 
@@ -60,10 +60,10 @@ export class GpuMetricsDto {
   @IsNumber() @Min(0) @Max(100) @IsOptional()
   usage?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber()
   temp?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   memoryUsed?: number;
 }
 
@@ -76,21 +76,21 @@ export class BatteryMetricsDto {
 }
 
 export class TemperaturesDto {
-  @IsOptional()
+  @IsOptional() @IsNumber()
   cpu?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber()
   gpu?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber()
   motherboard?: number;
 }
 
 export class NetworkMetricsDto {
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   rxBytes?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   txBytes?: number;
 }
 
@@ -102,35 +102,46 @@ export class MetricsPayloadDto {
   @IsOptional()
   timestamp?: string;
 
-  @IsOptional()
-  cpu?: CpuMetricsDto;
+  @ValidateNested()
+  @Type(() => CpuMetricsDto)
+  cpu: CpuMetricsDto;
+
+  @ValidateNested()
+  @Type(() => MemoryMetricsDto)
+  memory: MemoryMetricsDto;
 
   @IsOptional()
-  memory?: MemoryMetricsDto;
-
-  @IsOptional()
+  @ValidateNested()
+  @Type(() => DiskMetricsDto)
   disk?: DiskMetricsDto;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => GpuMetricsDto)
   gpu?: GpuMetricsDto;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => BatteryMetricsDto)
   battery?: BatteryMetricsDto;
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => TemperaturesDto)
   temperatures?: TemperaturesDto;
 
   @IsOptional()
   fans?: { rpm?: number };
 
   @IsOptional()
+  @ValidateNested()
+  @Type(() => NetworkMetricsDto)
   network?: NetworkMetricsDto;
 
-  @IsInt()
-  @IsOptional()
+  @IsInt() @IsOptional() @Min(0)
   processes?: number;
 
-  @IsOptional()
+  @IsOptional() @IsNumber() @Min(0)
   uptime?: number;
 
   @IsOptional()

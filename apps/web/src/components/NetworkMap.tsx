@@ -255,15 +255,15 @@ export function NetworkMap({
 
       {hoveredNode && (
         <div
-          className="fixed z-50 bg-surface-900/95 backdrop-blur-xl border border-white/[0.08] rounded-xl p-3 shadow-dialog pointer-events-none"
+          className="fixed z-50 bg-surface-900/95 backdrop-blur-xl border border-border-strong rounded-xl p-3 shadow-dialog pointer-events-none"
           style={{ left: tooltipPos.x + 12, top: tooltipPos.y - 10 }}
         >
-          <p className="text-sm font-medium text-white">{hoveredNode.label}</p>
-          <p className="text-xs text-white/50 mt-0.5">IP: {hoveredNode.ip}</p>
-          {hoveredNode.mac && <p className="text-xs text-white/50">MAC: {hoveredNode.mac}</p>}
-          {hoveredNode.vendor && <p className="text-xs text-white/50">Vendor: {hoveredNode.vendor}</p>}
+          <p className="text-sm font-medium text-text-primary">{hoveredNode.label}</p>
+          <p className="text-xs text-text-secondary mt-0.5">IP: {hoveredNode.ip}</p>
+          {hoveredNode.mac && <p className="text-xs text-text-secondary">MAC: {hoveredNode.mac}</p>}
+          {hoveredNode.vendor && <p className="text-xs text-text-secondary">Vendor: {hoveredNode.vendor}</p>}
           {hoveredNode.latencyMs != null && (
-            <p className="text-xs text-white/50">Latency: {hoveredNode.latencyMs.toFixed(1)}ms</p>
+            <p className="text-xs text-text-secondary">Latency: {hoveredNode.latencyMs.toFixed(1)}ms</p>
           )}
           <div className="flex gap-2 mt-1.5">
             {hoveredNode.isGateway && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">Gateway</span>}

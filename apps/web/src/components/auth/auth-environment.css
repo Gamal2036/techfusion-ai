@@ -1,0 +1,217 @@
+
+        /* ============================================================
+           AUTH-02X-R2 — Spatial Intelligence Environment
+           Scoped to the authentication surface only.
+           ============================================================ */
+
+        @keyframes tf-scan-h {
+          0%   { transform: translateX(-4%); opacity: 0; }
+          5%   { opacity: 1; }
+          93%  { opacity: 1; }
+          100% { transform: translateX(104%); opacity: 0; }
+        }
+        @keyframes tf-signal-flow {
+          from { stroke-dashoffset: 0; }
+          to   { stroke-dashoffset: -96; }
+        }
+        @keyframes tf-resolve {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes tf-core-in {
+          from { opacity: 0; transform: scale(0.97); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        @keyframes tf-breathe {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50%      { opacity: 0.85; transform: scale(1.05); }
+        }
+        @keyframes tf-pulse {
+          0%   { transform: translateX(0); opacity: 0; }
+          10%  { opacity: 1; }
+          90%  { opacity: 1; }
+          100% { transform: translateX(356px); opacity: 0; }
+        }
+
+        /* ---------- scene / camera ---------- */
+        .tf-env-scene {
+          position: absolute;
+          inset: 0;
+          perspective: 1500px;
+          perspective-origin: 50% 45%;
+          transform-style: preserve-3d;
+          transform: rotateX(calc(var(--tf-rotx, 0) * 1deg)) rotateY(calc(var(--tf-roty, 0) * 1deg));
+          transition: transform 1.2s cubic-bezier(0.23, 1, 0.32, 1);
+          will-change: transform;
+        }
+        .tf-plane { position: absolute; inset: 0; }
+
+        /* depth planes — translateZ + restrained parallax */
+        .tf-plane {
+          transition: transform 0.9s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        .tf-plane-bg {
+          transform: translateZ(-140px) translate3d(calc(var(--tf-px, 0) * 0.06px), calc(var(--tf-py, 0) * 0.06px), 0);
+          animation: tf-resolve 1s ease-out 0.05s both;
+        }
+        .tf-plane-frames {
+          transform: translateZ(-90px) translate3d(calc(var(--tf-px, 0) * 0.12px), calc(var(--tf-py, 0) * 0.12px), 0);
+          animation: tf-resolve 0.9s ease-out 0.1s both;
+        }
+        .tf-plane-mid {
+          transform: translateZ(-30px) translate3d(calc(var(--tf-px, 0) * 0.28px), calc(var(--tf-py, 0) * 0.28px), 0);
+          animation: tf-resolve 1s ease-out 0.22s both;
+        }
+        .tf-plane-fg {
+          transform: translateZ(14px) translate3d(calc(var(--tf-px, 0) * 0.4px), calc(var(--tf-py, 0) * 0.4px), 0);
+          animation: tf-resolve 1s ease-out 0.34s both;
+        }
+        .tf-plane-light {
+          transform: translateZ(0px) translate3d(calc(var(--tf-px, 0) * 0.22px), calc(var(--tf-py, 0) * 0.22px), 0);
+          animation: tf-resolve 1s ease-out 0.46s both;
+        }
+
+        /* ---------- horizon across depth planes ---------- */
+        .tf-horizon-behind { opacity: 0.55; animation: tf-resolve 0.9s ease-out 0.24s both; }
+        .tf-horizon-main   { animation: tf-resolve 0.9s ease-out 0.28s both; }
+        .tf-horizon-front  { opacity: 0.9; animation: tf-resolve 0.9s ease-out 0.5s both; }
+
+        /* ---------- security scan ---------- */
+        .tf-scan-wrap { opacity: 0.7; transition: opacity 0.9s ease; }
+
+        /* ---------- command core ---------- */
+        .tf-core-shell { animation: tf-core-in 1.1s ease-out 0.55s both; }
+        .tf-core-glow {
+          background: radial-gradient(50% 50% at 50% 50%, hsl(var(--primary) / 0.13), transparent 70%);
+          opacity: 0.6;
+          animation: tf-breathe 9s ease-in-out infinite;
+          transition: opacity 0.8s ease;
+        }
+        .tf-core-frame-a { border: 1px solid hsl(var(--primary) / 0.16); opacity: 0.7; }
+        .tf-core-ring {
+          border: 1px solid hsl(var(--primary) / 0.14);
+          opacity: 0.35;
+          transition: opacity 0.8s ease;
+        }
+        .tf-core-frame-b {
+          border: 1px solid hsl(var(--primary) / 0.28);
+          opacity: 0.55;
+          transition: opacity 0.8s ease;
+        }
+        .tf-core-cross-h,
+        .tf-core-cross-v { background: hsl(var(--primary) / 0.4); }
+        .tf-core-cross { opacity: 0.8; transition: opacity 0.8s ease; }
+        .tf-core-break { background: hsl(var(--danger) / 0.5); opacity: 0; transition: opacity 0.8s ease; }
+        .tf-core-anchor { border: 1px solid hsl(var(--primary) / 0.4); }
+        .tf-core-tick { background: hsl(var(--primary) / 0.35); opacity: 0.4; transition: opacity 0.8s ease; }
+        .tf-core-arm { background: hsl(var(--border-strong) / 0.35); opacity: 0.7; }
+        .tf-core-corridor {
+          background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.45), transparent);
+          opacity: 0.22;
+          transition: opacity 0.8s ease;
+        }
+        .tf-core-pulse {
+          background: hsl(var(--primary) / 0.85);
+          box-shadow: 0 0 6px hsl(var(--primary) / 0.4);
+          animation: tf-pulse 6s linear infinite;
+        }
+
+        /* ---------- reactive light plane ---------- */
+        .tf-converge-pool {
+          background: radial-gradient(58% 52% at 50% 50%, hsl(var(--primary) / 0.05), transparent 70%);
+          opacity: 0;
+          transition: opacity 0.9s ease;
+        }
+        .tf-mfa-perimeter {
+          border: 1px solid hsl(var(--primary) / 0.18);
+          border-radius: 2px;
+          opacity: 0;
+          transition: opacity 0.9s ease;
+        }
+        .tf-error-break {
+          background: linear-gradient(90deg, transparent, hsl(var(--danger) / 0.35), transparent);
+          opacity: 0;
+          transition: opacity 0.9s ease;
+        }
+
+        /* ---------- state-driven environment ----------
+           Consumes existing, already-available form state.
+           Focus        -> :focus-within
+           Processing   -> submit button [aria-busy]
+           MFA          -> mfaCode input present
+           Error        -> any [role=alert] in the console          */
+
+        /* FOCUS — signals organize toward the console */
+        [data-auth-root]:has(.tf-console:focus-within) .tf-core-ring { opacity: 0.6; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-core-frame-b { opacity: 0.85; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-core-corridor { opacity: 0.75; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-core-pulse { animation-duration: 3.2s; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-converge { opacity: 0.7; animation-play-state: running; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-converge-pool { opacity: 0.6; }
+        [data-auth-root]:has(.tf-console:focus-within) .tf-focus-pool { opacity: 1; }
+
+        /* PROCESSING — signals converge, ambient motion reduces */
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-core-corridor { opacity: 0.9; }
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-core-pulse { animation-duration: 1.8s; }
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-core-glow { opacity: 0.35; }
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-converge { opacity: 0.9; animation-play-state: running; }
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-converge-pool { opacity: 1; }
+        [data-auth-root]:has(.tf-console button[aria-busy="true"]) .tf-scan-wrap { opacity: 0.28; }
+
+        /* MFA — security geometry becomes more defined */
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-core-ring { opacity: 0.85; }
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-core-frame-b { opacity: 1; }
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-core-frame-a { opacity: 0.9; }
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-core-tick { opacity: 0.9; }
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-mfa-perimeter { opacity: 0.9; }
+        [data-auth-root]:has(.tf-console input[name="mfaCode"]) .tf-converge-pool { opacity: 0.5; }
+
+        /* ERROR — restrained interruption, no red alarm */
+        [data-auth-root]:has(.tf-console [role="alert"]) .tf-core-break { opacity: 1; }
+        [data-auth-root]:has(.tf-console [role="alert"]) .tf-core-cross { opacity: 0.55; }
+        [data-auth-root]:has(.tf-console [role="alert"]) .tf-error-break { opacity: 1; }
+        [data-auth-root]:has(.tf-console [role="alert"]) .tf-converge-pool { opacity: 0.25; }
+
+        /* ---------- convergence signal (dormant until focus) ---------- */
+        .tf-converge {
+          opacity: 0.15;
+          animation: tf-signal-flow 6s linear infinite;
+          animation-play-state: paused;
+          transition: opacity 0.8s ease;
+        }
+
+        /* ---------- focus pool (R1) ---------- */
+        .tf-focus-pool { opacity: 0.7; transition: opacity 0.9s ease; }
+
+        /* ---------- secure access console micro-3D ---------- */
+        .tf-console {
+          transform: translateZ(0);
+          transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+        .tf-console:hover { transform: scale(1.003); }
+        .tf-console:focus-within { transform: scale(1.006); }
+        .tf-console button:active { transform: translateY(1px); }
+
+        /* ---------- mobile cue (form-first, no 3D scene) ---------- */
+        .tf-mobile-cue { opacity: 0.9; }
+
+        /* ---------- reduced motion ---------- */
+        @media (prefers-reduced-motion: reduce) {
+          .tf-env-animate,
+          .tf-env-animate *,
+          .tf-core-shell,
+          .tf-plane {
+            animation: none !important;
+          }
+          .tf-env-scene,
+          .tf-plane {
+            --tf-px: 0 !important;
+            --tf-py: 0 !important;
+            --tf-rotx: 0 !important;
+            --tf-roty: 0 !important;
+            transition: none !important;
+          }
+          .tf-console { transform: none !important; transition: none !important; }
+          .tf-console button:active { transform: none; }
+        }
+      

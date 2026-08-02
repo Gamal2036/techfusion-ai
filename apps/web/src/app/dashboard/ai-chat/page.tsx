@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect, Component, ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import { GlassPanel } from '@techfusion/ui';
+import { GlassPanel, LoadingSpinner } from '@techfusion/ui';
 import {
   Send, Bot, User, BookOpen, ChevronDown, Zap, Shield, AlertTriangle, FileText, X, RefreshCw, Loader2, AlertCircle,
 } from 'lucide-react';
 import { useAiChat, ChatMessage } from '@/hooks/useAiChat';
+import { isDeviceOnline, classifyFreshness, MetricFreshness } from '@/lib/device-presence';
 
 const MotionDiv = dynamic(
   () => import('framer-motion').then((m) => m.motion.div),
@@ -25,9 +26,9 @@ const AnimatePresence = dynamic(
 
 const suggestedPrompts = [
   { icon: Zap, label: 'Check my CPU issue', color: 'text-yellow-400' },
-  { icon: AlertTriangle, label: 'Explain this error', color: 'text-red-400' },
+  { icon: AlertTriangle, label: 'Explain this error', color: 'text-danger' },
   { icon: Shield, label: 'Run security scan', color: 'text-cyan-400' },
-  { icon: FileText, label: 'Generate health report', color: 'text-green-400' },
+  { icon: FileText, label: 'Generate health report', color: 'text-success' },
 ];
 
 class ChatErrorBoundary extends Component<{ children: ReactNode; fallback?: ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -41,14 +42,14 @@ class ChatErrorBoundary extends Component<{ children: ReactNode; fallback?: Reac
       return (
         <div className="flex items-center justify-center h-[calc(100vh-7rem)]">
           <div className="text-center max-w-md">
-            <AlertCircle className="h-12 w-12 text-red-400/50 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white/70">Something went wrong</h3>
-            <p className="text-sm text-white/40 mt-2">
+            <AlertCircle className="h-12 w-12 text-danger/50 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-text-secondary">Something went wrong</h3>
+            <p className="text-sm text-text-muted mt-2">
               {this.state.error?.message || 'The AI Chat encountered an unexpected error.'}
             </p>
             <button
               onClick={() => this.setState({ hasError: false, error: null })}
-              className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-white text-xs font-medium transition-colors"
+              className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors"
             >
               Try again
             </button>
@@ -92,6 +93,7 @@ function TypewriterText({ content, streaming }: { content: string; streaming?: b
       displayedRef.current = content;
       return;
     }
+    if (displayedRef.current === content) return;
     indexRef.current = 0;
     displayedRef.current = '';
     setDisplayed('');
@@ -108,7 +110,9 @@ function TypewriterText({ content, streaming }: { content: string; streaming?: b
     return () => clearInterval(interval);
   }, [content, streaming]);
 
-  return <span>{displayed}</span>;
+  return (
+    <div className="whitespace-pre-wrap break-words text-text-secondary leading-relaxed">{displayed || content}</div>
+  );
 }
 
 function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStreaming?: boolean }) {
@@ -122,43 +126,43 @@ function MessageBubble({ message, isStreaming }: { message: ChatMessage; isStrea
       <div className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 ${
         isUser ? 'bg-primary-600/20 border border-primary-500/30' : 'bg-purple-600/20 border border-purple-500/30'
       }`}>
-        {isUser ? <User className="h-4 w-4 text-primary-400" /> : <Bot className="h-4 w-4 text-purple-400" />}
+        {isUser ? <User className="h-4 w-4 text-primary" /> : <Bot className="h-4 w-4 text-purple-400" />}
       </div>
       <div className={`max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
-        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+        <div className={`rounded-2xl px-4 py-3 text-sm ${
           isUser
-            ? 'bg-primary-600/20 border border-primary-500/20 text-white/90'
-            : 'bg-white/[0.04] border border-white/[0.06] text-white/80'
+            ? 'bg-primary-600/20 border border-primary-500/20 text-text-primary'
+            : 'bg-surface-subtle border border-border'
         }`}>
           {isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
+            <p className="whitespace-pre-wrap leading-relaxed">{content}</p>
           ) : (
-            <div className="whitespace-pre-wrap">
+            <div className="whitespace-pre-wrap break-words">
               {content ? (
                 isStreaming ? <TypewriterText content={content} streaming /> : <TypewriterText content={content} />
               ) : isStreaming ? (
-                <span className="text-white/40 italic">Thinking<AnimatedDots /></span>
+                <span className="text-text-muted italic">Thinking<AnimatedDots /></span>
               ) : (
-                <span className="text-white/40 italic">No response</span>
+                <span className="text-text-muted italic">No response</span>
               )}
             </div>
           )}
         </div>
         {hasCitations && (
           <div className="mt-2 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[10px] text-white/30 uppercase tracking-wider">
+            <div className="flex items-center gap-1.5 text-[10px] text-text-disabled uppercase tracking-wider">
               <BookOpen className="h-3 w-3" />
               Sources
             </div>
             {citations.map((cite, i) => (
-              <div key={i} className="rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2 text-xs">
+              <div key={i} className="rounded-lg border border-border-subtle bg-surface px-3 py-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-white/50 font-medium truncate">{cite.articleTitle || 'Unknown'}</span>
-                  <span className="text-white/20 text-[10px] ml-2">
+                  <span className="text-text-secondary font-medium truncate">{cite.articleTitle || 'Unknown'}</span>
+                  <span className="text-text-disabled text-[10px] ml-2">
                     {typeof cite.similarity === 'number' ? `${(cite.similarity * 100).toFixed(0)}% match` : ''}
                   </span>
                 </div>
-                <p className="text-white/30 mt-0.5 text-[10px] line-clamp-2">{cite.chunkText || ''}</p>
+                <p className="text-text-disabled mt-0.5 text-[10px] line-clamp-2">{cite.chunkText || ''}</p>
               </div>
             ))}
           </div>
@@ -185,7 +189,7 @@ export default function AiChatPage() {
 
   const {
     messages, input, setInput, streaming, sendMessage, cancelStream, clearChat,
-    selectedDeviceId, setSelectedDeviceId, devices,
+    selectedDeviceId, setSelectedDeviceId, devices, devicesLoading, devicesError,
   } = useAiChat();
 
   const [showDeviceDropdown, setShowDeviceDropdown] = useState(false);
@@ -217,10 +221,28 @@ export default function AiChatPage() {
     ? safeDevices.find((d) => d.id === selectedDeviceId)
     : undefined;
 
+  const getFreshnessLabel = (freshness: MetricFreshness): string => {
+    switch (freshness) {
+      case 'live': return 'Live';
+      case 'recent': return 'Recent';
+      case 'stale': return 'Stale';
+      case 'unavailable': return 'No data';
+    }
+  };
+
+  const getFreshnessColor = (freshness: MetricFreshness): string => {
+    switch (freshness) {
+      case 'live': return 'text-success';
+      case 'recent': return 'text-yellow-400';
+      case 'stale': return 'text-danger';
+      case 'unavailable': return 'text-text-disabled';
+    }
+  };
+
   if (!mounted) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-7rem)]">
-        <Loader2 className="h-6 w-6 text-white/30 animate-spin" />
+        <LoadingSpinner size="md" />
       </div>
     );
   }
@@ -230,12 +252,12 @@ export default function AiChatPage() {
       <div className="flex flex-col h-[calc(100vh-7rem)] max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
-            <h1 className="text-2xl font-semibold text-white tracking-tight">AI Troubleshoot</h1>
-            <p className="text-sm text-white/40 mt-1">Conversational AI for IT operations.</p>
+            <h1 className="text-2xl font-semibold text-text-primary tracking-tight">AI Troubleshoot</h1>
+            <p className="text-sm text-text-muted mt-1">Conversational AI for IT operations.</p>
           </div>
           <div className="flex items-center gap-2">
             {safeMessages.length > 1 && (
-              <button onClick={clearChat} className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all">
+              <button onClick={clearChat} className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary hover:bg-surface-subtle transition-all">
                 <RefreshCw className="h-3.5 w-3.5" /> Clear
               </button>
             )}
@@ -245,30 +267,76 @@ export default function AiChatPage() {
         <div className="relative mb-3 shrink-0">
           <button
             onClick={() => setShowDeviceDropdown(!showDeviceDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border border-white/[0.06] bg-white/[0.03] text-white/50 hover:text-white/70 transition-all"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs border border-border bg-surface-subtle text-text-secondary hover:text-text-secondary hover:bg-surface-muted transition-all"
           >
-            <span>{selectedDevice ? selectedDevice.name : selectedDeviceId ? selectedDeviceId.slice(0, 12) : 'No device selected'}</span>
+            {selectedDevice ? (
+              <>
+                <span className={`h-2 w-2 rounded-full ${isDeviceOnline(selectedDevice.lastSeenAt) ? 'bg-green-400' : 'bg-yellow-400'}`} />
+                <span>{selectedDevice.name || selectedDevice.hostname || 'Unnamed Device'}</span>
+                <span className={`text-[10px] ${getFreshnessColor(classifyFreshness(selectedDevice.lastSeenAt))}`}>
+                  {getFreshnessLabel(classifyFreshness(selectedDevice.lastSeenAt))}
+                </span>
+              </>
+            ) : devicesLoading ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin text-text-disabled" />
+                <span className="text-text-disabled">Loading devices...</span>
+              </>
+            ) : devicesError ? (
+              <span className="text-danger/70">Error loading devices</span>
+            ) : safeDevices.length === 0 ? (
+              <span className="text-text-disabled">No devices registered</span>
+            ) : (
+              <span>No device selected</span>
+            )}
             <ChevronDown className="h-3 w-3" />
           </button>
           {showDeviceDropdown && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowDeviceDropdown(false)} />
-              <div className="absolute top-full left-0 z-20 mt-1 w-64 rounded-xl border border-white/[0.06] bg-surface-950/95 backdrop-blur-2xl shadow-dialog max-h-48 overflow-y-auto">
+              <div className="absolute top-full left-0 z-50 mt-1 w-72 rounded-xl border border-border-strong bg-surface-950 backdrop-blur-2xl shadow-dialog max-h-56 overflow-y-auto">
                 <button
                   onClick={() => { setSelectedDeviceId(undefined); setShowDeviceDropdown(false); }}
-                  className="w-full text-left px-3 py-2 text-xs text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+                  className="w-full text-left px-3 py-2.5 text-xs text-text-secondary hover:text-text-secondary hover:bg-surface-muted transition-colors"
                 >
                   No device (general query)
                 </button>
-                {safeDevices.map((d) => (
-                  <button
-                    key={d.id}
-                    onClick={() => { setSelectedDeviceId(d.id); setShowDeviceDropdown(false); }}
-                    className="w-full text-left px-3 py-2 text-xs text-white/60 hover:text-white/80 hover:bg-white/[0.04]"
-                  >
-                    {d.name || d.id}
-                  </button>
-                ))}
+                {safeDevices.map((d) => {
+                  const isOnline = isDeviceOnline(d.lastSeenAt);
+                  const freshness = classifyFreshness(d.lastSeenAt);
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => { setSelectedDeviceId(d.id); setShowDeviceDropdown(false); }}
+                      className={`w-full text-left px-3 py-2.5 text-xs hover:bg-surface-muted flex items-center gap-2 transition-colors ${
+                        selectedDeviceId === d.id ? 'text-primary-300 bg-primary-600/15' : 'text-text-secondary hover:text-text-secondary'
+                      }`}
+                    >
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${isOnline ? 'bg-green-400' : 'bg-surface-muted'}`} />
+                      <span className="truncate">{d.name || d.id}</span>
+                      <span className={`text-[10px] ml-auto shrink-0 ${getFreshnessColor(freshness)}`}>
+                        {getFreshnessLabel(freshness)}
+                      </span>
+                      {d.hostname && <span className="text-text-disabled shrink-0">({d.hostname})</span>}
+                    </button>
+                  );
+                })}
+                {safeDevices.length === 0 && !devicesLoading && (
+                  <div className="px-3 py-4 text-center">
+                    <p className="text-xs text-text-disabled">No devices registered yet</p>
+                    <p className="text-[10px] text-text-disabled mt-1">Install the agent on your device to get started</p>
+                  </div>
+                )}
+                {devicesLoading && (
+                  <div className="px-3 py-3 text-center">
+                    <Loader2 className="h-4 w-4 text-text-disabled animate-spin mx-auto" />
+                  </div>
+                )}
+                {devicesError && (
+                  <div className="px-3 py-3 text-center">
+                    <p className="text-xs text-danger/50">{devicesError}</p>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -293,10 +361,10 @@ export default function AiChatPage() {
                   <button
                     key={prompt.label}
                     onClick={() => sendMessage(prompt.label)}
-                    className="flex items-center gap-2.5 p-3 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.10] transition-all text-left group"
+                    className="flex items-center gap-2.5 p-3 rounded-xl border border-border bg-surface hover:bg-surface-subtle hover:border-border-strong transition-all text-left group"
                   >
                     <Icon className={`h-4 w-4 ${prompt.color} shrink-0`} />
-                    <span className="text-xs text-white/50 group-hover:text-white/70 transition-colors">{prompt.label}</span>
+                    <span className="text-xs text-text-secondary group-hover:text-text-secondary transition-colors">{prompt.label}</span>
                   </button>
                 );
               })}
@@ -307,19 +375,19 @@ export default function AiChatPage() {
         </div>
 
         <div className="mt-4 shrink-0">
-          <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl p-2 focus-within:border-primary-500/40 focus-within:bg-white/[0.05] transition-all">
+          <div className="flex items-end gap-2 rounded-2xl border border-border-strong bg-surface-subtle backdrop-blur-xl p-2 focus-within:border-primary-500/40 focus-within:bg-surface-subtle transition-all">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type your message..."
               rows={1}
-              className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/25 outline-none resize-none max-h-32"
+              className="flex-1 bg-transparent px-3 py-2 text-sm text-text-primary placeholder:text-text-disabled outline-none resize-none max-h-32 [&:-webkit-autofill]:!bg-transparent [&:-webkit-autofill]:![box-shadow:none] [&:-webkit-autofill]:!text-text-primary [&:-webkit-autofill]:!caret-white"
             />
             {streaming ? (
               <button
                 onClick={cancelStream}
-                className="h-9 w-9 rounded-xl flex items-center justify-center bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-all shrink-0"
+                className="h-9 w-9 rounded-xl flex items-center justify-center bg-red-600/20 hover:bg-red-600/30 text-danger transition-all shrink-0"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -327,13 +395,13 @@ export default function AiChatPage() {
               <button
                 onClick={handleSend}
                 disabled={!input.trim()}
-                className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary-600 hover:bg-primary-500 text-white disabled:opacity-30 transition-all shrink-0"
+                className="h-9 w-9 rounded-xl flex items-center justify-center bg-primary-600 hover:bg-primary-500 text-text-primary disabled:opacity-30 transition-all shrink-0"
               >
                 <Send className="h-4 w-4" />
               </button>
             )}
           </div>
-          <p className="text-[10px] text-white/20 text-center mt-2">
+          <p className="text-[10px] text-text-disabled text-center mt-2">
             AI responses are generated based on device data and knowledge base articles. Verify critical actions.
           </p>
         </div>

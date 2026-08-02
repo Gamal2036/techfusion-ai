@@ -1,16 +1,22 @@
-import { Controller, Get, Post, Param, Query, Body, Req } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Req, UnauthorizedException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { RemoteSupportService } from './remote-support.service';
+import { DevicesService } from '../devices/devices.service';
 import { Public } from '../common/public.decorator';
+import { throttle } from '../config/rate-limits';
 
 @Controller('remote-support')
 export class RemoteSupportController {
-  constructor(private remoteService: RemoteSupportService) {}
+  constructor(
+    private remoteService: RemoteSupportService,
+    private devicesService: DevicesService,
+  ) {}
 
   @Post('sessions')
   async createSession(@Req() req: any, @Body() body: { deviceId: string; unattendedPolicy?: string }) {
     const orgId = req.user?.orgId;
     const userId = req.user?.sub;
-    if (!orgId || !userId) return null;
+    if (!orgId || !userId) throw new UnauthorizedException('Authentication required');
     return this.remoteService.createSession(orgId, userId, body.deviceId, body.unattendedPolicy);
   }
 
@@ -24,15 +30,30 @@ export class RemoteSupportController {
   @Get('sessions/:id')
   async getSession(@Req() req: any, @Param('id') id: string) {
     const orgId = req.user?.orgId;
-    if (!orgId) return null;
+    if (!orgId) throw new UnauthorizedException('Authentication required');
     return this.remoteService.getSession(orgId, id);
   }
 
   @Post('sessions/:id/end')
   async endSession(@Req() req: any, @Param('id') id: string) {
     const orgId = req.user?.orgId;
-    if (!orgId) return null;
+    if (!orgId) throw new UnauthorizedException('Authentication required');
     return this.remoteService.endSession(orgId, id);
+  }
+
+  @Get('devices')
+  async listDevices(@Req() req: any) {
+    const orgId = req.user?.orgId;
+    if (!orgId) return [];
+    const devices = await this.devicesService.findByOrg(orgId);
+    return devices.map((d: any) => ({
+      id: d.id,
+      hostname: d.hostname || d.name,
+      os: d.os,
+      osVersion: d.osVersion,
+      lastSeenAt: d.lastSeenAt,
+      inactive: d.inactive,
+    }));
   }
 
   @Get('recordings')
@@ -89,28 +110,56 @@ export class RemoteSupportController {
     return this.remoteService.updateRecording(orgId, sessionId, body);
   }
 
+  @Post('cleanup')
+  async cleanupStaleSessions(@Req() req: any) {
+    const orgId = req.user?.orgId;
+    if (!orgId) throw new UnauthorizedException('Authentication required');
+    return this.remoteService.cleanupStaleSessions();
+  }
+
   @Public()
+  @Throttle(throttle(30, 60000))
   @Get('agent/pending')
   async getPendingForDevice(@Req() req: any) {
     const token = req.headers?.authorization?.replace('Bearer ', '');
     const deviceId = req.query?.deviceId as string;
     if (!token || !deviceId) return [];
-    return this.remoteService.getPendingForDevice(token, deviceId);
+
+    const device = await this.devicesService.findByToken(token);
+    if (!device || device.id !== deviceId) {
+      throw new UnauthorizedException('Invalid device token');
+    }
+
+    return this.remoteService.getPendingForDevice(device.orgId, deviceId);
   }
 
   @Public()
+  @Throttle(throttle(10, 60000))
   @Post('consent')
   async handleConsent(@Req() req: any, @Body() body: { sessionId: string; deviceId: string; granted: boolean; method: string }) {
     const token = req.headers?.authorization?.replace('Bearer ', '');
-    if (!token) return null;
-    return this.remoteService.handleConsent(token, body);
+    if (!token) throw new UnauthorizedException('Missing device token');
+
+    const device = await this.devicesService.findByToken(token);
+    if (!device || device.id !== body.deviceId) {
+      throw new UnauthorizedException('Invalid device token');
+    }
+
+    return this.remoteService.handleConsent(device.orgId, body);
   }
 
   @Public()
+  @Throttle(throttle(30, 60000))
   @Post('agent/status')
   async updateAgentStatus(@Req() req: any, @Body() body: { sessionId: string; status: string; deviceId: string }) {
     const token = req.headers?.authorization?.replace('Bearer ', '');
-    if (!token) return null;
-    return this.remoteService.updateAgentStatus(token, body);
+    if (!token) throw new UnauthorizedException('Missing device token');
+
+    const device = await this.devicesService.findByToken(token);
+    if (!device || device.id !== body.deviceId) {
+      throw new UnauthorizedException('Invalid device token');
+    }
+
+    return this.remoteService.updateAgentStatus(device.orgId, body);
   }
 }

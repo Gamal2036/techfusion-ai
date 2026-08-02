@@ -1,19 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { GlassPanel } from '@techfusion/ui';
-import { RefreshCw, Activity, CheckCircle, XCircle, AlertTriangle, Loader2, ChevronDown } from 'lucide-react';
+import { GlassPanel, Skeleton, StatCard } from '@techfusion/ui';
+import { RefreshCw, Activity, CheckCircle, XCircle, AlertTriangle, Loader2, ChevronDown, BarChart3, Zap, Clock, DollarSign } from 'lucide-react';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
+import { apiFetch } from '@/lib/auth-client';
 interface ProviderStatus {
   name: string
   configured: boolean
@@ -37,40 +28,31 @@ interface RouterStats {
 }
 
 const costTierBadge: Record<string, string> = {
-  free: 'text-green-400 bg-green-400/10 border-green-400/20',
+  free: 'text-success bg-green-400/10 border-green-400/20',
   low: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  medium: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  high: 'text-red-400 bg-red-400/10 border-red-400/20',
+  medium: 'text-warning bg-amber-400/10 border-amber-400/20',
+  high: 'text-danger bg-red-400/10 border-red-400/20',
 }
 
 const speedTierBadge: Record<string, string> = {
   ultrafast: 'text-purple-400 bg-purple-400/10 border-purple-400/20',
   fast: 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  medium: 'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  slow: 'text-white/50 bg-white/[0.04] border-white/[0.06]',
-}
-
-function getProviderIcon(name: string) {
-  const status: ProviderStatus | undefined = undefined as any
-  return null
+  medium: 'text-warning bg-amber-400/10 border-amber-400/20',
+  slow: 'text-text-secondary bg-surface-subtle border-border',
 }
 
 function getStatusIcon(configured: boolean, available: boolean, circuitOpen: boolean) {
-  if (!configured) return <XCircle className="h-4 w-4 text-white/20" />
-  if (circuitOpen) return <AlertTriangle className="h-4 w-4 text-red-400" />
-  if (available) return <CheckCircle className="h-4 w-4 text-green-400" />
-  return <Loader2 className="h-4 w-4 text-amber-400 animate-spin" />
+  if (!configured) return <XCircle className="h-4 w-4 text-text-disabled" />
+  if (circuitOpen) return <AlertTriangle className="h-4 w-4 text-danger" />
+  if (available) return <CheckCircle className="h-4 w-4 text-success" />
+  return <Loader2 className="h-4 w-4 text-warning animate-spin" />
 }
 
 function getStatusLabel(configured: boolean, available: boolean, circuitOpen: boolean) {
-  if (!configured) return { label: 'No Key', color: 'text-white/30' }
-  if (circuitOpen) return { label: 'Circuit Open', color: 'text-red-400' }
-  if (available) return { label: 'Online', color: 'text-green-400' }
-  return { label: 'Checking...', color: 'text-amber-400' }
-}
-
-function Skeleton({ className }: { className?: string }) {
-  return <div className={`rounded-xl bg-white/[0.04] animate-pulse ${className || ''}`} />
+  if (!configured) return { label: 'No Key', color: 'text-text-disabled' }
+  if (circuitOpen) return { label: 'Circuit Open', color: 'text-danger' }
+  if (available) return { label: 'Online', color: 'text-success' }
+  return { label: 'Checking...', color: 'text-warning' }
 }
 
 const strategies = [
@@ -90,8 +72,8 @@ export default function SettingsPage() {
   const fetchData = useCallback(async () => {
     try {
       const [providersRes, statsRes] = await Promise.all([
-        fetch(`${API_URL}/ai/providers/status`, { headers: getAuthHeaders() }),
-        fetch(`${API_URL}/ai/router/stats`, { headers: getAuthHeaders() }),
+        apiFetch('/ai/providers/status'),
+        apiFetch('/ai/router/stats'),
       ])
       if (providersRes.ok) {
         const data = await providersRes.json()
@@ -118,9 +100,8 @@ export default function SettingsPage() {
   const handleStrategyChange = async (newStrategy: string) => {
     setUpdatingStrategy(true)
     try {
-      const res = await fetch(`${API_URL}/ai/router/strategy`, {
+      const res = await apiFetch('/ai/router/strategy', {
         method: 'PUT',
-        headers: getAuthHeaders(),
         body: JSON.stringify({ strategy: newStrategy }),
       })
       if (res.ok) {
@@ -137,13 +118,13 @@ export default function SettingsPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white tracking-tight">Settings</h1>
-          <p className="text-sm text-white/40 mt-1">Manage your TechFusion AI configuration</p>
+          <h1 className="text-2xl font-semibold text-text-primary tracking-tight">Settings</h1>
+          <p className="text-sm text-text-muted mt-1">Manage your TechFusion AI configuration</p>
         </div>
         <button
           onClick={fetchData}
           disabled={loading}
-          className="flex items-center gap-2 h-9 px-4 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.06] text-white/70 hover:text-white text-xs transition-all disabled:opacity-40"
+          className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border bg-surface-subtle hover:bg-surface-muted text-text-secondary hover:text-text-primary text-xs transition-all disabled:opacity-40"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -153,8 +134,8 @@ export default function SettingsPage() {
       {/* AI Provider Status */}
       <GlassPanel intensity="light" className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-white">AI Provider Status</h3>
-          {loading && <Loader2 className="h-4 w-4 text-white/30 animate-spin" />}
+          <h3 className="text-sm font-medium text-text-primary">AI Provider Status</h3>
+          {loading && <Loader2 className="h-4 w-4 text-text-disabled animate-spin" />}
         </div>
 
         {loading ? (
@@ -168,48 +149,48 @@ export default function SettingsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-white/[0.06] text-left">
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Provider</th>
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Status</th>
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Latency</th>
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Cost</th>
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Speed</th>
-                  <th className="pb-3 text-xs font-medium text-white/40 uppercase tracking-wider">Circuit</th>
+                <tr className="border-b border-border text-left">
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Provider</th>
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Latency</th>
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Cost</th>
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Speed</th>
+                  <th className="pb-3 text-xs font-medium text-text-muted uppercase tracking-wider">Circuit</th>
                 </tr>
               </thead>
               <tbody>
                 {providers.map((p) => {
                   const status = getStatusLabel(p.configured, p.available, p.circuitOpen)
                   return (
-                    <tr key={p.name} className="border-b border-white/[0.03]">
+                    <tr key={p.name} className="border-b border-border-subtle">
                       <td className="py-3">
                         <div className="flex items-center gap-2">
                           {getStatusIcon(p.configured, p.available, p.circuitOpen)}
-                          <span className="text-white/80 font-medium">{p.name}</span>
+                          <span className="text-text-secondary font-medium">{p.name}</span>
                         </div>
                       </td>
                       <td className="py-3">
                         <span className={`text-xs font-medium ${status.color}`}>{status.label}</span>
                       </td>
                       <td className="py-3">
-                        <span className="text-xs text-white/50">
+                        <span className="text-xs text-text-secondary">
                           {p.latencyMs !== null ? `${p.latencyMs}ms` : '--'}
                         </span>
                       </td>
                       <td className="py-3">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${costTierBadge[p.costTier] || 'text-white/50 bg-white/[0.04] border-white/[0.06]'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${costTierBadge[p.costTier] || 'text-text-secondary bg-surface-subtle border-border'}`}>
                           {p.costTier === 'ultrafast' ? 'Ultra' : p.costTier.charAt(0).toUpperCase() + p.costTier.slice(1)}
                         </span>
                       </td>
                       <td className="py-3">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${speedTierBadge[p.speedTier] || 'text-white/50 bg-white/[0.04] border-white/[0.06]'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${speedTierBadge[p.speedTier] || 'text-text-secondary bg-surface-subtle border-border'}`}>
                           {p.speedTier === 'ultrafast' ? 'Ultra' : p.speedTier.charAt(0).toUpperCase() + p.speedTier.slice(1)}
                         </span>
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
                           <span className={`h-2 w-2 rounded-full ${p.circuitOpen ? 'bg-red-400' : 'bg-green-400'}`} />
-                          <span className={`text-xs ${p.circuitOpen ? 'text-red-400' : 'text-green-400'}`}>
+                          <span className={`text-xs ${p.circuitOpen ? 'text-danger' : 'text-success'}`}>
                             {p.circuitOpen ? 'Open' : 'Closed'}
                           </span>
                         </div>
@@ -225,61 +206,49 @@ export default function SettingsPage() {
 
       {/* Router Stats */}
       <GlassPanel intensity="light" className="p-5">
-        <h3 className="text-sm font-medium text-white mb-4">Router Statistics</h3>
+        <h3 className="text-sm font-medium text-text-primary mb-4">Router Statistics</h3>
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
           </div>
         ) : stats ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-3">
-              <p className="text-2xl font-bold text-white">{stats.totalRequests}</p>
-              <p className="text-[10px] text-white/40 mt-0.5">Total Requests</p>
-            </div>
-            <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-3">
-              <p className="text-2xl font-bold text-green-400">{stats.successRate.toFixed(1)}%</p>
-              <p className="text-[10px] text-white/40 mt-0.5">Success Rate</p>
-            </div>
-            <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-3">
-              <p className="text-2xl font-bold text-white">{Math.round(stats.averageLatencyMs)}ms</p>
-              <p className="text-[10px] text-white/40 mt-0.5">Avg Latency</p>
-            </div>
-            <div className="rounded-xl bg-white/[0.02] border border-white/[0.06] p-3">
-              <p className="text-2xl font-bold text-white">${stats.totalCostUsd.toFixed(4)}</p>
-              <p className="text-[10px] text-white/40 mt-0.5">Total Cost</p>
-            </div>
+            <StatCard title="Total Requests" value={stats.totalRequests} icon={<BarChart3 className="h-5 w-5 text-primary" />} />
+            <StatCard title="Success Rate" value={`${stats.successRate.toFixed(1)}%`} icon={<Zap className="h-5 w-5 text-success" />} tone="success" />
+            <StatCard title="Avg Latency" value={`${Math.round(stats.averageLatencyMs)}ms`} icon={<Clock className="h-5 w-5 text-primary" />} />
+            <StatCard title="Total Cost" value={`$${stats.totalCostUsd.toFixed(4)}`} icon={<DollarSign className="h-5 w-5 text-primary" />} />
           </div>
         ) : (
-          <p className="text-sm text-white/30">No statistics available yet. Make some AI requests first.</p>
+          <p className="text-sm text-text-disabled">No statistics available yet. Make some AI requests first.</p>
         )}
       </GlassPanel>
 
       {/* Router Strategy */}
       <GlassPanel intensity="light" className="p-5">
-        <h3 className="text-sm font-medium text-white mb-4">Router Strategy</h3>
-        <p className="text-xs text-white/40 mb-3">Choose how the AI router selects providers for each request.</p>
+        <h3 className="text-sm font-medium text-text-primary mb-4">Router Strategy</h3>
+        <p className="text-xs text-text-muted mb-3">Choose how the AI router selects providers for each request.</p>
         <div className="relative inline-block">
           <select
             value={strategy}
             onChange={(e) => handleStrategyChange(e.target.value)}
             disabled={updatingStrategy}
-            className="appearance-none h-10 pl-4 pr-10 rounded-xl border border-white/[0.08] bg-white/[0.03] text-white/80 text-sm hover:bg-white/[0.06] hover:border-white/[0.12] focus:outline-none focus:border-primary-400/50 transition-all disabled:opacity-40 cursor-pointer"
+            className="appearance-none h-10 pl-4 pr-10 rounded-xl border border-border-strong bg-surface-subtle text-text-secondary text-sm hover:bg-surface-muted hover:border-border-strong focus:outline-none focus:border-primary-400/50 transition-all disabled:opacity-40 cursor-pointer"
           >
             {strategies.map((s) => (
-              <option key={s.value} value={s.value} className="bg-[#0a0a0a] text-white/80">
+              <option key={s.value} value={s.value} className="bg-surface-950 text-text-secondary">
                 {s.label}
               </option>
             ))}
           </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-disabled pointer-events-none" />
           {updatingStrategy && (
-            <Loader2 className="absolute right-10 top-1/2 -translate-y-1/2 h-4 w-4 text-primary-400 animate-spin" />
+            <Loader2 className="absolute right-10 top-1/2 -translate-y-1/2 h-4 w-4 text-primary animate-spin" />
           )}
         </div>
         {stats && (
-          <p className="text-xs text-white/30 mt-2">
-            Current: <span className="text-white/60 font-medium">{strategies.find(s => s.value === strategy)?.label || strategy}</span>
-            {' | '}Primary: <span className="text-white/60 font-medium">{stats.primaryProvider}</span>
+          <p className="text-xs text-text-disabled mt-2">
+            Current: <span className="text-text-secondary font-medium">{strategies.find(s => s.value === strategy)?.label || strategy}</span>
+            {' | '}Primary: <span className="text-text-secondary font-medium">{stats.primaryProvider}</span>
           </p>
         )}
       </GlassPanel>

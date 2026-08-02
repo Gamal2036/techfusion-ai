@@ -1,18 +1,32 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, UnprocessableEntityException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiOrchestratorService } from '../ai/ai-orchestrator.service';
 import { BrandingService } from './services/branding.service';
 import { ReportStorageService } from './services/report-storage.service';
+import { DEVICE_ONLINE_THRESHOLD_MS } from '../devices/device-presence';
 import { HtmlGeneratorService } from './services/html-generator.service';
 import { PdfGeneratorService } from './services/pdf-generator.service';
 import { DocxGeneratorService } from './services/docx-generator.service';
+import { CsvGeneratorService } from './services/csv-generator.service';
+import { JsonGeneratorService } from './services/json-generator.service';
 import { IReportGenerator } from './services/report-generator.interface';
-import { GenerateReportDto, ReportType, ReportFormat } from './dto/generate-report.dto';
+import { GenerateReportDto, ReportType, ReportFormat, CreateScheduleDto, UpdateScheduleDto } from './dto/generate-report.dto';
 import { buildDeviceHealthReport, DeviceHealthInput } from './report-types/device-health.report';
 import { buildSecurityExecutiveReport, SecurityExecutiveInput } from './report-types/security-executive.report';
 import { buildFleetSummaryReport, FleetSummaryInput } from './report-types/fleet-summary.report';
+import { buildNetworkReport, NetworkReportInput } from './report-types/network-report';
+import { buildInventoryReport, InventoryReportInput } from './report-types/inventory-report';
+import { buildRemoteSupportReport, RemoteSupportReportInput } from './report-types/remote-support-report';
 import { Alert, SecurityFinding, Prisma } from '@prisma/client';
 import { getPlanConfig } from '../billing/plan-features';
+import { QueueService } from '../queue/queue.service';
+import {
+  calculateNextRunAt,
+  normalizeScheduleFormats,
+  parseScheduleDeviceIds,
+  scheduleToResponse,
+  SUPPORTED_REPORT_FORMATS,
+} from './report-schedule.utils';
 
 type DeviceWithRelations = Prisma.DeviceGetPayload<{
   include: { alerts: true; scores: true; securityScores: true };
@@ -30,12 +44,17 @@ export class ReportingService {
     private readonly htmlGen: HtmlGeneratorService,
     private readonly pdfGen: PdfGeneratorService,
     private readonly docxGen: DocxGeneratorService,
+    private readonly csvGen: CsvGeneratorService,
+    private readonly jsonGen: JsonGeneratorService,
+    private readonly queueService: QueueService,
     private readonly ai?: AiOrchestratorService,
   ) {
     this.generators = new Map<string, IReportGenerator>([
       ['html', this.htmlGen],
       ['pdf', this.pdfGen],
       ['docx', this.docxGen],
+      ['csv', this.csvGen],
+      ['json', this.jsonGen],
     ]);
   }
 
@@ -75,6 +94,15 @@ export class ReportingService {
       case ReportType.FLEET_SUMMARY:
         reportData = await this.collectFleetSummaryData(orgId);
         break;
+      case ReportType.NETWORK:
+        reportData = await this.collectNetworkData(orgId);
+        break;
+      case ReportType.INVENTORY:
+        reportData = await this.collectInventoryData(orgId);
+        break;
+      case ReportType.REMOTE_SUPPORT:
+        reportData = await this.collectRemoteSupportData(orgId);
+        break;
       default:
         throw new Error(`Unknown report type: ${dto.type}`);
     }
@@ -89,6 +117,15 @@ export class ReportingService {
         break;
       case ReportType.FLEET_SUMMARY:
         data = buildFleetSummaryReport(reportData as FleetSummaryInput, branding.companyName || 'Organization');
+        break;
+      case ReportType.NETWORK:
+        data = buildNetworkReport(reportData as NetworkReportInput, branding.companyName || 'Organization');
+        break;
+      case ReportType.INVENTORY:
+        data = buildInventoryReport(reportData as InventoryReportInput, branding.companyName || 'Organization');
+        break;
+      case ReportType.REMOTE_SUPPORT:
+        data = buildRemoteSupportReport(reportData as RemoteSupportReportInput, branding.companyName || 'Organization');
         break;
     }
 
@@ -111,16 +148,24 @@ export class ReportingService {
         description: dto.description,
         storagePath: stored.storagePath,
         fileSize: stored.fileSize,
-        signedUrl: this.storage.generateSignedUrl(orgId, safeName, format),
         urlExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         aiGenerated: !!dto.generateAiSummary,
         aiSummary: data.aiSummary || undefined,
         sourceIds: JSON.stringify({ deviceIds: dto.deviceIds, scanId: dto.scanId }),
         status: 'completed',
+        createdBy: userId,
+        completedAt: new Date(),
       },
     });
 
-    return report;
+    const signedUrl = this.storage.generateSignedUrl(orgId, report.id, format);
+
+    const updatedReport = await this.prisma.report.update({
+      where: { id: report.id },
+      data: { signedUrl },
+    });
+
+    return updatedReport;
   }
 
   async list(orgId: string, type?: string) {
@@ -129,9 +174,18 @@ export class ReportingService {
     return this.prisma.report.findMany({ where, orderBy: { createdAt: 'desc' }, take: 50 });
   }
 
-  async getDownloadInfo(reportId: string, format: string, orgId: string) {
-    const report = await this.prisma.report.findUnique({ where: { id: reportId } });
+  async deleteReport(id: string, orgId: string) {
+    const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report || report.orgId !== orgId) return null;
+    await this.storage.delete(report.storagePath).catch(() => {});
+    await this.prisma.report.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  async getDownloadInfo(reportId: string, format: string, orgId?: string) {
+    const report = await this.prisma.report.findUnique({ where: { id: reportId } });
+    if (!report) return null;
+    if (orgId && report.orgId !== orgId) return null;
     if (report.format !== format) return null;
     const buffer = await this.storage.read(report.storagePath);
     if (!buffer) return null;
@@ -146,21 +200,210 @@ export class ReportingService {
     return this.branding.setBranding(orgId, config);
   }
 
-  async listSchedules(orgId: string) {
-    return this.prisma.reportSchedule.findMany({ where: { orgId } });
+  private normalizeDeviceIds(deviceIds?: string[]) {
+    if (deviceIds === undefined) return undefined;
+    if (!Array.isArray(deviceIds)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'REPORT_SCHEDULE_DEVICE_NOT_FOUND',
+        message: 'Device IDs must be an array of strings.',
+      });
+    }
+
+    const normalized = deviceIds
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter(Boolean);
+
+    if (normalized.length !== deviceIds.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'REPORT_SCHEDULE_DEVICE_NOT_FOUND',
+        message: 'Device IDs must be non-empty strings.',
+      });
+    }
+
+    return Array.from(new Set(normalized));
   }
 
-  async createSchedule(orgId: string, dto: { type: string; formats: string; cron: string; deviceIds?: string[] }) {
-    return this.prisma.reportSchedule.create({
-      data: { orgId, type: dto.type, formats: dto.formats, cron: dto.cron, deviceIds: dto.deviceIds ? JSON.stringify(dto.deviceIds) : undefined },
+  private async validateDeviceOwnership(orgId: string, deviceIds: string[] | undefined) {
+    if (!deviceIds || !deviceIds.length) return;
+
+    const ownedDevices = await this.prisma.device.findMany({
+      where: { orgId, id: { in: deviceIds } },
+      select: { id: true },
+    });
+
+    const ownedIds = new Set(ownedDevices.map((d) => d.id));
+    if (ownedIds.size === deviceIds.length) return;
+
+    const missingOrForbidden = deviceIds.filter((id) => !ownedIds.has(id));
+    const devices = await this.prisma.device.findMany({
+      where: { id: { in: missingOrForbidden } },
+      select: { id: true, orgId: true },
+    });
+
+    if (devices.length > 0) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'REPORT_SCHEDULE_DEVICE_FORBIDDEN',
+        code: 'REPORT_SCHEDULE_DEVICE_FORBIDDEN',
+        message: 'One or more device IDs belong to another organization.',
+      });
+    }
+
+    throw new NotFoundException({
+      statusCode: 404,
+      error: 'REPORT_SCHEDULE_DEVICE_NOT_FOUND',
+      code: 'REPORT_SCHEDULE_DEVICE_NOT_FOUND',
+      message: 'One or more device IDs were not found.',
     });
   }
 
+  async listSchedules(orgId: string) {
+    const schedules = await this.prisma.reportSchedule.findMany({
+      where: { orgId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return schedules.map(scheduleToResponse);
+  }
+
+  async createSchedule(orgId: string, dto: CreateScheduleDto) {
+    const formats = normalizeScheduleFormats(dto.formats);
+    if (!formats.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'INVALID_REPORT_SCHEDULE_FORMAT',
+        code: 'INVALID_REPORT_SCHEDULE_FORMAT',
+        message: 'At least one report format is required.',
+      });
+    }
+
+    const unsupportedFormats = formats.filter(
+      (format) => !SUPPORTED_REPORT_FORMATS.includes(format as ReportFormat),
+    );
+    if (unsupportedFormats.length) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'INVALID_REPORT_SCHEDULE_FORMAT',
+        code: 'INVALID_REPORT_SCHEDULE_FORMAT',
+        message: `Unsupported report format(s): ${unsupportedFormats.join(', ')}.`,
+      });
+    }
+
+    let nextRunAt: Date;
+    try {
+      nextRunAt = calculateNextRunAt(dto.cron, new Date());
+    } catch {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'INVALID_REPORT_SCHEDULE_CRON',
+        code: 'INVALID_REPORT_SCHEDULE_CRON',
+        message: 'The report schedule cron expression is invalid.',
+      });
+    }
+
+    const deviceIds = this.normalizeDeviceIds(dto.deviceIds);
+    await this.validateDeviceOwnership(orgId, deviceIds);
+
+    const schedule = await this.prisma.reportSchedule.create({
+      data: {
+        orgId,
+        type: dto.type,
+        formats: formats.join(','),
+        cron: dto.cron,
+        deviceIds: deviceIds ? JSON.stringify(deviceIds) : undefined,
+        nextRunAt,
+      },
+    });
+
+    return scheduleToResponse(schedule);
+  }
+
+  async updateSchedule(id: string, orgId: string, dto: UpdateScheduleDto) {
+    const schedule = await this.prisma.reportSchedule.findFirst({ where: { id, orgId } });
+    if (!schedule) return null;
+
+    const data: any = {};
+    const now = new Date();
+
+    if (dto.type !== undefined) {
+      data.type = dto.type;
+    }
+
+    if (dto.formats !== undefined) {
+      const formats = normalizeScheduleFormats(dto.formats);
+      if (!formats.length) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'INVALID_REPORT_SCHEDULE_FORMAT',
+          message: 'At least one report format is required.',
+        });
+      }
+
+      const unsupportedFormats = formats.filter(
+        (format) => !SUPPORTED_REPORT_FORMATS.includes(format as ReportFormat),
+      );
+      if (unsupportedFormats.length) {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'INVALID_REPORT_SCHEDULE_FORMAT',
+          message: `Unsupported report format(s): ${unsupportedFormats.join(', ')}.`,
+        });
+      }
+
+      data.formats = formats.join(',');
+    }
+
+    if (dto.deviceIds !== undefined) {
+      const deviceIds = this.normalizeDeviceIds(dto.deviceIds);
+      await this.validateDeviceOwnership(orgId, deviceIds);
+      data.deviceIds = deviceIds ? JSON.stringify(deviceIds) : JSON.stringify([]);
+    }
+
+    if (dto.cron !== undefined) {
+      data.cron = dto.cron;
+      try {
+        data.nextRunAt = calculateNextRunAt(dto.cron, now);
+      } catch {
+        throw new BadRequestException({
+          statusCode: 400,
+          error: 'INVALID_REPORT_SCHEDULE_CRON',
+          code: 'INVALID_REPORT_SCHEDULE_CRON',
+          message: 'The report schedule cron expression is invalid.',
+        });
+      }
+    }
+
+    if (dto.isEnabled !== undefined) {
+      data.isEnabled = dto.isEnabled;
+      if (dto.isEnabled && data.nextRunAt === undefined) {
+        const existingNextRunAt = schedule.nextRunAt instanceof Date ? schedule.nextRunAt : null;
+        if (!existingNextRunAt || existingNextRunAt <= now) {
+          try {
+            data.nextRunAt = calculateNextRunAt(dto.cron ?? schedule.cron, now);
+          } catch {
+            throw new BadRequestException({
+              statusCode: 400,
+              error: 'INVALID_REPORT_SCHEDULE_CRON',
+              code: 'INVALID_REPORT_SCHEDULE_CRON',
+              message: 'The report schedule cron expression is invalid.',
+            });
+          }
+        }
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return scheduleToResponse(schedule);
+    }
+
+    const updated = await this.prisma.reportSchedule.update({ where: { id }, data });
+    return scheduleToResponse(updated);
+  }
+
   async deleteSchedule(id: string, orgId: string) {
-    const schedule = await this.prisma.reportSchedule.findUnique({ where: { id } });
-    if (!schedule || schedule.orgId !== orgId) return false;
-    await this.prisma.reportSchedule.delete({ where: { id } });
-    return true;
+    const result = await this.prisma.reportSchedule.deleteMany({ where: { id, orgId } });
+    return result.count === 1;
   }
 
   private async collectDeviceHealthData(orgId: string, deviceId?: string): Promise<DeviceHealthInput> {
@@ -211,7 +454,13 @@ export class ReportingService {
       include: { findings: true, score: true, device: true },
     });
 
-    if (!scan) throw new Error('No security scan found');
+    if (!scan) {
+      throw new UnprocessableEntityException({
+        statusCode: 422,
+        code: 'SECURITY_SCAN_REQUIRED',
+        message: 'No completed security scan is available. Run a security scan before generating a Security Executive report.',
+      });
+    }
 
     const score = scan.score;
 
@@ -274,7 +523,7 @@ export class ReportingService {
         name: d.name,
         health,
         security,
-        status: d.lastSeenAt && Date.now() - d.lastSeenAt.getTime() < 300000 ? 'online' : 'offline',
+        status: d.lastSeenAt && Date.now() - d.lastSeenAt.getTime() < DEVICE_ONLINE_THRESHOLD_MS ? 'online' : 'offline',
       };
     });
 
@@ -289,6 +538,107 @@ export class ReportingService {
       totalAlerts,
       criticalAlerts,
       deviceSummaries,
+    };
+  }
+
+  private async collectNetworkData(orgId: string): Promise<NetworkReportInput> {
+    const latestScan = await this.prisma.networkScan.findFirst({
+      where: { orgId },
+      orderBy: { startedAt: 'desc' },
+    });
+
+    const devices = await this.prisma.networkDevice.findMany({
+      where: { orgId },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+
+    const reachableDevices = devices.filter((d) => d.reachable);
+    const reachableLatencies = reachableDevices.map((d) => d.latencyMs).filter((l): l is number => l !== null);
+    const avgLatency = reachableLatencies.length > 0
+      ? reachableLatencies.reduce((a, b) => a + b, 0) / reachableLatencies.length
+      : null;
+
+    return {
+      scanDate: latestScan?.startedAt || new Date(),
+      scanCount: latestScan ? 1 : 0,
+      totalDevices: devices.length,
+      reachableDevices: reachableDevices.length,
+      unreachableDevices: devices.length - reachableDevices.length,
+      subnet: latestScan?.subnet || null,
+      gatewayIp: latestScan?.gatewayIp || null,
+      avgLatencyMs: avgLatency,
+      devices: devices.map((d) => ({
+        ip: d.ip,
+        hostname: d.hostname,
+        vendor: d.vendor,
+        reachable: d.reachable,
+        latencyMs: d.latencyMs,
+      })),
+    };
+  }
+
+  private async collectInventoryData(orgId: string): Promise<InventoryReportInput> {
+    const drivers = await this.prisma.driver.findMany({
+      where: { orgId },
+      orderBy: { name: 'asc' },
+    });
+
+    const software = await this.prisma.softwareInventory.findMany({
+      where: { orgId },
+      orderBy: { name: 'asc' },
+    });
+
+    return {
+      totalDrivers: drivers.length,
+      currentDrivers: drivers.filter((d) => d.status === 'current').length,
+      outdatedDrivers: drivers.filter((d) => d.status === 'outdated').length,
+      missingDrivers: drivers.filter((d) => d.status === 'missing').length,
+      totalSoftware: software.length,
+      driverList: drivers.map((d) => ({
+        name: d.name,
+        vendor: d.vendor,
+        version: d.version,
+        status: d.status,
+      })),
+      softwareList: software.map((s) => ({
+        name: s.name,
+        version: s.version,
+        vendor: s.vendor,
+      })),
+    };
+  }
+
+  private async collectRemoteSupportData(orgId: string): Promise<RemoteSupportReportInput> {
+    const sessions = await this.prisma.remoteSession.findMany({
+      where: { orgId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    const recordings = await this.prisma.remoteSession.findMany({
+      where: { orgId, recordingPath: { not: null } },
+    });
+
+    const totalRecordingDuration = recordings.reduce((sum, r) => sum + (r.recordingDuration || 0), 0);
+
+    return {
+      totalSessions: sessions.length,
+      activeSessions: sessions.filter((s) => s.status === 'active').length,
+      endedSessions: sessions.filter((s) => s.status === 'ended').length,
+      failedSessions: sessions.filter((s) => s.status === 'failed' || s.status === 'error').length,
+      pendingSessions: sessions.filter((s) => s.status === 'pending').length,
+      totalRecordings: recordings.length,
+      totalRecordingDuration,
+      recentSessions: sessions.slice(0, 20).map((s) => ({
+        id: s.id,
+        deviceId: s.deviceId,
+        status: s.status,
+        startedAt: s.startedAt,
+        endedAt: s.endedAt,
+        duration: s.startedAt && s.endedAt
+          ? Math.floor((s.endedAt.getTime() - s.startedAt.getTime()) / 1000)
+          : null,
+      })),
     };
   }
 
@@ -324,6 +674,9 @@ export class ReportingService {
       case 'device_health': return 'Device Health Report';
       case 'security_executive': return 'Security Executive Report';
       case 'fleet_summary': return 'Fleet Summary Report';
+      case 'network': return 'Network Report';
+      case 'inventory': return 'Inventory Report';
+      case 'remote_support': return 'Remote Support Report';
       default: return 'Report';
     }
   }

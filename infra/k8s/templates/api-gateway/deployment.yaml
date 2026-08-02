@@ -43,8 +43,13 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "techfusion.fullname" . }}-secrets
+                  key: POSTGRES_PASSWORD
             - name: DATABASE_URL
-              value: "postgresql://{{ .Values.postgresql.user }}:{{ .Values.postgresql.user | default "techfusion" }}@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+              value: "postgresql://{{ .Values.postgresql.user }}:$(POSTGRES_PASSWORD)@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
             - name: REDIS_URL
               value: "redis://{{ include "techfusion.fullname" . }}-redis:6379"
       containers:
@@ -61,8 +66,13 @@ spec:
             - name: {{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "techfusion.fullname" . }}-secrets
+                  key: POSTGRES_PASSWORD
             - name: DATABASE_URL
-              value: "postgresql://{{ .Values.postgresql.user }}:{{ .Values.postgresql.user | default "techfusion" }}@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
+              value: "postgresql://{{ .Values.postgresql.user }}:$(POSTGRES_PASSWORD)@{{ include "techfusion.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}?sslmode=disable"
             - name: REDIS_URL
               value: "redis://{{ include "techfusion.fullname" . }}-redis:6379"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

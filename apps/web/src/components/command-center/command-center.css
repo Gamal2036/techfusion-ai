@@ -1,0 +1,176 @@
+/* DASH-IMPL-01 · Command Center scoped styles (4DX foundation).
+ * Everything here is dashboard-owned and namespaced with `cmd-` / `command-center`
+ * so it cannot leak into specialist pages. The visual layers follow DASH-VIS-01:
+ * L0 Atmosphere (static matte base + restrained illumination), L1 Signal Field
+ * container, L2 Infrastructure (receding grid + calibration horizon), all
+ * decorative-isolated (aria-hidden / pointer-events-none in markup) and killed
+ * under prefers-reduced-motion. No animated gradients, no continuous motion. */
+
+.command-center {
+  position: relative;
+  isolation: isolate;
+}
+
+/* ---------------- L0 · Atmosphere (static) ---------------- */
+
+.cmd-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cmd-atmosphere__glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(120px);
+  opacity: 0.9;
+}
+
+.cmd-atmosphere__glow--top {
+  top: -320px;
+  left: 50%;
+  width: 880px;
+  height: 480px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, hsl(var(--primary) / 0.16), transparent 70%);
+}
+
+.cmd-atmosphere__glow--accent {
+  top: -180px;
+  right: -140px;
+  width: 520px;
+  height: 420px;
+  background: radial-gradient(closest-side, hsl(var(--accent) / 0.09), transparent 70%);
+}
+
+.cmd-atmosphere__glow--bottom {
+  bottom: -260px;
+  left: -160px;
+  width: 560px;
+  height: 400px;
+  background: radial-gradient(closest-side, hsl(var(--primary) / 0.07), transparent 70%);
+}
+
+/* ---------------- L2 · Infrastructure (static scene) ---------------- */
+
+.cmd-infrastructure {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.cmd-infrastructure__grid {
+  position: absolute;
+  inset: -12px;
+  background-image:
+    linear-gradient(hsl(var(--border) / 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--border) / 0.45) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(1500px) rotateX(16deg) scale(1.5);
+  transform-origin: 50% 0%;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), transparent 72%);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), transparent 72%);
+}
+
+/* ---------------- Command Horizon (decorative) ---------------- */
+
+.cmd-horizon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.cmd-horizon__line {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--primary) / 0.3) 18%,
+    hsl(var(--primary) / 0.3) 82%,
+    transparent 100%
+  );
+}
+
+.cmd-horizon__tick {
+  position: absolute;
+  top: 38px;
+  width: 1px;
+  height: 12px;
+  background: hsl(var(--primary) / 0.4);
+}
+
+.cmd-horizon__sweep {
+  position: absolute;
+  top: 43px;
+  left: 0;
+  width: 30%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.55), transparent);
+  opacity: 0.7;
+}
+
+@keyframes cmd-sweep {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(360%);
+  }
+}
+
+/* Exactly one subtle dash animation on the horizon, motion-gated. */
+@media (prefers-reduced-motion: no-preference) {
+  .cmd-horizon__sweep {
+    animation: cmd-sweep 9s linear infinite;
+  }
+}
+
+/* ---------------- L1 · Signal Field container ---------------- */
+
+.cmd-signal-field {
+  position: relative;
+  z-index: 1;
+}
+
+.cmd-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------- Shared helpers ---------------- */
+
+.cmd-focus-ring:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* ---------------- Responsive + reduced motion ---------------- */
+
+@media (max-width: 1023.98px) {
+  .cmd-infrastructure,
+  .cmd-horizon {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmd-horizon__sweep {
+    animation: none;
+    display: none;
+  }
+}

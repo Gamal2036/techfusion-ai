@@ -8,7 +8,53 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
+        dialog: {
+          DEFAULT: 'hsl(var(--dialog))',
+          foreground: 'hsl(var(--dialog-foreground))',
+        },
+        surface: {
+          DEFAULT: 'hsl(var(--surface))',
+          subtle: 'hsl(var(--surface-subtle))',
+          muted: 'hsl(var(--surface-muted))',
+          elevated: 'hsl(var(--surface-elevated))',
+          overlay: 'hsl(var(--surface-overlay))',
+          interactive: 'hsl(var(--surface-interactive))',
+          'interactive-hover': 'hsl(var(--surface-interactive-hover))',
+          selected: 'hsl(var(--surface-selected))',
+        },
+        text: {
+          primary: 'hsl(var(--text-primary))',
+          secondary: 'hsl(var(--text-secondary))',
+          muted: 'hsl(var(--text-muted))',
+          disabled: 'hsl(var(--text-disabled))',
+          inverse: 'hsl(var(--text-inverse))',
+        },
+        border: {
+          DEFAULT: 'hsl(var(--border))',
+          subtle: 'hsl(var(--border-subtle))',
+          strong: 'hsl(var(--border-strong))',
+          interactive: 'hsl(var(--border-interactive))',
+        },
+        input: {
+          background: 'hsl(var(--input-background))',
+          border: 'hsl(var(--input-border))',
+          placeholder: 'hsl(var(--input-placeholder))',
+          focus: 'hsl(var(--input-focus))',
+        },
         primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          hover: 'hsl(var(--primary-hover))',
+          foreground: 'hsl(var(--primary-foreground))',
           50: '#eff6ff',
           100: '#dbeafe',
           200: '#bfdbfe',
@@ -21,7 +67,14 @@ module.exports = {
           900: '#1e3a8a',
           950: '#172554',
         },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          hover: 'hsl(var(--secondary-hover))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
         accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
           50: '#ecfeff',
           100: '#cffafe',
           200: '#a5f3fc',
@@ -34,19 +87,33 @@ module.exports = {
           900: '#164e63',
           950: '#083344',
         },
-        surface: {
-          DEFAULT: '#0a0a0a',
-          50: '#18181b',
-          100: '#27272a',
-          200: '#3f3f46',
-          300: '#52525b',
-          400: '#71717a',
-          500: '#a1a1aa',
-          600: '#d4d4d8',
-          700: '#e4e4e7',
-          800: '#f4f4f5',
-          900: '#fafafa',
-          950: '#ffffff',
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+        },
+        danger: {
+          DEFAULT: 'hsl(var(--danger))',
+          foreground: 'hsl(var(--danger-foreground))',
+        },
+        info: {
+          DEFAULT: 'hsl(var(--info))',
+          foreground: 'hsl(var(--info-foreground))',
+        },
+        ring: {
+          DEFAULT: 'hsl(var(--ring))',
+          offset: 'hsl(var(--ring-offset))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
         },
       },
       borderRadius: {

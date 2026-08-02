@@ -1,0 +1,50 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "panels": [
+    {
+      "title": "Device Registration Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "rate(device_registration_outcomes_total[5m])", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "title": "Metrics Ingestion Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(metrics_ingestion_outcomes_total[5m])", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "title": "Inventory Ingestion Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "rate(inventory_ingestion_outcomes_total[5m])", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "title": "Security Report Outcomes",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        { "expr": "rate(security_report_outcomes_total[5m])", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "title": "Alert Creation Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "rate(alert_creation_total[5m])", "legendFormat": "{{severity}}" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["techfusion", "devices", "ingestion"],
+  "title": "Device Ingestion",
+  "uid": "tf-device-ingestion"
+}

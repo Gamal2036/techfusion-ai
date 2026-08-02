@@ -6,9 +6,11 @@ import { DeviceTokenGuard } from './device-token.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DevicesGateway } from './devices.gateway';
 import { AlertsModule } from '../alerts/alerts.module';
+import { QueueModule } from '../queue/queue.module';
+import { EnrollmentModule } from '../enrollment/enrollment.module';
 
 @Module({
-  imports: [PrismaModule, AlertsModule],
+  imports: [PrismaModule, AlertsModule, QueueModule, EnrollmentModule],
   controllers: [DevicesController],
   providers: [DevicesService, ScoringService, DeviceTokenGuard, DevicesGateway],
   exports: [DevicesService, ScoringService],

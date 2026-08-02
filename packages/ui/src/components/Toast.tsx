@@ -1,6 +1,6 @@
 'use client';
 
-import { Toaster as SonnerToaster } from 'sonner';
+import { Toaster as SonnerToaster, toast as sonnerToast } from 'sonner';
 import { cn } from '../lib/utils';
 
 type ToasterProps = React.ComponentProps<typeof SonnerToaster>;
@@ -12,13 +12,17 @@ function Toaster({ ...props }: ToasterProps) {
       toastOptions={{
         classNames: {
           toast: cn(
-            'group toast group-[.toaster]:bg-surface-950 group-[.toaster]:text-white group-[.toaster]:border-white/[0.06] group-[.toaster]:shadow-dialog group-[.toaster]:backdrop-blur-xl',
+            'group toast group-[.toaster]:bg-dialog group-[.toaster]:text-dialog-foreground group-[.toaster]:border-border group-[.toaster]:shadow-dialog group-[.toaster]:backdrop-blur-xl',
           ),
-          description: 'group-[.toast]:text-white/50',
+          description: 'group-[.toast]:text-text-muted',
           actionButton:
-            'group-[.toast]:bg-primary-600 group-[.toast]:text-white',
+            'group-[.toast]:bg-primary group-[.toaster]:text-primary-foreground',
           cancelButton:
-            'group-[.toast]:bg-white/10 group-[.toast]:text-white/70',
+            'group-[.toast]:bg-surface-muted group-[.toaster]:text-text-secondary',
+          success: 'group-[.toast]:border-success/20',
+          error: 'group-[.toast]:border-danger/20',
+          warning: 'group-[.toast]:border-warning/20',
+          info: 'group-[.toast]:border-info/20',
         },
       }}
       {...props}
@@ -26,4 +30,15 @@ function Toaster({ ...props }: ToasterProps) {
   );
 }
 
-export { Toaster };
+const toast = {
+  success: sonnerToast.success,
+  error: sonnerToast.error,
+  warning: sonnerToast.warning,
+  info: sonnerToast.info,
+  loading: sonnerToast.loading,
+  promise: sonnerToast.promise,
+  dismiss: sonnerToast.dismiss,
+  custom: sonnerToast.custom,
+};
+
+export { Toaster, toast };

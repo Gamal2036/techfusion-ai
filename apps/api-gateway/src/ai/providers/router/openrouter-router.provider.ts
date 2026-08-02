@@ -3,11 +3,13 @@ import { AiProviderInterface, AiResponse, EmbedResponse } from '../../types/ai-p
 
 export class OpenRouterRouterProvider implements AiProviderInterface {
   readonly name = 'OpenRouter'
-  readonly priority = 5
+  readonly priority = 3
   readonly costTier = 'free' as const
   readonly speedTier = 'medium' as const
   readonly supportsEmbedding = false
   private client: OpenAI | null = null
+  private lastHealthCheck = 0
+  private lastHealthResult = false
 
   constructor() {
     const apiKey = process.env.OPENROUTER_API_KEY
@@ -25,16 +27,21 @@ export class OpenRouterRouterProvider implements AiProviderInterface {
 
   async isAvailable(): Promise<boolean> {
     if (!this.client) return false
+    const now = Date.now()
+    if (now - this.lastHealthCheck < 60_000) return this.lastHealthResult
+    this.lastHealthCheck = now
     try {
       await this.client.chat.completions.create({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
+        model: 'meta-llama/llama-3.1-8b-instruct',
         max_tokens: 1,
         messages: [{ role: 'user', content: 'ping' }],
       }, {
         headers: { 'HTTP-Referer': 'https://techfusion.ai', 'X-Title': 'TechFusion AI' },
       })
+      this.lastHealthResult = true
       return true
     } catch {
+      this.lastHealthResult = false
       return false
     }
   }
@@ -42,7 +49,7 @@ export class OpenRouterRouterProvider implements AiProviderInterface {
   async complete(prompt: string, systemPrompt?: string, _timeoutMs?: number): Promise<AiResponse> {
     const start = Date.now()
     try {
-      const model = 'meta-llama/llama-3.1-8b-instruct:free'
+      const model = 'meta-llama/llama-3.1-8b-instruct'
       const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
         ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
         { role: 'user' as const, content: prompt },

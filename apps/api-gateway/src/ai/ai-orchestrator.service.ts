@@ -6,6 +6,10 @@ import { AiUsageService } from './services/ai-usage.service';
 import { AiRouterService } from './router/ai-router.service';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAIProvider } from './providers/openai.provider';
+import { OllamaProvider } from './providers/ollama.provider';
+import { GeminiProvider } from './providers/gemini.provider';
+import { GroqProvider } from './providers/groq.provider';
+import { OpenRouterProvider } from './providers/openrouter.provider';
 import { LlmProvider, CompletionOptions, CompletionResult, EmbeddingOptions, EmbeddingResult } from './interfaces/llm-provider.interface';
 import { AiOrchestrator, OrchestratorCompletionOptions } from './interfaces/ai-orchestrator.interface';
 import { getPlanConfig } from '../billing/plan-features';
@@ -61,6 +65,15 @@ export class AiOrchestratorService implements AiOrchestrator {
           case 'openai':
             provider = new OpenAIProvider(apiKey, cfg.baseUrl || undefined);
             break;
+          case 'gemini':
+            provider = new GeminiProvider(apiKey);
+            break;
+          case 'groq':
+            provider = new GroqProvider(apiKey);
+            break;
+          case 'openrouter':
+            provider = new OpenRouterProvider(apiKey);
+            break;
           default:
             this.logger.warn(`Unknown provider: ${cfg.provider}`);
             continue;
@@ -86,16 +99,46 @@ export class AiOrchestratorService implements AiOrchestrator {
   }
 
   private getFallbackProviders(): ProviderEntry[] {
+    const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    const openrouterKey = process.env.OPENROUTER_API_KEY;
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
     const entries: ProviderEntry[] = [];
+
+    if (groqKey) {
+      entries.push({
+        name: 'groq',
+        provider: new GroqProvider(groqKey),
+        model: 'llama-3.3-70b-versatile',
+        priority: 1,
+      });
+    }
+
+    if (geminiKey) {
+      entries.push({
+        name: 'gemini',
+        provider: new GeminiProvider(geminiKey),
+        model: 'gemini-2.0-flash',
+        priority: 2,
+      });
+    }
+
+    if (openrouterKey) {
+      entries.push({
+        name: 'openrouter',
+        provider: new OpenRouterProvider(openrouterKey),
+        model: 'meta-llama/llama-3.1-8b-instruct',
+        priority: 3,
+      });
+    }
 
     if (anthropicKey) {
       entries.push({
         name: 'anthropic',
         provider: new AnthropicProvider(anthropicKey),
         model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-        priority: 1,
+        priority: 4,
       });
     }
 
@@ -104,9 +147,16 @@ export class AiOrchestratorService implements AiOrchestrator {
         name: 'openai',
         provider: new OpenAIProvider(openaiKey),
         model: process.env.OPENAI_MODEL || 'gpt-4o',
-        priority: entries.length + 1,
+        priority: 5,
       });
     }
+
+    entries.push({
+      name: 'ollama',
+      provider: new OllamaProvider(),
+      model: process.env.OLLAMA_MODEL || 'llama3',
+      priority: entries.length + 1,
+    });
 
     return entries;
   }
@@ -120,6 +170,10 @@ export class AiOrchestratorService implements AiOrchestrator {
   }
 
   async complete(orgId: string, opts: OrchestratorCompletionOptions): Promise<CompletionResult> {
+    if (!orgId) {
+      throw new ForbiddenException('Organization context is required for AI operations');
+    }
+
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
     if (org) {
       const planConfig = getPlanConfig(org.plan);
@@ -149,16 +203,20 @@ export class AiOrchestratorService implements AiOrchestrator {
           throw new Error('No AI providers configured');
         }
 
+        console.log(`[AI_ORCHestrator_STREAM] orgId=${orgId} providers=${providers.map(p => p.name).join(',')} providerCount=${providers.length}`);
+
         const errors: string[] = [];
         for (const entry of providers) {
+          const providerStart = Date.now();
           try {
-            this.logger.log(`Attempting ${entry.name} (${entry.model}) for org ${orgId}`);
+            console.log(`[AI_ORCHestrator_ATTEMPT] provider=${entry.name} model=${entry.model}`);
 
             const result = await entry.provider.complete({
               ...opts,
               model: entry.model,
             });
 
+            const providerMs = Date.now() - providerStart;
             const latencyMs = Date.now() - startTime;
             const costUsd = this.costTracker.calculateCost(entry.model, result.promptTokens, result.completionTokens);
 
@@ -175,12 +233,13 @@ export class AiOrchestratorService implements AiOrchestrator {
               success: true,
             });
 
-            this.logger.log(`${entry.name} succeeded (${latencyMs}ms, ${result.totalTokens} tokens, $${costUsd})`);
+            console.log(`[AI_ORCHestrator_SUCCESS] provider=${entry.name} model=${entry.model} providerMs=${providerMs} totalMs=${latencyMs} tokens=${result.totalTokens}`);
 
             return result;
           } catch (err) {
+            const providerMs = Date.now() - providerStart;
             const errorMessage = (err as Error).message;
-            this.logger.warn(`${entry.name} failed: ${errorMessage}`);
+            console.log(`[AI_ORCHestrator_FAIL] provider=${entry.name} reason=${errorMessage} providerMs=${providerMs}`);
             await this.usageService.log({
               orgId,
               conversationId: undefined,
@@ -201,8 +260,11 @@ export class AiOrchestratorService implements AiOrchestrator {
       }
 
       if (this.aiRouter) {
+        console.log(`[AI_ORCHestrator_ROUTER] orgId=${orgId} using AiRouter`);
         const response = await this.aiRouter.complete(prompt, systemPrompt);
         const latencyMs = Date.now() - startTime;
+
+        console.log(`[AI_ORCHestrator_ROUTER_DONE] provider=${response.provider} model=${response.model} totalMs=${latencyMs} tokens=${response.tokensUsed}`);
 
         await this.usageService.log({
           orgId,
@@ -283,6 +345,10 @@ export class AiOrchestratorService implements AiOrchestrator {
   }
 
   async embed(orgId: string, opts: EmbeddingOptions): Promise<EmbeddingResult> {
+    if (!orgId) {
+      throw new ForbiddenException('Organization context is required for AI operations');
+    }
+
     if (this.aiRouter) {
       try {
         const text = opts.input.join(' ');
@@ -322,6 +388,10 @@ export class AiOrchestratorService implements AiOrchestrator {
    * Falls back to deterministic local embedding when no AI provider is configured (dev/test)
    */
   async getEmbedding(orgId: string, text: string, dimension?: number): Promise<number[]> {
+    if (!orgId) {
+      throw new ForbiddenException('Organization context is required for AI operations');
+    }
+
     const dim = dimension || 1536;
 
     try {

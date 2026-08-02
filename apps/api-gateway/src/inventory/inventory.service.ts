@@ -1,5 +1,6 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 function parseVersion(v: string): number[] {
   return v.split(/[.\-_]/).map((s) => {
@@ -49,6 +50,8 @@ const SEED_DRIVERS = [
 
 @Injectable()
 export class InventoryService implements OnModuleInit {
+  private readonly logger = new Logger(InventoryService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
@@ -68,73 +71,94 @@ export class InventoryService implements OnModuleInit {
   async ingestReport(orgId: string, body: any) {
     const drivers = body.drivers || [];
     const software = body.software || [];
+    const deviceId = body.deviceId || null;
+
+    this.logger.log(`[INVENTORY] Ingesting report for device ${deviceId}: ${drivers.length} drivers, ${software.length} software`);
+
+    let driverCount = 0;
+    let softwareCount = 0;
 
     for (const d of drivers) {
-      const catalogEntry = await this.prisma.driverCatalogItem.findFirst({
-        where: { name: d.name },
-      });
+      try {
+        const catalogEntry = await this.prisma.driverCatalogItem.findFirst({
+          where: { name: d.name },
+        });
 
-      let status = 'unknown';
-      if (catalogEntry && d.version && catalogEntry.latestVersion) {
-        status = compareVersions(d.version, catalogEntry.latestVersion) >= 0 ? 'current' : 'outdated';
-      } else if (catalogEntry) {
-        status = 'missing';
-      } else {
-        status = 'unknown';
+        let status = 'unknown';
+        if (catalogEntry && d.version && catalogEntry.latestVersion) {
+          status = compareVersions(d.version, catalogEntry.latestVersion) >= 0 ? 'current' : 'outdated';
+        } else if (catalogEntry) {
+          status = 'missing';
+        } else {
+          status = 'unknown';
+        }
+
+        await this.prisma.driver.upsert({
+          where: { orgId_name: { orgId, name: d.name } },
+          update: {
+            deviceId,
+            vendor: d.vendor || null,
+            version: d.version || null,
+            modulePath: d.module_path || null,
+            usedBy: d.used_by || null,
+            source: d.source || 'kernel_module',
+            status,
+            lastSeenAt: new Date(),
+            metadata: d,
+          },
+          create: {
+            orgId,
+            deviceId,
+            name: d.name,
+            vendor: d.vendor || null,
+            version: d.version || null,
+            modulePath: d.module_path || null,
+            usedBy: d.used_by || null,
+            source: d.source || 'kernel_module',
+            status,
+            metadata: d,
+          },
+        });
+        driverCount++;
+      } catch (e: any) {
+        this.logger.warn(`[INVENTORY] Failed to upsert driver ${d.name}: ${e.message}`);
       }
-
-      await this.prisma.driver.upsert({
-        where: { orgId_name: { orgId, name: d.name } },
-        update: {
-          vendor: d.vendor || null,
-          version: d.version || null,
-          modulePath: d.module_path || null,
-          usedBy: d.used_by || null,
-          source: d.source || 'kernel_module',
-          status,
-          lastSeenAt: new Date(),
-          metadata: d,
-        },
-        create: {
-          orgId,
-          name: d.name,
-          vendor: d.vendor || null,
-          version: d.version || null,
-          modulePath: d.module_path || null,
-          usedBy: d.used_by || null,
-          source: d.source || 'kernel_module',
-          status,
-          metadata: d,
-        },
-      });
     }
 
     for (const s of software) {
-      await this.prisma.softwareInventory.upsert({
-        where: { orgId_name: { orgId, name: s.name } },
-        update: {
-          version: s.version || null,
-          vendor: s.vendor || null,
-          installDate: s.install_date || null,
-          description: s.description || null,
-          source: s.source || 'deb',
-          lastSeenAt: new Date(),
-          metadata: s,
-        },
-        create: {
-          orgId,
-          name: s.name,
-          version: s.version || null,
-          vendor: s.vendor || null,
-          installDate: s.install_date || null,
-          description: s.description || null,
-          source: s.source || 'deb',
-          metadata: s,
-        },
-      });
+      try {
+        await this.prisma.softwareInventory.upsert({
+          where: { orgId_name: { orgId, name: s.name } },
+          update: {
+            deviceId,
+            version: s.version || null,
+            vendor: s.vendor || null,
+            installDate: s.install_date || null,
+            description: s.description || null,
+            source: s.source || 'deb',
+            lastSeenAt: new Date(),
+            metadata: s,
+          },
+          create: {
+            orgId,
+            deviceId,
+            name: s.name,
+            version: s.version || null,
+            vendor: s.vendor || null,
+            installDate: s.install_date || null,
+            description: s.description || null,
+            source: s.source || 'deb',
+            metadata: s,
+          },
+        });
+        softwareCount++;
+      } catch (e: any) {
+        this.logger.warn(`[INVENTORY] Failed to upsert software ${s.name}: ${e.message}`);
+      }
     }
 
-    return { driverCount: drivers.length, softwareCount: software.length };
+    this.logger.log(`[INVENTORY] Report completed: ${driverCount} drivers, ${softwareCount} software persisted`);
+    return { driverCount, softwareCount };
   }
 
   async getDrivers(orgId: string, status?: string) {
@@ -157,5 +181,73 @@ export class InventoryService implements OnModuleInit {
     if (!current) return 'missing';
     if (!latest) return 'unknown';
     return compareVersions(current, latest) >= 0 ? 'current' : 'outdated';
+  }
+
+  async setPendingInventory(deviceId: string): Promise<void> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device) return;
+    const existingMeta = (device.metadata as Record<string, any>) || {};
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: {
+        metadata: {
+          ...existingMeta,
+          inventoryPending: true,
+          inventoryPendingAt: new Date().toISOString(),
+        },
+      },
+    });
+  }
+
+  async getPendingInventoryFlag(deviceId: string): Promise<boolean> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || !device.metadata) return false;
+    const meta = device.metadata as Record<string, any>;
+    if (meta.inventoryPending !== true) return false;
+
+    const pendingAt = meta.inventoryPendingAt ? new Date(meta.inventoryPendingAt).getTime() : 0;
+    const staleThreshold = Date.now() - 10 * 60 * 1000;
+    if (pendingAt < staleThreshold) {
+      await this.clearPendingInventory(deviceId);
+      return false;
+    }
+    return true;
+  }
+
+  async clearPendingInventory(deviceId: string): Promise<void> {
+    const device = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    if (!device || !device.metadata) return;
+    const meta = device.metadata as Record<string, any>;
+    if (meta.inventoryPending === undefined && meta.inventoryPendingAt === undefined) return;
+    const { inventoryPending, inventoryPendingAt, ...rest } = meta;
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { metadata: Object.keys(rest).length > 0 ? rest : Prisma.DbNull },
+    });
+  }
+
+  async cleanupStalePendingInventory(): Promise<number> {
+    const devices = await this.prisma.device.findMany();
+
+    let cleaned = 0;
+    for (const device of devices) {
+      if (!device.metadata) continue;
+      const meta = device.metadata as Record<string, any>;
+      if (meta.inventoryPending === true && meta.inventoryPendingAt) {
+        const pendingAt = new Date(meta.inventoryPendingAt).getTime();
+        if (pendingAt < Date.now() - 10 * 60 * 1000) {
+          const { inventoryPending, inventoryPendingAt, ...rest } = meta;
+          await this.prisma.device.update({
+            where: { id: device.id },
+            data: { metadata: Object.keys(rest).length > 0 ? rest : Prisma.DbNull },
+          });
+          cleaned++;
+        }
+      }
+    }
+    if (cleaned > 0) {
+      this.logger.log(`[INVENTORY] Cleaned up ${cleaned} stale pending inventory flags`);
+    }
+    return cleaned;
   }
 }

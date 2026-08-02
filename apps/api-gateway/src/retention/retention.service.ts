@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { QueueService } from '../queue/queue.service';
 
 interface RetentionPolicyInput {
   metricsRetentionDays?: number;
@@ -13,7 +14,10 @@ interface RetentionPolicyInput {
 export class RetentionService {
   private readonly logger = new Logger(RetentionService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private queueService: QueueService,
+  ) {}
 
   async getPolicy(orgId: string) {
     let policy = await this.prisma.dataRetentionPolicy.findUnique({ where: { orgId } });

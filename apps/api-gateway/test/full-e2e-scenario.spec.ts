@@ -3,10 +3,18 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { QueueService } from '../src/queue/queue.service';
+import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
-const JWT_SECRET = () => process.env.JWT_SECRET || 'dev-secret-change-in-production-abc123';
+const JWT_SECRET = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required for tests');
+  }
+  return secret;
+};
 
 describe('Full E2E Scenario (Phase 15)', () => {
   let app: INestApplication;
@@ -16,7 +24,10 @@ describe('Full E2E Scenario (Phase 15)', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(QueueService)
+      .useClass(MockQueueService)
+      .compile();
 
     app = moduleFixture.createNestApplication();
     prisma = moduleFixture.get<PrismaService>(PrismaService);

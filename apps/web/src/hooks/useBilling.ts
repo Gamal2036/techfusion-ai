@@ -1,16 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { apiFetch } from '@/lib/auth-client';
 
 export interface PlanInfo {
   plan: string;
@@ -61,7 +52,7 @@ export function usePlan() {
 
   const fetchPlan = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/billing/plan`, { headers: getAuthHeaders() });
+      const res = await apiFetch('/billing/plan');
       if (res.ok) {
         setPlan(await res.json());
       }
@@ -83,7 +74,7 @@ export function useUsage() {
 
   const fetchUsage = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/billing/usage`, { headers: getAuthHeaders() });
+      const res = await apiFetch('/billing/usage');
       if (res.ok) {
         setUsage(await res.json());
       }
@@ -105,7 +96,7 @@ export function useBillingHistory() {
 
   const fetchHistory = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/billing/history`, { headers: getAuthHeaders() });
+      const res = await apiFetch('/billing/history');
       if (res.ok) {
         setInvoices(await res.json());
       }
@@ -122,9 +113,8 @@ export function useBillingHistory() {
 }
 
 export async function createCheckoutSession(priceId: string) {
-  const res = await fetch(`${API_URL}/billing/checkout`, {
+  const res = await apiFetch('/billing/checkout', {
     method: 'POST',
-    headers: getAuthHeaders(),
     body: JSON.stringify({
       priceId,
       successUrl: `${window.location.origin}/dashboard/billing?checkout=success`,
@@ -136,9 +126,8 @@ export async function createCheckoutSession(priceId: string) {
 }
 
 export async function createPortalSession() {
-  const res = await fetch(`${API_URL}/billing/portal`, {
+  const res = await apiFetch('/billing/portal', {
     method: 'POST',
-    headers: getAuthHeaders(),
     body: JSON.stringify({
       returnUrl: `${window.location.origin}/dashboard/billing`,
     }),

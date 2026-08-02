@@ -1,16 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { apiFetch } from '@/lib/auth-client';
 
 export interface SecurityFinding {
   id: string;
@@ -67,22 +58,24 @@ export function useSecurity(deviceId: string | undefined) {
   const [loading, setLoading] = useState(false);
   const [scansLoading, setScansLoading] = useState(false);
   const [triggering, setTriggering] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchLatest = useCallback(async () => {
     if (!deviceId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/security/latest/${deviceId}`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch(`/security/latest/${deviceId}`);
       if (res.ok) {
         const data = await res.json();
         setLatestScan(data);
+        return data;
       } else {
         setLatestScan(null);
+        return null;
       }
     } catch {
       setLatestScan(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -92,9 +85,7 @@ export function useSecurity(deviceId: string | undefined) {
     if (!deviceId) return;
     setScansLoading(true);
     try {
-      const res = await fetch(`${API_URL}/security/scans/${deviceId}?limit=20`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch(`/security/scans/${deviceId}?limit=20`);
       if (res.ok) {
         setScans(await res.json());
       }
@@ -108,9 +99,7 @@ export function useSecurity(deviceId: string | undefined) {
   const fetchSummary = useCallback(async () => {
     if (!deviceId) return;
     try {
-      const res = await fetch(`${API_URL}/security/executive-summary/${deviceId}`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch(`/security/executive-summary/${deviceId}`);
       if (res.ok) {
         setSummary(await res.json());
       }
@@ -119,33 +108,53 @@ export function useSecurity(deviceId: string | undefined) {
     }
   }, [deviceId]);
 
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) return;
+    pollingRef.current = setInterval(async () => {
+      const scan = await fetchLatest();
+      if (scan && (scan.status === 'completed' || scan.status === 'failed')) {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+        setTriggering(false);
+        fetchScans();
+        fetchSummary();
+      }
+    }, 3000);
+  }, [fetchLatest, fetchScans, fetchSummary]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
   const triggerScan = useCallback(async () => {
     if (!deviceId || triggering) return;
     setTriggering(true);
     try {
-      const res = await fetch(`${API_URL}/security/scans/${deviceId}/trigger`, {
+      const res = await apiFetch(`/security/scans/${deviceId}/trigger`, {
         method: 'POST',
-        headers: getAuthHeaders(),
       });
       if (res.ok) {
-        // Refresh after triggering
+        startPolling();
         setTimeout(() => {
-          fetchLatest();
           fetchScans();
         }, 2000);
+      } else {
+        setTriggering(false);
       }
     } catch {
-      // ignore
-    } finally {
       setTriggering(false);
     }
-  }, [deviceId, triggering, fetchLatest, fetchScans]);
+  }, [deviceId, triggering, fetchLatest, fetchScans, startPolling]);
 
   const remediateFinding = useCallback(async (findingId: string) => {
     try {
-      const res = await fetch(`${API_URL}/security/findings/${findingId}/remediate`, {
+      const res = await apiFetch(`/security/findings/${findingId}/remediate`, {
         method: 'POST',
-        headers: getAuthHeaders(),
       });
       if (res.ok) {
         await fetchLatest();
@@ -162,7 +171,8 @@ export function useSecurity(deviceId: string | undefined) {
       fetchScans();
       fetchSummary();
     }
-  }, [deviceId, fetchLatest, fetchScans, fetchSummary]);
+    return () => stopPolling();
+  }, [deviceId, fetchLatest, fetchScans, fetchSummary, stopPolling]);
 
   return {
     latestScan,

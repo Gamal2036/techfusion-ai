@@ -1,16 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { apiFetch } from '@/lib/auth-client';
 
 export interface BackupJob {
   id: string;
@@ -41,20 +32,31 @@ export interface BackupRun {
   completedAt: string | null;
   sizeBytes: number | null;
   fileCount: number | null;
+  sourcePaths: string | null;
   errorMessage: string | null;
+  metadata: Record<string, unknown> | null;
   job?: { name: string; type: string };
 }
+
+const POLL_INTERVAL = 5000;
 
 export function useBackupJobs(deviceId?: string) {
   const [jobs, setJobs] = useState<BackupJob[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async () => {
     try {
       const params = deviceId ? `?deviceId=${deviceId}` : '';
-      const res = await fetch(`${API_URL}/backups/jobs${params}`, { headers: getAuthHeaders() });
-      if (res.ok) setJobs(await res.json());
+      const res = await apiFetch(`/backups/jobs${params}`);
+      if (res.ok) {
+        setJobs(await res.json());
+        setError(null);
+      } else {
+        setError(`Failed to fetch jobs: ${res.status}`);
+      }
     } catch (e) {
+      setError('Network error while fetching backup jobs');
       console.error('Failed to fetch backup jobs:', e);
     } finally {
       setLoading(false);
@@ -63,19 +65,31 @@ export function useBackupJobs(deviceId?: string) {
 
   useEffect(() => { fetchJobs(); }, [fetchJobs]);
 
-  return { jobs, loading, refetch: fetchJobs };
+  return { jobs, loading, error, refetch: fetchJobs };
 }
 
 export function useBackupRuns(jobId?: string) {
   const [runs, setRuns] = useState<BackupRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [hasActiveRun, setHasActiveRun] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchRuns = useCallback(async () => {
     try {
       const params = jobId ? `?jobId=${jobId}` : '';
-      const res = await fetch(`${API_URL}/backups/runs${params}`, { headers: getAuthHeaders() });
-      if (res.ok) setRuns(await res.json());
+      const res = await apiFetch(`/backups/runs${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRuns(data);
+        setError(null);
+        const active = data.some((r: BackupRun) => r.status === 'running' || r.status === 'pending');
+        setHasActiveRun(active);
+      } else {
+        setError(`Failed to fetch runs: ${res.status}`);
+      }
     } catch (e) {
+      setError('Network error while fetching backup runs');
       console.error('Failed to fetch backup runs:', e);
     } finally {
       setLoading(false);
@@ -84,25 +98,44 @@ export function useBackupRuns(jobId?: string) {
 
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
 
-  return { runs, loading, refetch: fetchRuns };
+  useEffect(() => {
+    if (hasActiveRun) {
+      intervalRef.current = setInterval(fetchRuns, POLL_INTERVAL);
+    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [hasActiveRun, fetchRuns]);
+
+  return { runs, loading, error, hasActiveRun, refetch: fetchRuns };
 }
 
 export function useRestorePoints(deviceId: string | undefined) {
   const [points, setPoints] = useState<BackupRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchPoints = useCallback(async () => {
     if (!deviceId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/backups/restore-points/${deviceId}`, { headers: getAuthHeaders() });
-      if (res.ok) setPoints(await res.json());
+      const res = await apiFetch(`/backups/restore-points/${deviceId}`);
+      if (res.ok) {
+        setPoints(await res.json());
+        setError(null);
+      } else {
+        setError(`Failed to fetch restore points: ${res.status}`);
+      }
     } catch (e) {
+      setError('Network error while fetching restore points');
       console.error('Failed to fetch restore points:', e);
     } finally {
       setLoading(false);
     }
   }, [deviceId]);
 
-  return { points, loading, refetch: fetchPoints };
+  return { points, loading, error, refetch: fetchPoints };
 }

@@ -5,7 +5,7 @@ const Table = React.forwardRef<
   HTMLTableElement,
   React.HTMLAttributes<HTMLTableElement>
 >(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto rounded-xl border border-white/[0.06]">
+  <div className="relative w-full overflow-auto rounded-xl border border-border">
     <table
       ref={ref}
       className={cn('w-full caption-bottom text-sm', className)}
@@ -19,7 +19,7 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn('[&_tr]:border-b border-white/[0.06] bg-white/[0.02]', className)} {...props} />
+  <thead ref={ref} className={cn('[&_tr]:border-b border-border bg-surface-subtle', className)} {...props} />
 ));
 TableHeader.displayName = 'TableHeader';
 
@@ -42,7 +42,7 @@ const TableFooter = React.forwardRef<
   <tfoot
     ref={ref}
     className={cn(
-      'border-t border-white/[0.06] bg-white/[0.02] font-medium',
+      'border-t border-border bg-surface-subtle font-medium',
       className,
     )}
     {...props}
@@ -57,7 +57,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      'border-b border-white/[0.06] transition-colors hover:bg-white/[0.02] data-[state=selected]:bg-white/[0.04]',
+      'border-b border-border transition-colors hover:bg-surface-subtle data-[state=selected]:bg-surface-muted',
       className,
     )}
     {...props}
@@ -72,7 +72,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-12 px-4 text-left align-middle font-medium text-white/50 [&:has([role=checkbox])]:pr-0',
+      'h-12 px-4 text-left align-middle font-medium text-text-muted [&:has([role=checkbox])]:pr-0',
       className,
     )}
     {...props}
@@ -101,7 +101,7 @@ const TableCaption = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <caption
     ref={ref}
-    className={cn('mt-4 text-sm text-white/40', className)}
+    className={cn('mt-4 text-sm text-text-muted', className)}
     {...props}
   />
 ));

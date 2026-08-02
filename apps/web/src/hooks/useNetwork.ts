@@ -1,16 +1,8 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getAuthHeaders() {
-  const token = localStorage.getItem('accessToken');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { apiFetch } from '@/lib/auth-client';
+import { subscribe } from '@/lib/socket-client';
 
 export interface NetworkDevice {
   id: string;
@@ -94,9 +86,7 @@ export function useNetworkDevices() {
 
   const fetchDevices = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/network/devices`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/network/devices');
       if (res.ok) {
         setDevices(await res.json());
       }
@@ -122,9 +112,7 @@ export function useNetworkTopology() {
 
   const fetchTopology = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/network/topology`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/network/topology');
       if (res.ok) {
         setTopology(await res.json());
       }
@@ -150,9 +138,7 @@ export function useNetworkScans() {
 
   const fetchScans = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/network/scans?limit=10`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await apiFetch('/network/scans?limit=10');
       if (res.ok) {
         setScans(await res.json());
       }
@@ -170,6 +156,36 @@ export function useNetworkScans() {
   return { scans, loading, refetch: fetchScans };
 }
 
+export function useStartDiscovery() {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startDiscovery = useCallback(async (deviceId?: string) => {
+    setStarting(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/network/discovery/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ deviceId }),
+      });
+      if (res.ok) {
+        return await res.json();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Failed to start discovery');
+        return null;
+      }
+    } catch (e) {
+      setError('Network error');
+      return null;
+    } finally {
+      setStarting(false);
+    }
+  }, []);
+
+  return { starting, error, startDiscovery };
+}
+
 export function useLatencyCheck() {
   const [result, setResult] = useState<LatencyResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -177,9 +193,8 @@ export function useLatencyCheck() {
   const run = useCallback(async (targetIp: string, count = 4) => {
     setRunning(true);
     try {
-      const res = await fetch(`${API_URL}/network/diagnostics/latency`, {
+      const res = await apiFetch('/network/diagnostics/latency', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({ targetIp, count }),
       });
       if (res.ok) {
@@ -202,9 +217,8 @@ export function useDnsResolution() {
   const run = useCallback(async (hostname: string, resolvers?: string[]) => {
     setRunning(true);
     try {
-      const res = await fetch(`${API_URL}/network/diagnostics/dns`, {
+      const res = await apiFetch('/network/diagnostics/dns', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({ hostname, resolvers }),
       });
       if (res.ok) {
@@ -227,9 +241,8 @@ export function useTraceroute() {
   const run = useCallback(async (target: string) => {
     setRunning(true);
     try {
-      const res = await fetch(`${API_URL}/network/diagnostics/traceroute`, {
+      const res = await apiFetch('/network/diagnostics/traceroute', {
         method: 'POST',
-        headers: getAuthHeaders(),
         body: JSON.stringify({ target }),
       });
       if (res.ok) {
@@ -252,9 +265,8 @@ export function useConnectivityCheck() {
   const run = useCallback(async () => {
     setRunning(true);
     try {
-      const res = await fetch(`${API_URL}/network/diagnostics/connectivity`, {
+      const res = await apiFetch('/network/diagnostics/connectivity', {
         method: 'POST',
-        headers: getAuthHeaders(),
       });
       if (res.ok) {
         setResult(await res.json());
@@ -267,4 +279,49 @@ export function useConnectivityCheck() {
   }, []);
 
   return { result, running, run };
+}
+
+export function useNetworkWebSocket(callbacks: {
+  onTopology?: (topology: TopologyData) => void;
+  onDiagnostics?: (data: any) => void;
+  onScanStatus?: (scan: any) => void;
+}) {
+  const topologyRef = useRef(callbacks.onTopology);
+  topologyRef.current = callbacks.onTopology;
+  const diagnosticsRef = useRef(callbacks.onDiagnostics);
+  diagnosticsRef.current = callbacks.onDiagnostics;
+  const scanStatusRef = useRef(callbacks.onScanStatus);
+  scanStatusRef.current = callbacks.onScanStatus;
+
+  useEffect(() => {
+    const cleanups: (() => void)[] = [];
+
+    if (topologyRef.current) {
+      cleanups.push(
+        subscribe('/network', 'topology', (topology: TopologyData) => {
+          topologyRef.current?.(topology);
+        }),
+      );
+    }
+
+    if (diagnosticsRef.current) {
+      cleanups.push(
+        subscribe('/network', 'diagnostics', (data: any) => {
+          diagnosticsRef.current?.(data);
+        }),
+      );
+    }
+
+    if (scanStatusRef.current) {
+      cleanups.push(
+        subscribe('/network', 'scan-status', (scan: any) => {
+          scanStatusRef.current?.(scan);
+        }),
+      );
+    }
+
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, []);
 }

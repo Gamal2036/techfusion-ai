@@ -3,11 +3,13 @@ import { AiProviderInterface, AiResponse, EmbedResponse } from '../../types/ai-p
 
 export class GeminiRouterProvider implements AiProviderInterface {
   readonly name = 'Gemini'
-  readonly priority = 3
+  readonly priority = 2
   readonly costTier = 'free' as const
   readonly speedTier = 'fast' as const
   readonly supportsEmbedding = true
   private genAI: GoogleGenerativeAI | null = null
+  private lastHealthCheck = 0
+  private lastHealthResult = false
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY
@@ -22,11 +24,16 @@ export class GeminiRouterProvider implements AiProviderInterface {
 
   async isAvailable(): Promise<boolean> {
     if (!this.genAI) return false
+    const now = Date.now()
+    if (now - this.lastHealthCheck < 60_000) return this.lastHealthResult
+    this.lastHealthCheck = now
     try {
-      const model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      const model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
       await model.generateContent('ping')
+      this.lastHealthResult = true
       return true
     } catch {
+      this.lastHealthResult = false
       return false
     }
   }
@@ -34,7 +41,7 @@ export class GeminiRouterProvider implements AiProviderInterface {
   async complete(prompt: string, systemPrompt?: string, _timeoutMs?: number): Promise<AiResponse> {
     const start = Date.now()
     try {
-      const model = this.genAI!.getGenerativeModel({ model: 'gemini-1.5-flash' })
+      const model = this.genAI!.getGenerativeModel({ model: 'gemini-2.0-flash' })
       const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt
       const result = await model.generateContent(fullPrompt)
       const content = result.response.text()
@@ -42,7 +49,7 @@ export class GeminiRouterProvider implements AiProviderInterface {
       return {
         content,
         provider: this.name,
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.0-flash',
         tokensUsed,
         latencyMs: Date.now() - start,
         costEstimateUsd: 0,
@@ -56,12 +63,12 @@ export class GeminiRouterProvider implements AiProviderInterface {
 
   async embed(text: string): Promise<EmbedResponse> {
     try {
-      const model = this.genAI!.getGenerativeModel({ model: 'embedding-001' })
+      const model = this.genAI!.getGenerativeModel({ model: 'text-embedding-004' })
       const result = await model.embedContent(text)
       return {
         embedding: result.embedding.values,
         provider: this.name,
-        model: 'embedding-001',
+        model: 'text-embedding-004',
         dimension: result.embedding.values.length,
       }
     } catch (error) {

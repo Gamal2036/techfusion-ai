@@ -3,28 +3,45 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { createWsAuthMiddleware } from '../common/ws-auth.middleware';
+import { getWsCorsOrigins } from '../common/ws-cors';
+import { Logger } from '@nestjs/common';
+import { trackWsConnection, trackWsDisconnection, trackWsAuthFailure } from '../metrics.interceptor';
 
 @WebSocketGateway({
-  cors: { origin: '*', credentials: true },
+  cors: { origin: getWsCorsOrigins(), credentials: true },
   namespace: '/network',
 })
-export class NetworkGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class NetworkGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private orgRooms = new Map<string, Set<string>>();
+  private readonly logger = new Logger(NetworkGateway.name);
+
+  afterInit(server: Server) {
+    server.use(createWsAuthMiddleware());
+  }
 
   handleConnection(client: Socket) {
-    const orgId = client.handshake.query.orgId as string;
-    if (orgId) {
-      client.join(`network:${orgId}`);
-      if (!this.orgRooms.has(orgId)) {
-        this.orgRooms.set(orgId, new Set());
-      }
-      this.orgRooms.get(orgId)!.add(client.id);
+    const user = client.data.user;
+    if (!user || !user.orgId) {
+      trackWsAuthFailure('/network');
+      this.logger.warn('WS connection rejected: no user data', { socketId: client.id });
+      client.disconnect(true);
+      return;
     }
+    const orgId = user.orgId;
+    client.join(`org:${orgId}`);
+    if (!this.orgRooms.has(orgId)) {
+      this.orgRooms.set(orgId, new Set());
+    }
+    this.orgRooms.get(orgId)!.add(client.id);
+    trackWsConnection('/network');
+    this.logger.debug('WS client connected', { socketId: client.id, namespace: '/network' });
   }
 
   handleDisconnect(client: Socket) {
@@ -32,16 +49,21 @@ export class NetworkGateway implements OnGatewayConnection, OnGatewayDisconnect 
       if (clients.has(client.id)) {
         clients.delete(client.id);
         if (clients.size === 0) this.orgRooms.delete(orgId);
+        trackWsDisconnection('/network', 'client_initiated');
         break;
       }
     }
   }
 
   broadcastTopology(orgId: string, topology: any) {
-    this.server.to(`network:${orgId}`).emit('topology', topology);
+    this.server.to(`org:${orgId}`).emit('topology', topology);
   }
 
   broadcastDiagnostics(orgId: string, data: any) {
-    this.server.to(`network:${orgId}`).emit('diagnostics', data);
+    this.server.to(`org:${orgId}`).emit('diagnostics', data);
+  }
+
+  broadcastScanStatus(orgId: string, scan: any) {
+    this.server.to(`org:${orgId}`).emit('scan-status', scan);
   }
 }

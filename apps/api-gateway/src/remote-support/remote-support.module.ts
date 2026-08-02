@@ -3,9 +3,10 @@ import { RemoteSupportController } from './remote-support.controller';
 import { RemoteSupportService } from './remote-support.service';
 import { RemoteSupportGateway } from './remote-support.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, DevicesModule],
   controllers: [RemoteSupportController],
   providers: [RemoteSupportService, RemoteSupportGateway],
   exports: [RemoteSupportService, RemoteSupportGateway],

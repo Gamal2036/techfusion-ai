@@ -4,10 +4,22 @@ dist/
 target/
 *.log
 .env
-.env.local
+.env.*
+!.env.example
+!.env.test
 .DS_Store
 coverage/
 .turbo/
 *.tsbuildinfo
 apps/api-gateway/.env
 apps/api-gateway/.env.local
+apps/api-gateway/.env.production
+
+# Local runtime/generated storage
+apps/api-gateway/report-storage/
+report-storage/
+
+# Local environment files
+.env
+.env.local
+.env.*.local

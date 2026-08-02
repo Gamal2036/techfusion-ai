@@ -1,12 +1,14 @@
 import { Controller, Get, Post, Body, Param, Query, Req, Res, HttpCode, NotFoundException, Logger } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Response, Request } from 'express';
 import { Roles } from '../common/roles.decorator';
 import { Public } from '../common/public.decorator';
 import { SecurityService } from './security.service';
 import { SecurityScoringService } from './services/security-scoring.service';
 import { SecurityReportingService } from './services/security-reporting.service';
-import { SubmitFindingsDto } from './dto/submit-findings.dto';
+import { SubmitFindingsDto, FindingDto } from './dto/submit-findings.dto';
 import { ScanQueryDto } from './dto/scan-query.dto';
+import { throttle } from '../config/rate-limits';
 
 @Controller()
 export class SecurityController {
@@ -19,6 +21,7 @@ export class SecurityController {
   ) {}
 
   @Public()
+  @Throttle(throttle(20, 60000))
   @Post('devices/security-report')
   @HttpCode(200)
   async submitFindings(@Body() dto: SubmitFindingsDto) {
@@ -47,15 +50,59 @@ export class SecurityController {
   @HttpCode(201)
   async triggerScan(@Param('deviceId') deviceId: string, @Req() req: Request) {
     const orgId = (req as any).user?.orgId;
-    if (!orgId) throw new Error('Organization context required');
+    if (!orgId) throw new NotFoundException('Organization context required');
     const scan = await this.securityService.createPendingScan(deviceId, orgId);
-    return { scanId: scan.id, status: scan.status };
+    return { scanId: scan.id, status: scan.status, createdAt: scan.createdAt };
+  }
+
+  @Public()
+  @Get('security/pending/:deviceId')
+  async getPendingScansForAgent(@Param('deviceId') deviceId: string) {
+    const scans = await this.securityService.getPendingScansForAgent(deviceId);
+    return scans;
+  }
+
+  @Public()
+  @Post('security/scan-result')
+  @HttpCode(200)
+  async completeScanResult(
+    @Body() body: { scanId: string; findings: FindingDto[]; error?: string },
+  ) {
+    if (body.error) {
+      const scan = await this.securityService.updateScanStatus(body.scanId, 'failed', {
+        error: body.error,
+        completedAt: new Date(),
+      });
+      return { scanId: scan.id, status: 'failed' };
+    }
+
+    const scoreResult = this.scoringService.compute(
+      body.findings.map((f) => ({ severity: f.severity as any })),
+    );
+
+    const result = await this.securityService.completePendingScan(
+      body.scanId,
+      body.findings,
+      scoreResult,
+    );
+
+    if (!result) {
+      throw new NotFoundException('Scan not found or already completed');
+    }
+
+    return {
+      scanId: result.scanId,
+      scoreId: result.scoreId,
+      securityScore: scoreResult.securityScore,
+      riskLevel: scoreResult.riskLevel,
+      totalFindings: scoreResult.totalFindings,
+    };
   }
 
   @Roles('Owner', 'Admin', 'Technician', 'Viewer')
   @Get('security/latest/:deviceId')
   async getLatestScan(@Param('deviceId') deviceId: string, @Req() req: Request) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     const result = await this.securityService.getLatestScan(deviceId, orgId);
     if (!result) {
       throw new NotFoundException('No security scan found for this device');
@@ -70,14 +117,14 @@ export class SecurityController {
     @Query() query: ScanQueryDto,
     @Req() req: Request,
   ) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     return this.securityService.listScans(deviceId, orgId, query.limit || 10);
   }
 
   @Roles('Owner', 'Admin', 'Technician', 'Viewer')
   @Get('security/scans/detail/:scanId')
   async getScanDetail(@Param('scanId') scanId: string, @Req() req: Request) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     const scan = await this.securityService.getScanDetail(scanId, orgId);
     if (!scan) {
       throw new NotFoundException('Scan not found');
@@ -89,7 +136,7 @@ export class SecurityController {
   @Post('security/findings/:findingId/remediate')
   @HttpCode(200)
   async remediateFinding(@Param('findingId') findingId: string, @Req() req: Request) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     const finding = await this.securityService.remediateFinding(findingId, orgId);
     if (!finding) {
       throw new NotFoundException('Finding not found');
@@ -100,7 +147,7 @@ export class SecurityController {
   @Roles('Owner', 'Admin', 'Technician', 'Viewer')
   @Get('security/executive-summary/:deviceId')
   async executiveSummary(@Param('deviceId') deviceId: string, @Req() req: Request) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     const data = await this.securityService.getExecutiveSummaryData(deviceId, orgId);
     if (!data) {
       throw new NotFoundException('No security data available for this device');
@@ -112,7 +159,7 @@ export class SecurityController {
   @Roles('Owner', 'Admin', 'Technician', 'Viewer')
   @Get('security/export-pdf/:deviceId')
   async exportPdf(@Param('deviceId') deviceId: string, @Req() req: Request, @Res() res: Response) {
-    const orgId = (req as any).orgId;
+    const orgId = (req as any).user?.orgId;
     const data = await this.securityService.getExecutiveSummaryData(deviceId, orgId);
     if (!data) {
       throw new NotFoundException('No security data available for this device');

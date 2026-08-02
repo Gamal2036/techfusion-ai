@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useDeviceList } from './useDevices';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { apiFetch } from '@/lib/auth-client';
 
 export interface KbCitation {
   articleId: string;
@@ -17,19 +16,6 @@ export interface ChatMessage {
   role: 'assistant' | 'user';
   content: string;
   citations?: KbCitation[];
-}
-
-function getAuthHeaders(): Record<string, string> {
-  let token: string | null = null;
-  try {
-    token = typeof localStorage !== 'undefined' ? localStorage.getItem('accessToken') : null;
-  } catch {
-    token = null;
-  }
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
 }
 
 function parseSSEChunk(buffer: string): { events: { event: string; data: string }[]; rest: string } {
@@ -77,9 +63,22 @@ export function useAiChat() {
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | undefined>();
-  const { devices } = useDeviceList();
+  const { devices, loading: devicesLoading, error: devicesError } = useDeviceList();
   const abortRef = useRef<AbortController | null>(null);
   const assistantIdRef = useRef<string>('');
+  const autoSelectedRef = useRef(false);
+
+  // Auto-select device when exactly one device exists
+  useEffect(() => {
+    if (devices.length === 1 && !selectedDeviceId && !autoSelectedRef.current) {
+      autoSelectedRef.current = true;
+      setSelectedDeviceId(devices[0].id);
+    }
+    // Reset auto-select when devices change (e.g., first device registered)
+    if (devices.length === 1 && !selectedDeviceId) {
+      setSelectedDeviceId(devices[0].id);
+    }
+  }, [devices, selectedDeviceId]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -109,9 +108,8 @@ export function useAiChat() {
       abortRef.current = controller;
 
       try {
-        const response = await fetch(`${API_URL}/ai/troubleshoot`, {
+        const response = await apiFetch('/ai/troubleshoot', {
           method: 'POST',
-          headers: getAuthHeaders(),
           body: JSON.stringify({
             query: content.trim(),
             deviceId: selectedDeviceId || undefined,
@@ -277,5 +275,7 @@ export function useAiChat() {
     selectedDeviceId,
     setSelectedDeviceId,
     devices,
+    devicesLoading,
+    devicesError,
   };
 }

@@ -1,0 +1,157 @@
+[1mdiff --git a/apps/api-gateway/prisma/migrations/20260617000200_rls_extended/migration.sql b/apps/api-gateway/prisma/migrations/20260617000200_rls_extended/migration.sql[m
+[1mdeleted file mode 100644[m
+[1mindex bd6a387..0000000[m
+[1m--- a/apps/api-gateway/prisma/migrations/20260617000200_rls_extended/migration.sql[m
+[1m+++ /dev/null[m
+[36m@@ -1,151 +0,0 @@[m
+[31m--- Enable RLS on all remaining tenant-scoped tables[m
+[31m-ALTER TABLE "Device" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "DeviceMetric" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "SecurityScan" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "SecurityFinding" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "SecurityScore" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "DeviceHealthScore" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "NetworkDevice" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "NetworkScan" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "RemoteSession" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "Alert" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "AlertRule" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "KbArticle" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "Report" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "ReportTemplate" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "ReportSchedule" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "BackupJob" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "BackupRun" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "SoftwareInventory" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "Driver" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "AiProviderConfig" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "AiUsageLog" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "AiConversation" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "AuditLog" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "Subscription" ENABLE ROW LEVEL SECURITY;[m
+[31m-ALTER TABLE "Invoice" ENABLE ROW LEVEL SECURITY;[m
+[31m-[m
+[31m--- Device policy[m
+[31m-DROP POLICY IF EXISTS device_isolation ON "Device";[m
+[31m-CREATE POLICY device_isolation ON "Device"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- DeviceMetric policy[m
+[31m-DROP POLICY IF EXISTS device_metric_isolation ON "DeviceMetric";[m
+[31m-CREATE POLICY device_metric_isolation ON "DeviceMetric"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- SecurityScan policy[m
+[31m-DROP POLICY IF EXISTS security_scan_isolation ON "SecurityScan";[m
+[31m-CREATE POLICY security_scan_isolation ON "SecurityScan"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- SecurityFinding policy[m
+[31m-DROP POLICY IF EXISTS security_finding_isolation ON "SecurityFinding";[m
+[31m-CREATE POLICY security_finding_isolation ON "SecurityFinding"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- SecurityScore policy[m
+[31m-DROP POLICY IF EXISTS security_score_isolation ON "SecurityScore";[m
+[31m-CREATE POLICY security_score_isolation ON "SecurityScore"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- DeviceHealthScore policy[m
+[31m-DROP POLICY IF EXISTS device_health_score_isolation ON "DeviceHealthScore";[m
+[31m-CREATE POLICY device_health_score_isolation ON "DeviceHealthScore"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- NetworkDevice policy[m
+[31m-DROP POLICY IF EXISTS network_device_isolation ON "NetworkDevice";[m
+[31m-CREATE POLICY network_device_isolation ON "NetworkDevice"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- NetworkScan policy[m
+[31m-DROP POLICY IF EXISTS network_scan_isolation ON "NetworkScan";[m
+[31m-CREATE POLICY network_scan_isolation ON "NetworkScan"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- RemoteSession policy[m
+[31m-DROP POLICY IF EXISTS remote_session_isolation ON "RemoteSession";[m
+[31m-CREATE POLICY remote_session_isolation ON "RemoteSession"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- Alert policy[m
+[31m-DROP POLICY IF EXISTS alert_isolation ON "Alert";[m
+[31m-CREATE POLICY alert_isolation ON "Alert"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- AlertRule policy[m
+[31m-DROP POLICY IF EXISTS alert_rule_isolation ON "AlertRule";[m
+[31m-CREATE POLICY alert_rule_isolation ON "AlertRule"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- KbArticle policy[m
+[31m-DROP POLICY IF EXISTS kb_article_isolation ON "KbArticle";[m
+[31m-CREATE POLICY kb_article_isolation ON "KbArticle"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- Report policy[m
+[31m-DROP POLICY IF EXISTS report_isolation ON "Report";[m
+[31m-CREATE POLICY report_isolation ON "Report"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- ReportTemplate policy[m
+[31m-DROP POLICY IF EXISTS report_template_isolation ON "ReportTemplate";[m
+[31m-CREATE POLICY report_template_isolation ON "ReportTemplate"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- ReportSchedule policy[m
+[31m-DROP POLICY IF EXISTS report_schedule_isolation ON "ReportSchedule";[m
+[31m-CREATE POLICY report_schedule_isolation ON "ReportSchedule"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- BackupJob policy[m
+[31m-DROP POLICY IF EXISTS backup_job_isolation ON "BackupJob";[m
+[31m-CREATE POLICY backup_job_isolation ON "BackupJob"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- BackupRun policy[m
+[31m-DROP POLICY IF EXISTS backup_run_isolation ON "BackupRun";[m
+[31m-CREATE POLICY backup_run_isolation ON "BackupRun"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- SoftwareInventory policy[m
+[31m-DROP POLICY IF EXISTS software_inventory_isolation ON "SoftwareInventory";[m
+[31m-CREATE POLICY software_inventory_isolation ON "SoftwareInventory"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- Driver policy[m
+[31m-DROP POLICY IF EXISTS driver_isolation ON "Driver";[m
+[31m-CREATE POLICY driver_isolation ON "Driver"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- AiProviderConfig policy[m
+[31m-DROP POLICY IF EXISTS ai_provider_config_isolation ON "AiProviderConfig";[m
+[31m-CREATE POLICY ai_provider_config_isolation ON "AiProviderConfig"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- AiUsageLog policy[m
+[31m-DROP POLICY IF EXISTS ai_usage_log_isolation ON "AiUsageLog";[m
+[31m-CREATE POLICY ai_usage_log_isolation ON "AiUsageLog"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- AiConversation policy[m
+[31m-DROP POLICY IF EXISTS ai_conversation_isolation ON "AiConversation";[m
+[31m-CREATE POLICY ai_conversation_isolation ON "AiConversation"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- AuditLog policy[m
+[31m-DROP POLICY IF EXISTS audit_log_isolation ON "AuditLog";[m
+[31m-CREATE POLICY audit_log_isolation ON "AuditLog"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- Subscription policy[m
+[31m-DROP POLICY IF EXISTS subscription_isolation ON "Subscription";[m
+[31m-CREATE POLICY subscription_isolation ON "Subscription"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m
+[31m-[m
+[31m--- Invoice policy[m
+[31m-DROP POLICY IF EXISTS invoice_isolation ON "Invoice";[m
+[31m-CREATE POLICY invoice_isolation ON "Invoice"[m
+[31m-  FOR ALL USING ("orgId" = current_org_id());[m

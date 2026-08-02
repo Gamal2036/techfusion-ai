@@ -29,21 +29,42 @@ pub struct InventoryReport {
     pub software_count: usize,
 }
 
+const CMD_TIMEOUT_SECS: u64 = 15;
+
 fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
-    Command::new(cmd)
-        .args(args)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    run_cmd_timeout(cmd, args, CMD_TIMEOUT_SECS)
+        .filter(|o| !o.is_empty())
 }
 
 fn run_cmd_no_check(cmd: &str, args: &[&str]) -> Option<String> {
-    Command::new(cmd)
-        .args(args)
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    run_cmd_timeout(cmd, args, CMD_TIMEOUT_SECS)
+}
+
+fn run_cmd_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> Option<String> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let cmd_str = cmd.to_string();
+    let args_vec: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let output = Command::new(&cmd_str)
+            .args(&args_vec)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+        let _ = tx.send(output);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            eprintln!("[INVENTORY] Command timed out after {}s: {} {:?}", timeout_secs, cmd, args);
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 fn enumerate_loaded_modules() -> Vec<DriverEntry> {
@@ -63,7 +84,6 @@ fn enumerate_loaded_modules() -> Vec<DriverEntry> {
             };
 
             let version = run_cmd("modinfo", &["-F", "version", &name]);
-            let description = run_cmd("modinfo", &["-F", "description", &name]);
             let module_path = run_cmd("modinfo", &["-n", &name]);
             let author = run_cmd("modinfo", &["-F", "author", &name]);
 
@@ -94,12 +114,16 @@ fn enumerate_pci_usb_devices() -> Vec<DriverEntry> {
                 let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
                 if parts.len() >= 2 {
                     let rest = parts[1].to_string();
-                    let vendor_info: Option<String> = rest.split(':').next().map(|s| s.trim().to_string());
+                    let vendor_info: Option<String> =
+                        rest.split(':').next().map(|s| s.trim().to_string());
                     current_device = Some(rest.clone());
                     current_vendor = vendor_info;
                 }
             } else if trimmed.starts_with("Kernel driver in use:") {
-                let name = trimmed.trim_start_matches("Kernel driver in use:").trim().to_string();
+                let name = trimmed
+                    .trim_start_matches("Kernel driver in use:")
+                    .trim()
+                    .to_string();
                 drivers.push(DriverEntry {
                     vendor: current_vendor.clone(),
                     version: None,
@@ -137,7 +161,9 @@ fn enumerate_pci_usb_devices() -> Vec<DriverEntry> {
                 for part in &parts {
                     if part.starts_with("Driver=") {
                         let name = part.trim_start_matches("Driver=").to_string();
-                        if !name.is_empty() && !drivers.iter().any(|d| d.name == name && d.source == "usb") {
+                        if !name.is_empty()
+                            && !drivers.iter().any(|d| d.name == name && d.source == "usb")
+                        {
                             drivers.push(DriverEntry {
                                 vendor: None,
                                 version: None,
@@ -182,7 +208,13 @@ fn enumerate_dkms_drivers() -> Vec<DriverEntry> {
 
 fn enumerate_deb_packages() -> Vec<SoftwareEntry> {
     let mut software = Vec::new();
-    if let Some(out) = run_cmd("dpkg-query", &["-W", "-f=${Package}\t${Version}\t${Maintainer}\t${Installed-Size}\t${Description}\n"]) {
+    if let Some(out) = run_cmd(
+        "dpkg-query",
+        &[
+            "-W",
+            "-f=${Package}\t${Version}\t${Maintainer}\t${Installed-Size}\t${Description}\n",
+        ],
+    ) {
         for line in out.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() < 2 {
@@ -201,7 +233,10 @@ fn enumerate_deb_packages() -> Vec<SoftwareEntry> {
             } else {
                 None
             };
-            let install_date = run_cmd_no_check("stat", &["-c", "%y", &format!("/var/lib/dpkg/info/{}.list", name)]);
+            let install_date = run_cmd_no_check(
+                "stat",
+                &["-c", "%y", &format!("/var/lib/dpkg/info/{}.list", name)],
+            );
 
             software.push(SoftwareEntry {
                 name,
@@ -266,7 +301,10 @@ fn enumerate_snap_packages() -> Vec<SoftwareEntry> {
                 } else {
                     None
                 };
-                if !software.iter().any(|s: &SoftwareEntry| s.name == name && s.source == "snap") {
+                if !software
+                    .iter()
+                    .any(|s: &SoftwareEntry| s.name == name && s.source == "snap")
+                {
                     software.push(SoftwareEntry {
                         vendor,
                         version,
@@ -284,7 +322,10 @@ fn enumerate_snap_packages() -> Vec<SoftwareEntry> {
 
 fn enumerate_flatpak_packages() -> Vec<SoftwareEntry> {
     let mut software = Vec::new();
-    if let Some(out) = run_cmd_no_check("flatpak", &["list", "--columns=application,version,origin,installation"]) {
+    if let Some(out) = run_cmd_no_check(
+        "flatpak",
+        &["list", "--columns=application,version,origin,installation"],
+    ) {
         for line in out.lines().skip(1) {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -295,9 +336,18 @@ fn enumerate_flatpak_packages() -> Vec<SoftwareEntry> {
                 continue;
             }
             let name = parts[0].trim().to_string();
-            let version = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-            let vendor = parts.get(2).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-            if !software.iter().any(|s: &SoftwareEntry| s.name == name && s.source == "flatpak") {
+            let version = parts
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            let vendor = parts
+                .get(2)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            if !software
+                .iter()
+                .any(|s: &SoftwareEntry| s.name == name && s.source == "flatpak")
+            {
                 software.push(SoftwareEntry {
                     vendor,
                     version,
@@ -317,21 +367,22 @@ fn enumerate_pip_packages() -> Vec<SoftwareEntry> {
     if let Some(out) = run_cmd_no_check("pip3", &["list", "--format=freeze"]) {
         for line in out.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.contains("==") {
-                let eq_pos = trimmed.find("==");
-                if let Some(pos) = eq_pos {
-                    let name = trimmed[..pos].to_string();
-                    let version = Some(trimmed[pos + 2..].to_string());
-                    if !software.iter().any(|s: &SoftwareEntry| s.name == name && s.source == "pip") {
-                        software.push(SoftwareEntry {
-                            vendor: None,
-                            version,
-                            name,
-                            install_date: None,
-                            description: None,
-                            source: "pip".to_string(),
-                        });
-                    }
+            let eq_pos = trimmed.find("==");
+            if let Some(pos) = eq_pos {
+                let name = trimmed[..pos].to_string();
+                let version = Some(trimmed[pos + 2..].to_string());
+                if !software
+                    .iter()
+                    .any(|s: &SoftwareEntry| s.name == name && s.source == "pip")
+                {
+                    software.push(SoftwareEntry {
+                        vendor: None,
+                        version,
+                        name,
+                        install_date: None,
+                        description: None,
+                        source: "pip".to_string(),
+                    });
                 }
             }
         }
@@ -370,5 +421,38 @@ pub fn collect_inventory() -> InventoryReport {
         software: all_software,
         driver_count,
         software_count,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_collect_inventory_returns_report() {
+        let report = collect_inventory();
+        assert!(report.software_count > 0 || report.driver_count > 0);
+    }
+
+    #[test]
+    fn test_inventory_deduplication() {
+        let report = collect_inventory();
+        let mut driver_names: Vec<&str> = report.drivers.iter().map(|d| d.name.as_str()).collect();
+        driver_names.sort();
+        driver_names.dedup();
+        assert_eq!(
+            driver_names.len(),
+            report.drivers.len(),
+            "Duplicate drivers found"
+        );
+
+        let mut sw_names: Vec<&str> = report.software.iter().map(|s| s.name.as_str()).collect();
+        sw_names.sort();
+        sw_names.dedup();
+        assert_eq!(
+            sw_names.len(),
+            report.software.len(),
+            "Duplicate software found"
+        );
     }
 }

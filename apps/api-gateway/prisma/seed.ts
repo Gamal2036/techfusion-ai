@@ -1,6 +1,7 @@
-import * as fs from 'fs';
+import { PrismaClient } from '@prisma/client';
 import * as crypto from 'crypto';
-import { execSync } from 'child_process';
+
+const prisma = new PrismaClient();
 
 const EMBEDDING_DIMENSION = 64;
 
@@ -26,13 +27,10 @@ function splitIntoChunks(markdown: string, chunkSize = 500, overlap = 100): stri
   while (pos < markdown.length) {
     const end = Math.min(pos + chunkSize, markdown.length);
     chunks.push(markdown.substring(pos, end));
+    if (end >= markdown.length) break;
     pos = end - overlap;
   }
   return chunks;
-}
-
-function esc(val: string): string {
-  return "'" + val.replace(/\\/g, '\\\\').replace(/'/g, "''") + "'";
 }
 
 const SEED_ARTICLES = [
@@ -228,57 +226,112 @@ Keep OS and software updated. Use ad-blocker in browser. Never click links in un
   },
 ];
 
-const TEMP_SQL = '/tmp/kb-seed.sql';
+async function main() {
+  console.log('=== Tech Fusion AI Seed ===\n');
 
-function generateSql(): string {
-  const orgResult = execSync(
-    `docker exec techfusion-postgres psql -U techfusion -d techfusion -t -A -c "SELECT id FROM \\"Organization\\" LIMIT 1"`,
-    { encoding: 'utf-8' },
-  ).trim();
+  try {
+    await prisma.$connect();
+    console.log('Connected to database.\n');
 
-  if (!orgResult) {
-    console.log('No organization found. Create an org and user first.');
-    process.exit(1);
-  }
+    // 1. Seed global catalog data (DriverCatalogItem)
+    console.log('Seeding DriverCatalogItem catalog...');
+    const SEED_DRIVERS = [
+      { name: 'nvidia', vendor: 'NVIDIA Corporation', latestVersion: '550.120', category: 'gpu', isBuiltin: false },
+      { name: 'amdgpu', vendor: 'Advanced Micro Devices', latestVersion: '6.8.0', category: 'gpu', isBuiltin: true },
+      { name: 'i915', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'gpu', isBuiltin: true },
+      { name: 'e1000', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'e1000e', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'igb', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'ixgbe', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'r8169', vendor: 'Realtek Semiconductor', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'rtl8192cu', vendor: 'Realtek Semiconductor', latestVersion: '6.8.0', category: 'wireless', isBuiltin: true },
+      { name: 'iwlwifi', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'wireless', isBuiltin: true },
+      { name: 'ath9k', vendor: 'Qualcomm Atheros', latestVersion: '6.8.0', category: 'wireless', isBuiltin: true },
+      { name: 'ath10k', vendor: 'Qualcomm Atheros', latestVersion: '6.8.0', category: 'wireless', isBuiltin: true },
+      { name: 'nvme', vendor: 'NVM Express', latestVersion: '6.8.0', category: 'storage', isBuiltin: true },
+      { name: 'ahci', vendor: 'Generic', latestVersion: '6.8.0', category: 'storage', isBuiltin: true },
+      { name: 'megaraid_sas', vendor: 'Broadcom', latestVersion: '6.8.0', category: 'storage', isBuiltin: true },
+      { name: 'mlx5_core', vendor: 'Mellanox Technologies', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'bnxt_en', vendor: 'Broadcom', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'tg3', vendor: 'Broadcom', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'snd_hda_intel', vendor: 'Intel Corporation', latestVersion: '6.8.0', category: 'audio', isBuiltin: true },
+      { name: 'usb_storage', vendor: 'Generic', latestVersion: '6.8.0', category: 'storage', isBuiltin: true },
+      { name: 'xhci_hcd', vendor: 'Generic', latestVersion: '6.8.0', category: 'usb', isBuiltin: true },
+      { name: 'virtio_net', vendor: 'Red Hat', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+      { name: 'virtio_blk', vendor: 'Red Hat', latestVersion: '6.8.0', category: 'storage', isBuiltin: true },
+      { name: 'vmwgfx', vendor: 'VMware', latestVersion: '6.8.0', category: 'gpu', isBuiltin: true },
+      { name: 'vmxnet3', vendor: 'VMware', latestVersion: '6.8.0', category: 'network', isBuiltin: true },
+    ];
 
-  const orgId = orgResult;
-  const lines: string[] = [];
-  lines.push(`-- KB seed for org ${orgId}`);
-  lines.push(`DELETE FROM "KbEmbedding";`);
-  lines.push(`DELETE FROM "KbArticle";`);
+    let driverCount = 0;
+    for (const d of SEED_DRIVERS) {
+      await prisma.driverCatalogItem.upsert({
+        where: { name_vendor: { name: d.name, vendor: d.vendor } },
+        update: { latestVersion: d.latestVersion, category: d.category },
+        create: { ...d, minVersion: '1.0.0' },
+      });
+      driverCount++;
+    }
+    console.log(`  Seeded ${driverCount} driver catalog entries.\n`);
 
-  for (const article of SEED_ARTICLES) {
-    const articleId = crypto.randomUUID();
-    const now = new Date().toISOString();
-    lines.push(`INSERT INTO "KbArticle" (id, "orgId", title, markdown, "createdAt", "updatedAt") VALUES (${esc(articleId)}, ${esc(orgId)}, ${esc(article.title)}, ${esc(article.markdown)}, ${esc(now)}, ${esc(now)});`);
-
-    const chunks = splitIntoChunks(article.markdown, 500, 100);
-    for (let i = 0; i < chunks.length; i++) {
-      const embId = crypto.randomUUID();
-      const embeddingJson = embeddingToJson(chunks[i], EMBEDDING_DIMENSION);
-      lines.push(`INSERT INTO "KbEmbedding" (id, "articleId", "chunkIndex", "chunkText", embedding, "createdAt") VALUES (${esc(embId)}, ${esc(articleId)}, ${i}, ${esc(chunks[i])}, '${embeddingJson}'::jsonb, ${esc(now)});`);
+    // 2. Seed KB articles if an organization exists
+    const org = await prisma.organization.findFirst();
+    if (!org) {
+      console.log('No organization found. Skipping KB article seed.');
+      console.log('Create an organization and user first, then re-run the seed to populate the knowledge base.\n');
+      console.log('Seed complete!');
+      return;
     }
 
-    console.log(`  Article: "${article.title}" (${articleId}) - ${chunks.length} chunks`);
+    console.log(`Found organization: ${org.name} (${org.id})`);
+    console.log('Seeding KB articles...\n');
+
+    // Clear existing seed data
+    await prisma.kbEmbedding.deleteMany();
+    await prisma.kbArticle.deleteMany();
+
+    for (const article of SEED_ARTICLES) {
+      const articleId = crypto.randomUUID();
+      const now = new Date();
+
+      const created = await prisma.kbArticle.create({
+        data: {
+          id: articleId,
+          orgId: org.id,
+          title: article.title,
+          markdown: article.markdown,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const chunks = splitIntoChunks(article.markdown, 500, 100);
+      for (let i = 0; i < chunks.length; i++) {
+        const embId = crypto.randomUUID();
+        const embeddingJson = embeddingToJson(chunks[i], EMBEDDING_DIMENSION);
+
+        await prisma.kbEmbedding.create({
+          data: {
+            id: embId,
+            articleId: created.id,
+            chunkIndex: i,
+            chunkText: chunks[i],
+            embedding: JSON.parse(embeddingJson),
+            createdAt: now,
+          },
+        });
+      }
+
+      console.log(`  Article: "${article.title}" (${articleId}) - ${chunks.length} chunks`);
+    }
+
+    console.log('\nSeed complete!');
+  } catch (error) {
+    console.error('Seed failed:', error);
+    process.exit(1);
+  } finally {
+    await prisma.$disconnect();
   }
-
-  return lines.join('\n');
-}
-
-function main() {
-  console.log('Generating KB seed SQL...');
-  const sql = generateSql();
-  fs.writeFileSync(TEMP_SQL, sql, 'utf-8');
-  console.log(`SQL written to ${TEMP_SQL} (${sql.length} bytes)`);
-
-  console.log('Executing seed SQL via psql...');
-  const result = execSync(
-    `cat ${TEMP_SQL} | docker exec -i techfusion-postgres psql -U techfusion -d techfusion`,
-    { encoding: 'utf-8', shell: '/bin/bash' },
-  );
-  console.log(result);
-
-  console.log('Seed complete!');
 }
 
 main();

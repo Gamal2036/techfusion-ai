@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { Toaster } from 'sonner';
+import { Toaster } from '@techfusion/ui';
+import { getCurrentUser, isAuthenticated, type JwtPayload } from '@/lib/auth-client';
 
 const MotionDiv = dynamic(() => import('framer-motion').then((m) => m.motion.div), { ssr: false });
 const AnimatePresence = dynamic(() => import('framer-motion').then((m) => ({ default: m.AnimatePresence })), { ssr: false });
@@ -11,6 +12,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { AiChatDrawer } from '@/components/AiChatDrawer';
+import { LoadingSpinner } from '@techfusion/ui';
 
 export default function DashboardLayout({
   children,
@@ -19,28 +21,35 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<JwtPayload | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (!token) {
+    const currentUser = getCurrentUser();
+    if (!currentUser || !isAuthenticated()) {
       router.push('/login');
       return;
     }
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setUser(payload);
-    } catch {
-      router.push('/login');
-    }
-  }, [router]);
+    setUser(currentUser);
+    setAuthChecked(true);
+  }, []);
+
+  useEffect(() => {
+    if (!authChecked) return;
+    const interval = setInterval(() => {
+      if (!isAuthenticated()) {
+        router.push('/login');
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [authChecked, router]);
 
   const handleOpenPalette = useCallback(() => setPaletteOpen(true), []);
   const handleToggleChat = useCallback(() => setChatOpen((v) => !v), []);
@@ -59,7 +68,13 @@ export default function DashboardLayout({
     return () => document.removeEventListener('keydown', down);
   }, []);
 
-  if (!user) return null;
+  if (!authChecked) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-background">
+        <LoadingSpinner size="md" label="Loading..." />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -68,9 +83,8 @@ export default function DashboardLayout({
         <Topbar
           onToggleChat={handleToggleChat}
           onOpenPalette={handleOpenPalette}
-          userName={user.displayName || user.sub}
-          userRole={user.role}
-          orgName={user.orgName}
+          userName={user?.sub}
+          userRole={user?.role}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           {mounted && (
@@ -90,18 +104,7 @@ export default function DashboardLayout({
       </div>
       <AiChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-      <Toaster
-        position="bottom-right"
-        toastOptions={{
-          style: {
-            background: 'rgba(10,10,10,0.95)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            color: '#fff',
-            borderRadius: '12px',
-            fontSize: '13px',
-          },
-        }}
-      />
+      <Toaster />
     </div>
   );
 }
