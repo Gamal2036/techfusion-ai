@@ -10,7 +10,8 @@
     "start": "node dist/main.js",
     "lint": "tsc --noEmit",
     "test": "jest --forceExit --runInBand",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo",
+    "postinstall": "pnpm prisma:sync && prisma generate"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",

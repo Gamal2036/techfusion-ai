@@ -3,6 +3,7 @@ import { trackJobCompleted, trackJobFailed, trackJobDuration } from './metrics';
 import { QUEUE_NAMES, JOB_NAMES } from './queue-names';
 import { createWorkerLogger } from './structured-logger';
 import { extractCorrelationFromJob } from './correlation';
+import { SecurityFinding } from '@prisma/client';
 import { getPrismaClient } from './prisma-client';
 import { runBackupScript, parseBackupOutput, parseVerificationOutput, type BackupScriptResult } from './backup-runner';
 
@@ -749,8 +750,8 @@ export async function processSecurityJob(job: Job): Promise<any> {
         orgId,
       });
 
-      const criticalFindings = scan.findings.filter((f) => f.severity === 'critical');
-      const highFindings = scan.findings.filter((f) => f.severity === 'high');
+      const criticalFindings = scan.findings.filter((f: SecurityFinding) => f.severity === 'critical');
+      const highFindings = scan.findings.filter((f: SecurityFinding) => f.severity === 'high');
 
       if (criticalFindings.length > 0) {
         log.warn(`Alert: ${criticalFindings.length} critical findings in scan ${scanId}`, {
@@ -953,7 +954,7 @@ export async function processRetentionJob(job: Job): Promise<any> {
 
     if (allOrgs) {
       const orgs = await prisma.organization.findMany({ select: { id: true } });
-      orgIds.push(...orgs.map((o) => o.id));
+      orgIds.push(...orgs.map((o: { id: string }) => o.id));
     } else if (orgId) {
       orgIds.push(orgId);
     } else {

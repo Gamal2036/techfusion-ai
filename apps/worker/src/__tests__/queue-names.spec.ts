@@ -1,15 +1,16 @@
 import { QUEUE_NAMES, JOB_NAMES, QueueName } from '../queue-names';
 
 describe('Queue Names', () => {
-  it('defines all 6 queue names (default removed)', () => {
+  it('defines all 7 queue names (default removed)', () => {
     const names = Object.values(QUEUE_NAMES);
-    expect(names).toHaveLength(6);
+    expect(names).toHaveLength(7);
     expect(names).toContain('alert');
     expect(names).toContain('report');
     expect(names).toContain('backup');
     expect(names).toContain('inventory');
     expect(names).toContain('security');
     expect(names).toContain('retention');
+    expect(names).toContain('kb_embedding');
   });
 
   it('has correct values for each queue', () => {
@@ -19,6 +20,7 @@ describe('Queue Names', () => {
     expect(QUEUE_NAMES.INVENTORY).toBe('inventory');
     expect(QUEUE_NAMES.SECURITY).toBe('security');
     expect(QUEUE_NAMES.RETENTION).toBe('retention');
+    expect(QUEUE_NAMES.KB_EMBEDDING).toBe('kb_embedding');
   });
 
   it('has no duplicate values', () => {

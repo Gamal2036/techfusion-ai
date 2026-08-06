@@ -5,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { QueueService } from '../src/queue/queue.service';
 import { MockQueueService } from '../src/queue/queue.service.mock';
+import { AiOrchestratorService } from '../src/ai/ai-orchestrator.service';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
@@ -32,6 +33,31 @@ describe('Full E2E Scenario (Phase 15)', () => {
     app = moduleFixture.createNestApplication();
     prisma = moduleFixture.get<PrismaService>(PrismaService);
     await app.init();
+
+    const orchestrator = moduleFixture.get<AiOrchestratorService>(AiOrchestratorService);
+    orchestrator.setTestProviders([
+      {
+        name: 'test',
+        provider: {
+          name: 'test',
+          async complete(opts: { onStream?: (chunk: string) => void }) {
+            if (opts.onStream) opts.onStream('E2E canned troubleshooting response.');
+            return {
+              content: 'E2E canned troubleshooting response.',
+              model: 'test-model',
+              promptTokens: 10,
+              completionTokens: 20,
+              totalTokens: 30,
+            };
+          },
+          async embed() {
+            return { embeddings: [new Array(1536).fill(0.1)], model: 'test-embed', totalTokens: 0 };
+          },
+        },
+        model: 'test-model',
+        priority: 1,
+      },
+    ]);
 
     await prisma.kbEmbedding.deleteMany();
     await prisma.kbArticle.deleteMany();
@@ -363,7 +389,7 @@ describe('Full E2E Scenario (Phase 15)', () => {
       .set('Authorization', `Bearer ${state.ownerToken}`)
       .expect(201);
 
-    expect(runRes.body.status).toBe('running');
+    expect(runRes.body.status).toBe('pending');
 
     const runsRes = await request(app.getHttpServer())
       .get('/backups/runs')

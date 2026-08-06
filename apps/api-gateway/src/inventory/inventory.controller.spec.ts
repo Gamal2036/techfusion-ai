@@ -27,6 +27,7 @@ describe('InventoryController', () => {
 
     mockInventoryService = {
       ingestReport: jest.fn().mockResolvedValue({ driverCount: 5, softwareCount: 10 }),
+      clearPendingInventory: jest.fn().mockResolvedValue(undefined),
       getDrivers: jest.fn().mockResolvedValue([]),
       getSoftware: jest.fn().mockResolvedValue([]),
       getCatalog: jest.fn().mockResolvedValue([]),

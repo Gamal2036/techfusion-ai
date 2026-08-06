@@ -73,6 +73,14 @@ describe('TechFusion API (integration)', () => {
     return { org, user };
   }
 
+  async function seedDevice(orgId: string, deviceId: string) {
+    const deviceToken = `device-token-${deviceId}-${Math.random().toString(36).slice(2)}`;
+    const deviceTokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex');
+    await prisma.device.create({
+      data: { id: deviceId, orgId, name: deviceId, deviceToken, deviceTokenHash },
+    });
+  }
+
   // ─── 1. Cross-tenant isolation ───────────────────────────────
   describe('cross-tenant isolation', () => {
     it('a user cannot read another orgs user data via DB', async () => {
@@ -250,7 +258,8 @@ describe('TechFusion API (integration)', () => {
 
     describe('backup job CRUD', () => {
       it('creates a backup job', async () => {
-        await seedOrg('bu-org', 'Bu Org', 'bu@test.com', 'Admin');
+        const { org } = await seedOrg('bu-org', 'Bu Org', 'bu@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
         const token = await loginAs('bu@test.com');
 
         const res = await request(app.getHttpServer())
@@ -267,7 +276,9 @@ describe('TechFusion API (integration)', () => {
       });
 
       it('lists backup jobs for the org', async () => {
-        await seedOrg('bu-org', 'Bu Org', 'bu2@test.com', 'Admin');
+        const { org } = await seedOrg('bu-org', 'Bu Org', 'bu2@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
+        await seedDevice(org.id, 'device-002');
         const token = await loginAs('bu2@test.com');
 
         await request(app.getHttpServer())
@@ -292,7 +303,9 @@ describe('TechFusion API (integration)', () => {
       });
 
       it('filters jobs by deviceId', async () => {
-        await seedOrg('bu-org', 'Bu Org', 'bu3@test.com', 'Admin');
+        const { org } = await seedOrg('bu-org', 'Bu Org', 'bu3@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
+        await seedDevice(org.id, 'device-002');
         const token = await loginAs('bu3@test.com');
 
         await request(app.getHttpServer())
@@ -327,7 +340,8 @@ describe('TechFusion API (integration)', () => {
       });
 
       it('deletes a backup job', async () => {
-        await seedOrg('bu-org', 'Bu Org', 'bu5@test.com', 'Admin');
+        const { org } = await seedOrg('bu-org', 'Bu Org', 'bu5@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
         const token = await loginAs('bu5@test.com');
 
         const createRes = await request(app.getHttpServer())
@@ -361,8 +375,9 @@ describe('TechFusion API (integration)', () => {
     });
 
     describe('backup run execution', () => {
-      it('triggers a run and returns running status', async () => {
-        await seedOrg('run-org', 'Run Org', 'run@test.com', 'Admin');
+      it('triggers a run and queues it as pending', async () => {
+        const { org } = await seedOrg('run-org', 'Run Org', 'run@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
         const token = await loginAs('run@test.com');
 
         const jobRes = await request(app.getHttpServer())
@@ -377,7 +392,7 @@ describe('TechFusion API (integration)', () => {
           .expect(201);
 
         expect(runRes.body.id).toBeDefined();
-        expect(runRes.body.status).toBe('running');
+        expect(runRes.body.status).toBe('pending');
         expect(runRes.body.jobId).toBe(jobRes.body.id);
         expect(runRes.body.type).toBe('full_image');
       });
@@ -393,7 +408,8 @@ describe('TechFusion API (integration)', () => {
       });
 
       it('lists runs for an org', async () => {
-        await seedOrg('run-org', 'Run Org', 'run3@test.com', 'Admin');
+        const { org } = await seedOrg('run-org', 'Run Org', 'run3@test.com', 'Admin');
+        await seedDevice(org.id, 'device-001');
         const token = await loginAs('run3@test.com');
 
         const jobRes = await request(app.getHttpServer())
@@ -420,7 +436,8 @@ describe('TechFusion API (integration)', () => {
 
     describe('restore workflow', () => {
       it('returns restore points for a device', async () => {
-        await seedOrg('res-org', 'Res Org', 'res@test.com', 'Admin');
+        const { org } = await seedOrg('res-org', 'Res Org', 'res@test.com', 'Admin');
+        await seedDevice(org.id, 'device-007');
         const token = await loginAs('res@test.com');
 
         const jobRes = await request(app.getHttpServer())
@@ -459,7 +476,7 @@ describe('TechFusion API (integration)', () => {
       it('an org cannot read another orgs backup jobs', async () => {
         const { org: orgA } = await seedOrg('biso-a', 'BIsolation A', 'bisa@test.com', 'Admin');
         const { org: orgB } = await seedOrg('biso-b', 'BIsolation B', 'bisb@test.com', 'Admin');
-
+        await seedDevice(orgA.id, 'device-001');
         const tokenA = await loginAs('bisa@test.com');
         const tokenB = await loginAs('bisb@test.com');
 

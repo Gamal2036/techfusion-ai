@@ -291,11 +291,12 @@ describe('RemoteSupportController', () => {
       expect(result!.status).toBe('pending');
     });
 
-    it('returns null when no auth', async () => {
+    it('throws when no auth', async () => {
       const req = { user: {} } as any;
       const body = { deviceId: 'dev-001' };
-      const result = await controller.createSession(req, body);
-      expect(result).toBeNull();
+      await expect(controller.createSession(req, body)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

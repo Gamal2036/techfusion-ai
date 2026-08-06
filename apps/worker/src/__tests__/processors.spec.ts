@@ -223,6 +223,10 @@ describe('Alert Processor', () => {
 });
 
 describe('Report Processor', () => {
+  beforeEach(() => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: jest.fn().mockResolvedValue('') });
+  });
+
   it('processes a generate report job successfully (stub for AH-3D)', async () => {
     const job = mockJob('10', 'generate', {
       orgId: 'org-1',
@@ -235,7 +239,7 @@ describe('Report Processor', () => {
 
     const result = await processReportJob(job);
 
-    expect(result).toEqual({ success: true, reportId: 'rpt-001' });
+    expect(result).toEqual({ success: true, delegated: true, reportId: 'rpt-001' });
     expect(metrics.trackJobCompleted).toHaveBeenCalledWith('report');
     expect(metrics.trackJobFailed).not.toHaveBeenCalled();
   });
@@ -250,7 +254,7 @@ describe('Report Processor', () => {
     });
 
     const result = await processReportJob(job);
-    expect(result).toEqual({ success: true, reportId: undefined });
+    expect(result).toEqual({ success: true, delegated: true, reportId: undefined });
   });
 });
 
@@ -505,6 +509,7 @@ describe('Metrics Tracking', () => {
     const reportJob = mockJob('m2', 'generate', {
       orgId: 'o', userId: 'u', reportType: 'r', format: 'f', title: 't',
     });
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: jest.fn().mockResolvedValue('') });
     await processReportJob(reportJob);
     expect(metrics.trackJobCompleted).toHaveBeenCalledWith('report');
 

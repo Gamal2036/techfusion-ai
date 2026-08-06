@@ -9,7 +9,8 @@
     "lint": "tsc --noEmit",
     "test": "NODE_OPTIONS=\"--max-old-space-size=6144\" jest --forceExit --runInBand",
     "seed": "ts-node prisma/seed.ts",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

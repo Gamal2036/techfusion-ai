@@ -17,6 +17,43 @@ jobs:
       matrix:
         node-version: [22]
 
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://techfusion:techfusion@localhost:5432/techfusion
+      DATABASE_URL_TEST: postgresql://techfusion:techfusion@localhost:5432/techfusion
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-jwt-secret-00000000000000000000000000000000000000000000000000000000
+      JWT_REFRESH_SECRET: ci-refresh-secret-0000000000000000000000000000000000000000000000000000
+      AI_ENCRYPTION_KEY: ci-encryption-key-000000000000000000000000000000000000000000000000
+      REPORT_URL_SECRET: ci-report-secret-000000000000000000000000000000000000000000000000000
+      ALLOWED_ORIGINS: http://localhost:3000
+      WS_ALLOWED_ORIGINS: http://localhost:3000
+      PORT: 3000
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: techfusion
+          POSTGRES_PASSWORD: techfusion
+          POSTGRES_DB: techfusion
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U techfusion"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 

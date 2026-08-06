@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { KbService } from './kb.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiOrchestratorService } from '../ai/ai-orchestrator.service';
+import { QueueService } from '../queue/queue.service';
 
 describe('KbService', () => {
   let service: KbService;
@@ -40,6 +41,12 @@ describe('KbService', () => {
             getEmbedding: jest.fn().mockResolvedValue(mockEmbedding),
           },
         },
+        {
+          provide: QueueService,
+          useValue: {
+            addKbEmbedding: jest.fn().mockResolvedValue({ jobId: 'kb-job-001' }),
+          },
+        },
       ],
     }).compile();
 
@@ -67,7 +74,11 @@ describe('KbService', () => {
       expect(prisma.kbArticle.create).toHaveBeenCalledWith({
         data: { orgId: mockOrgId, ...dto },
       });
-      expect(aiOrchestrator.getEmbedding).toHaveBeenCalled();
+      expect(aiOrchestrator.getEmbedding).not.toHaveBeenCalled();
+      expect(service['queueService'].addKbEmbedding).toHaveBeenCalledWith({
+        orgId: mockOrgId,
+        articleId: mockArticleId,
+      });
     });
   });
 
