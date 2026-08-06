@@ -8,6 +8,7 @@ import {
   ChevronDown, ChevronUp, Terminal, Download, ExternalLink, Eye, EyeOff, User,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/auth-client';
+import { resolveAgentReleaseBaseUrl } from '@/lib/agent-download';
 import { toast } from 'sonner';
 
 interface EnrollmentToken {
@@ -162,6 +163,21 @@ export default function EnrollmentPage() {
     return `export TF_API_URL="${apiBase}"\nexport TF_ORG_TOKEN="${token}"\ncargo run`;
   };
 
+  const getLinuxCommand = (token: string) => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const origin =
+      process.env.NEXT_PUBLIC_APP_URL ||
+      (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+    const releaseBase = resolveAgentReleaseBaseUrl();
+    const urlArg = ` --release "${releaseBase}"`;
+    return [
+      `curl -fsSL -o /tmp/techfusion-install.sh "${origin}/install-linux.sh"`,
+      `curl -fsSL -o /tmp/techfusion-install.sh.sha256 "${origin}/install-linux.sh.sha256"`,
+      `(cd /tmp && sha256sum -c techfusion-install.sh.sha256)`,
+      `sudo bash /tmp/techfusion-install.sh --api "${apiBase}" --enroll-token "${token}"${urlArg}`,
+    ].join('\n');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -220,6 +236,16 @@ export default function EnrollmentPage() {
                 className="mt-2 text-xs text-primary hover:text-primary-300 transition-colors flex items-center gap-1"
               >
                 <Copy className="h-3 w-3" /> Copy command
+              </button>
+            </div>
+            <div className="mt-3 rounded-xl border border-border bg-black/40 p-4 font-mono text-xs">
+              <p className="text-text-disabled text-[10px] uppercase tracking-wider mb-2">Linux (bootstrap installer)</p>
+              <pre className="text-success/80 whitespace-pre-wrap">{getLinuxCommand(newTokenValue)}</pre>
+              <button
+                onClick={() => { navigator.clipboard.writeText(getLinuxCommand(newTokenValue)); toast.success('Linux install command copied'); }}
+                className="mt-2 text-xs text-primary hover:text-primary-300 transition-colors flex items-center gap-1"
+              >
+                <Copy className="h-3 w-3" /> Copy install command
               </button>
             </div>
           </GlassPanel>
@@ -411,11 +437,14 @@ export default function EnrollmentPage() {
           </div>
           <div className="flex items-start gap-3">
             <span className="h-5 w-5 rounded-full bg-primary-600/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
-            <p>Copy the token or the full command for your operating system</p>
+            <p>Copy the token or the full install command for your operating system</p>
           </div>
           <div className="flex items-start gap-3">
             <span className="h-5 w-5 rounded-full bg-primary-600/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
-            <p>Run the TechFusion agent on your device with the token as <code className="text-primary bg-primary-600/10 px-1 rounded">TF_ORG_TOKEN</code></p>
+            <p>
+              <strong className="text-text-secondary">Linux:</strong> run the one-time install command. It installs the agent,
+              registers your device, and enables auto-start on boot. The token is single-use and not needed after installation.
+            </p>
           </div>
           <div className="flex items-start gap-3">
             <span className="h-5 w-5 rounded-full bg-primary-600/20 text-primary flex items-center justify-center text-[10px] font-bold shrink-0">4</span>

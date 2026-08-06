@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Monitor, Loader2, Copy, Check, CheckCircle, Key } from 'lucide-react';
+import { Monitor, Loader2, Copy, Check, CheckCircle, Key, AlertTriangle } from 'lucide-react';
 import { GlassPanel } from '@techfusion/ui';
 import { useDeviceList } from '@/hooks/useDevices';
 import { apiFetch } from '@/lib/auth-client';
+import { resolveAgentReleaseBaseUrl } from '@/lib/agent-download';
 import { toast } from 'sonner';
 
 function EnrollmentStep({ number, title, description, active, completed }: {
@@ -34,6 +35,10 @@ function EnrollmentStep({ number, title, description, active, completed }: {
  * by this component so the Command Center surface itself never mounts a device
  * poller (DASH-02 §22 single-poller contract). Detection effect is stabilized
  * against churn (D11).
+ *
+ * V1-ENROLL-01A: Linux onboarding now uses the one-time bootstrap installer
+ * (no source checkout, no cargo, no manual TF_ORG_TOKEN export). Windows and
+ * macOS keep the existing developer command until their installers land.
  */
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const { devices, loading, startFastPolling } = useDeviceList();
@@ -82,11 +87,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     setGenerating(true);
     setTokenError(null);
     try {
+      const maxUses = os === 'linux' ? 1 : 5;
       const res = await apiFetch('/enrollment/tokens', {
         method: 'POST',
         body: JSON.stringify({
           label: `onboarding-${os || 'auto'}`,
-          maxUses: 5,
+          maxUses,
         }),
       });
       if (res.ok) {
@@ -104,14 +110,12 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     }
   }, [os]);
 
-  const copyToken = useCallback(() => {
-    if (enrollmentToken) {
-      navigator.clipboard.writeText(enrollmentToken);
-      setCopied(true);
-      toast.success('Enrollment token copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }, [enrollmentToken]);
+  const copyText = useCallback((text: string, message: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    toast.success(message);
+    setTimeout(() => setCopied(false), 2000);
+  }, []);
 
   const getCommand = useCallback(() => {
     if (!enrollmentToken) return '';
@@ -119,8 +123,23 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     if (os === 'windows') {
       return `$env:TF_API_URL="${apiBase}"; $env:TF_ORG_TOKEN="${enrollmentToken}"; cargo run`;
     }
+    if (os === 'linux') {
+      const origin =
+        process.env.NEXT_PUBLIC_APP_URL ||
+        (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+      const releaseBase = resolveAgentReleaseBaseUrl();
+      const urlArg = ` --release "${releaseBase}"`;
+      return [
+        `curl -fsSL -o /tmp/techfusion-install.sh "${origin}/install-linux.sh"`,
+        `curl -fsSL -o /tmp/techfusion-install.sh.sha256 "${origin}/install-linux.sh.sha256"`,
+        `(cd /tmp && sha256sum -c techfusion-install.sh.sha256)`,
+        `sudo bash /tmp/techfusion-install.sh --api "${apiBase}" --enroll-token "${enrollmentToken}"${urlArg}`,
+      ].join('\n');
+    }
     return `export TF_API_URL="${apiBase}"\nexport TF_ORG_TOKEN="${enrollmentToken}"\ncargo run`;
   }, [enrollmentToken, os]);
+
+  const agentBinaryConfigured = Boolean(process.env.NEXT_PUBLIC_AGENT_DOWNLOAD_URL?.trim());
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -138,7 +157,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         <div className="mb-8 space-y-4">
           <EnrollmentStep number={1} title="Choose Operating System" description="Select your device platform" active={step === 1} completed={step > 1} />
           <EnrollmentStep number={2} title="Generate Enrollment Token" description="Create a secure token for device registration" active={step === 2 || (step === 3 && !enrollmentToken)} completed={!!enrollmentToken} />
-          <EnrollmentStep number={3} title="Run the Agent" description="Execute the command on your device" active={step >= 4 && !detected} completed={detected} />
+          <EnrollmentStep number={3} title={os === 'linux' ? 'Install the Agent' : 'Run the Agent'} description={os === 'linux' ? 'One-time install that registers your device' : 'Execute the command on your device'} active={step >= 4 && !detected} completed={detected} />
         </div>
 
         {step === 1 && (
@@ -167,7 +186,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
 
         {step === 2 && (
           <div className="text-center">
-            <p className="mb-4 text-sm text-text-secondary">Generate a secure enrollment token</p>
+            <p className="mb-4 text-sm text-text-secondary">
+              {os === 'linux'
+                ? 'Generate a one-time enrollment token used only during installation'
+                : 'Generate a secure enrollment token'}
+            </p>
             {tokenError && (
               <div className="mb-4 rounded-xl border border-danger/20 bg-danger/10 p-3 text-xs text-danger">
                 {tokenError}
@@ -199,43 +222,88 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           </div>
         )}
 
-        {step === 3 && enrollmentToken && (
+        {step >= 3 && enrollmentToken && (
           <div>
-            <p className="mb-4 text-sm text-text-secondary">
-              Run this command on your <span className="font-medium capitalize text-text-secondary">{os}</span> device
-            </p>
+            {os === 'linux' ? (
+              <p className="mb-4 text-sm text-text-secondary">
+                Run this one-time install command on your <span className="font-medium text-text-secondary">Linux</span> device.
+                It downloads the installer, verifies its checksum, installs the agent, and registers your device.
+              </p>
+            ) : (
+              <p className="mb-4 text-sm text-text-secondary">
+                Run this command on your <span className="font-medium capitalize text-text-secondary">{os}</span> device
+              </p>
+            )}
             <div className="relative rounded-xl border border-border bg-black/40 p-4 font-mono text-xs">
               <pre className="overflow-x-auto whitespace-pre-wrap text-success/80">{getCommand()}</pre>
               <button
                 type="button"
-                onClick={copyToken}
+                onClick={() => copyText(getCommand(), os === 'linux' ? 'Install command copied' : 'Command copied')}
                 aria-label="Copy enrollment command"
                 className="cmd-focus-ring absolute top-3 right-3 flex h-7 w-7 items-center justify-center rounded-lg bg-surface-muted transition-all"
               >
                 {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5 text-text-secondary" />}
               </button>
             </div>
-            <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">1</span>
-                <p className="text-xs text-text-secondary">Install Rust and clone the TechFusion agent repo</p>
+
+            {os === 'linux' && (
+              <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">1</span>
+                  <p className="text-xs text-text-secondary">Downloads the installer and verifies its checksum</p>
+                </div>
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">2</span>
+                  <p className="text-xs text-text-secondary">Installs the agent binary and configures it automatically</p>
+                </div>
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">3</span>
+                  <p className="text-xs text-text-secondary">Registers the device once and enables auto-start on boot</p>
+                </div>
+                {!agentBinaryConfigured && (
+                  <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-text-disabled" />
+                    <p className="text-xs text-text-secondary">
+                      Using the published TechFusion agent release. To point this deployment at your own
+                      mirror, set{' '}
+                      <code className="rounded bg-surface-muted px-1 text-primary">NEXT_PUBLIC_AGENT_DOWNLOAD_URL</code>{' '}
+                      to your release base URL.
+                    </p>
+                  </div>
+                )}
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <Key className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <p className="text-xs text-text-secondary">
+                    Your enrollment token is single-use: it is consumed during installation and never needed again.
+                  </p>
+                </div>
               </div>
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">2</span>
-                <p className="text-xs text-text-secondary">Copy and run the command above in your terminal</p>
+            )}
+
+            {os !== 'linux' && (
+              <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">1</span>
+                  <p className="text-xs text-text-secondary">Install Rust and clone the TechFusion agent repo</p>
+                </div>
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">2</span>
+                  <p className="text-xs text-text-secondary">Copy and run the command above in your terminal</p>
+                </div>
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">3</span>
+                  <p className="text-xs text-text-secondary">The agent will register automatically and start sending telemetry</p>
+                </div>
               </div>
-              <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-subtle p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-600/20 text-xs font-bold text-primary">3</span>
-                <p className="text-xs text-text-secondary">The agent will register automatically and start sending telemetry</p>
-              </div>
-            </div>
+            )}
+
             <div className="mt-6 flex items-center justify-center gap-4">
               <button
                 type="button"
                 onClick={() => { setDetecting(true); setStep(5); startFastPolling(); }}
                 className="cmd-focus-ring h-11 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-8 font-medium text-text-primary transition-all hover:from-blue-500 hover:to-purple-500"
               >
-                I&apos;ve started the agent
+                {os === 'linux' ? "I've installed the agent" : "I've started the agent"}
               </button>
               <button
                 type="button"
@@ -267,7 +335,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
                   </div>
                   <h2 className="text-xl font-bold text-text-primary">Waiting for device...</h2>
                   <p className="max-w-sm text-center text-sm text-text-secondary">
-                    The agent should register within a few seconds. If not, verify the enrollment token is correct.
+                    {os === 'linux'
+                      ? 'The agent installs and registers within a few seconds. If it does not appear, check the terminal output for errors.'
+                      : 'The agent should register within a few seconds. If not, verify the enrollment token is correct.'}
                   </p>
                   <div className="mt-2 flex items-center gap-2">
                     <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
