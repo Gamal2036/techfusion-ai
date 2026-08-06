@@ -100,7 +100,8 @@ impl Agent {
         let jitter = jitter_offset(self.config.interval_secs);
         tracing::info!("Telemetry jitter offset: {:?}", jitter);
 
-        let mut telemetry_ticker = interval(Duration::from_secs(self.config.interval_secs) + jitter);
+        let mut telemetry_ticker =
+            interval(Duration::from_secs(self.config.interval_secs) + jitter);
         let mut security_ticker = interval(Duration::from_secs(self.config.security_interval_secs));
         let mut inventory_ticker =
             interval(Duration::from_secs(self.config.inventory_interval_secs));
@@ -207,10 +208,13 @@ impl Agent {
                     tracing::error!(
                         "[DEVICE_AUTH] Too many auth failures ({}). \
                          Stopping authenticated telemetry retries.\n\
-                         Recovery: generate a fresh enrollment token from Dashboard → Enrollment,\n\
-                         then restart with: TF_ORG_TOKEN=<fresh-token> cargo run\n\
-                         Or clear local identity: rm ~/.techfusion/device_token ~/.techfusion/device_id",
-                        self.consecutive_auth_failures
+                         Recovery: generate a fresh enrollment token from Dashboard → Connect Device,\n\
+                         then re-run the installer or re-enroll once:\n\
+                         \tsudo systemctl restart techfusion-agent\n\
+                         \texport TF_ORG_TOKEN=<fresh-token> /usr/local/bin/techfusion-agent --enroll\n\
+                         Or clear local identity: rm {}",
+                        self.consecutive_auth_failures,
+                        self.config.state_dir.join("device_token").display()
                     );
                     return Err(anyhow::anyhow!(
                         "Device token rejected {} times consecutively — giving up. See recovery instructions above.",
@@ -227,18 +231,21 @@ impl Agent {
     }
 
     async fn handle_token_rejection(&mut self) -> anyhow::Result<()> {
-        registration::invalidate_token();
+        registration::invalidate_token(&self.config.state_dir);
 
         if self.config.org_token.is_none() {
             tracing::error!(
                 "[RECOVERY] No TF_ORG_TOKEN available. Cannot re-register.\n\
                  To fix this:\n\
-                 1. Generate a fresh enrollment token from Dashboard → Enrollment page\n\
-                 2. Stop this agent\n\
-                 3. Restart with: TF_ORG_TOKEN=<fresh-enrollment-token> cargo run\n\
+                 1. Generate a fresh enrollment token from Dashboard → Connect Device\n\
+                 2. Restart the agent service, then re-enroll once:\n\
+                 \tsudo systemctl restart techfusion-agent\n\
+                 \tsudo TF_ORG_TOKEN=<fresh-enrollment-token> /usr/local/bin/techfusion-agent --enroll\n\
                  \n\
                  Or clear local identity:\n\
-                 rm ~/.techfusion/device_token ~/.techfusion/device_id"
+                 \trm {} {}",
+                self.config.state_dir.join("device_token").display(),
+                self.config.state_dir.join("device_id").display()
             );
             return Err(anyhow::anyhow!(
                 "No enrollment token available for re-registration"
@@ -287,9 +294,7 @@ impl Agent {
             }
             Err(ClientError::Unauthorized) => {
                 self.consecutive_auth_failures += 1;
-                tracing::warn!(
-                    "Security report rejected (401), attempting re-registration"
-                );
+                tracing::warn!("Security report rejected (401), attempting re-registration");
                 self.handle_token_rejection().await
             }
             Err(e) => {
@@ -303,17 +308,9 @@ impl Agent {
         let start = Instant::now();
         tracing::info!("[INVENTORY] Collection started");
         let report = crate::inventory::collect_inventory();
-        tracing::info!(
-            "[INVENTORY] Pending response received"
-        );
-        tracing::info!(
-            "[INVENTORY] Software collected: {}",
-            report.software_count
-        );
-        tracing::info!(
-            "[INVENTORY] Drivers collected: {}",
-            report.driver_count
-        );
+        tracing::info!("[INVENTORY] Pending response received");
+        tracing::info!("[INVENTORY] Software collected: {}", report.software_count);
+        tracing::info!("[INVENTORY] Drivers collected: {}", report.driver_count);
 
         let hash = crate::security::compute_inventory_hash(&report);
         if hash == self.last_inventory_hash {
@@ -340,7 +337,10 @@ impl Agent {
                     report.software_count,
                     start.elapsed()
                 );
-                let _ = self.client.clear_pending_inventory(&self.device_token, &self.device_id).await;
+                let _ = self
+                    .client
+                    .clear_pending_inventory(&self.device_token, &self.device_id)
+                    .await;
                 Ok(())
             }
             Err(ClientError::Unauthorized) => {
@@ -370,9 +370,7 @@ impl Agent {
             Ok(sessions) => {
                 for session in &sessions {
                     if let (Some(session_id), Some(technician_id)) = (
-                        session
-                            .get("id")
-                            .and_then(|v| v.as_str()),
+                        session.get("id").and_then(|v| v.as_str()),
                         session.get("technicianId").and_then(|v| v.as_str()),
                     ) {
                         tracing::info!(
@@ -477,11 +475,7 @@ impl Agent {
                             start.elapsed()
                         );
 
-                        match self
-                            .client
-                            .complete_security_scan(scan_id, &findings)
-                            .await
-                        {
+                        match self.client.complete_security_scan(scan_id, &findings).await {
                             Ok(()) => {
                                 tracing::info!("Security scan {} completed successfully", scan_id);
                             }
@@ -521,7 +515,10 @@ impl Agent {
                 if let Err(e) = self.collect_and_send_inventory().await {
                     tracing::warn!("[INVENTORY] Command failed: {}", e);
                 }
-                let _ = self.client.clear_pending_inventory(&self.device_token, &self.device_id).await;
+                let _ = self
+                    .client
+                    .clear_pending_inventory(&self.device_token, &self.device_id)
+                    .await;
             }
             Ok(false) => {}
             Err(ClientError::Unauthorized) => {
@@ -546,7 +543,10 @@ impl Agent {
             Ok(commands) => {
                 for cmd in &commands {
                     if let Some(scan_id) = cmd.get("id").and_then(|v| v.as_str()) {
-                        tracing::info!("[DISCOVERY] Processing pending network discovery: {}", scan_id);
+                        tracing::info!(
+                            "[DISCOVERY] Processing pending network discovery: {}",
+                            scan_id
+                        );
 
                         if let Err(e) = self
                             .client
@@ -611,10 +611,7 @@ impl Agent {
                                 tracing::error!("[DISCOVERY] {}", error_msg);
                                 let _ = self
                                     .client
-                                    .report_discovery_error_with_status(
-                                        &scan_id_owned,
-                                        &error_msg,
-                                    )
+                                    .report_discovery_error_with_status(&scan_id_owned, &error_msg)
                                     .await;
                             }
                             Err(_timeout) => {
@@ -625,10 +622,7 @@ impl Agent {
                                 tracing::warn!("[DISCOVERY] Scan {}: {}", scan_id_owned, error_msg);
                                 let _ = self
                                     .client
-                                    .report_discovery_error_with_status(
-                                        &scan_id_owned,
-                                        &error_msg,
-                                    )
+                                    .report_discovery_error_with_status(&scan_id_owned, &error_msg)
                                     .await;
                             }
                         }

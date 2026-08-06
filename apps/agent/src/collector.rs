@@ -62,8 +62,16 @@ fn detect_physical_cores() -> Option<u32> {
 fn is_meaningless_cpu_model(value: &str) -> bool {
     matches!(
         value.to_lowercase().trim(),
-        "" | "unknown" | "cpu" | "processor" | "arm" | "aarch64"
-            | "x86_64" | "i386" | "i486" | "i586" | "i686"
+        "" | "unknown"
+            | "cpu"
+            | "processor"
+            | "arm"
+            | "aarch64"
+            | "x86_64"
+            | "i386"
+            | "i486"
+            | "i586"
+            | "i686"
     )
 }
 
@@ -237,12 +245,21 @@ mod tests {
         let mut collector = MetricsCollector::new();
         let metrics = collector.collect();
 
-        assert!(metrics.cpu_usage_percent >= 0.0 && metrics.cpu_usage_percent <= 100.0,
-            "CPU usage {} out of range", metrics.cpu_usage_percent);
-        assert!(metrics.ram_usage_percent >= 0.0 && metrics.ram_usage_percent <= 100.0,
-            "RAM usage {} out of range", metrics.ram_usage_percent);
-        assert!(metrics.disk_usage_percent >= 0.0 && metrics.disk_usage_percent <= 100.0,
-            "Disk usage {} out of range", metrics.disk_usage_percent);
+        assert!(
+            metrics.cpu_usage_percent >= 0.0 && metrics.cpu_usage_percent <= 100.0,
+            "CPU usage {} out of range",
+            metrics.cpu_usage_percent
+        );
+        assert!(
+            metrics.ram_usage_percent >= 0.0 && metrics.ram_usage_percent <= 100.0,
+            "RAM usage {} out of range",
+            metrics.ram_usage_percent
+        );
+        assert!(
+            metrics.disk_usage_percent >= 0.0 && metrics.disk_usage_percent <= 100.0,
+            "Disk usage {} out of range",
+            metrics.disk_usage_percent
+        );
     }
 
     #[test]
@@ -250,17 +267,28 @@ mod tests {
         let mut collector = MetricsCollector::new();
         let metrics = collector.collect();
 
-        assert!(metrics.ram_used_bytes <= metrics.ram_total_bytes,
-            "RAM used ({}) > RAM total ({})", metrics.ram_used_bytes, metrics.ram_total_bytes);
-        assert!(metrics.disk_used_bytes <= metrics.disk_total_bytes,
-            "Disk used ({}) > Disk total ({})", metrics.disk_used_bytes, metrics.disk_total_bytes);
+        assert!(
+            metrics.ram_used_bytes <= metrics.ram_total_bytes,
+            "RAM used ({}) > RAM total ({})",
+            metrics.ram_used_bytes,
+            metrics.ram_total_bytes
+        );
+        assert!(
+            metrics.disk_used_bytes <= metrics.disk_total_bytes,
+            "Disk used ({}) > Disk total ({})",
+            metrics.disk_used_bytes,
+            metrics.disk_total_bytes
+        );
     }
 
     #[test]
     fn test_cpu_model_returns_non_empty_string() {
         let model = cpu_model_name();
         assert!(!model.is_empty(), "CPU model should not be empty");
-        assert_ne!(model, "Unknown", "CPU model should be detected on this system");
+        assert_ne!(
+            model, "Unknown",
+            "CPU model should be detected on this system"
+        );
     }
 
     #[test]
@@ -294,8 +322,15 @@ mod tests {
     fn test_cpu_model_returns_meaningful_string() {
         let model = cpu_model_name();
         assert!(!model.is_empty(), "CPU model should not be empty");
-        assert_ne!(model, "Unknown", "CPU model should be detected on this system");
-        assert!(model.len() > 2, "CPU model should be a meaningful string, got: {}", model);
+        assert_ne!(
+            model, "Unknown",
+            "CPU model should be detected on this system"
+        );
+        assert!(
+            model.len() > 2,
+            "CPU model should be a meaningful string, got: {}",
+            model
+        );
     }
 
     #[test]
@@ -325,7 +360,10 @@ mod tests {
         let model = parse_proc_cpuinfo_model();
         if let Some(m) = model {
             assert!(!m.is_empty(), "Parsed model should not be empty");
-            assert!(!is_meaningless_cpu_model(&m), "Parsed model should be meaningful");
+            assert!(
+                !is_meaningless_cpu_model(&m),
+                "Parsed model should be meaningful"
+            );
         }
     }
 

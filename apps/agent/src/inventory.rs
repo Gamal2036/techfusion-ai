@@ -32,8 +32,7 @@ pub struct InventoryReport {
 const CMD_TIMEOUT_SECS: u64 = 15;
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
-    run_cmd_timeout(cmd, args, CMD_TIMEOUT_SECS)
-        .filter(|o| !o.is_empty())
+    run_cmd_timeout(cmd, args, CMD_TIMEOUT_SECS).filter(|o| !o.is_empty())
 }
 
 fn run_cmd_no_check(cmd: &str, args: &[&str]) -> Option<String> {
@@ -60,7 +59,10 @@ fn run_cmd_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> Option<String
     match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
         Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            eprintln!("[INVENTORY] Command timed out after {}s: {} {:?}", timeout_secs, cmd, args);
+            eprintln!(
+                "[INVENTORY] Command timed out after {}s: {} {:?}",
+                timeout_secs, cmd, args
+            );
             None
         }
         Err(_) => None,

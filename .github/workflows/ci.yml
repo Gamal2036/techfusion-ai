@@ -42,6 +42,38 @@ jobs:
       - name: Test
         run: pnpm run test
 
+  agent-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format check
+        working-directory: apps/agent
+        run: cargo fmt --check
+
+      - name: Check
+        working-directory: apps/agent
+        run: cargo check
+
+      - name: Test
+        working-directory: apps/agent
+        run: cargo test
+
+  linux-bootstrap-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify installer assets
+        run: bash scripts/verify-linux-bootstrap.sh
+
+      - name: Verify systemd unit contract
+        run: bash scripts/verify-agent-systemd-unit.sh
+
   docker-build:
     needs: lint-build-test
     if: github.ref == 'refs/heads/main'

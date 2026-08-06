@@ -476,10 +476,7 @@ impl ApiClient {
         &self,
         device_id: &str,
     ) -> Result<Vec<serde_json::Value>, ClientError> {
-        let url = format!(
-            "{}/security/pending/{}",
-            self.api_url, device_id
-        );
+        let url = format!("{}/security/pending/{}", self.api_url, device_id);
         let resp = self
             .client
             .get(&url)
@@ -590,7 +587,11 @@ impl ApiClient {
         let status = resp.status();
         match status.as_u16() {
             200..=299 => {
-                tracing::info!("Network discovery {} completed: {} devices", scan_id, result.device_count);
+                tracing::info!(
+                    "Network discovery {} completed: {} devices",
+                    scan_id,
+                    result.device_count
+                );
                 Ok(())
             }
             401 => Err(ClientError::Unauthorized),
@@ -678,10 +679,7 @@ impl ApiClient {
         device_token: &str,
         device_id: &str,
     ) -> Result<bool, ClientError> {
-        let url = format!(
-            "{}/inventory/pending/{}",
-            self.api_url, device_id
-        );
+        let url = format!("{}/inventory/pending/{}", self.api_url, device_id);
         let resp = self
             .client
             .get(&url)
@@ -694,7 +692,10 @@ impl ApiClient {
         match status.as_u16() {
             200..=299 => {
                 let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                Ok(body.get("pending").and_then(|v| v.as_bool()).unwrap_or(false))
+                Ok(body
+                    .get("pending")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false))
             }
             401 => Err(ClientError::Unauthorized),
             _ => Ok(false),
@@ -706,10 +707,7 @@ impl ApiClient {
         device_token: &str,
         device_id: &str,
     ) -> Result<(), ClientError> {
-        let url = format!(
-            "{}/inventory/pending/{}/clear",
-            self.api_url, device_id
-        );
+        let url = format!("{}/inventory/pending/{}/clear", self.api_url, device_id);
         let resp = self
             .client
             .post(&url)
@@ -887,7 +885,10 @@ mod tests {
         assert_eq!(json["cpuModel"], "Intel Core i7-12700K");
         assert_eq!(json["cpuCores"], 8);
         assert_eq!(json["cpuLogical"], 16);
-        assert!(json.get("cpu_model").is_none(), "Should not have snake_case cpu_model");
+        assert!(
+            json.get("cpu_model").is_none(),
+            "Should not have snake_case cpu_model"
+        );
     }
 
     #[test]

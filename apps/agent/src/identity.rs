@@ -1,25 +1,20 @@
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const IDENTITY_VERSION_V1: u32 = 1;
 pub const IDENTITY_VERSION_V2: u32 = 2;
 pub const CURRENT_IDENTITY_VERSION: u32 = IDENTITY_VERSION_V2;
 
 const INSTALLATION_ID_FILE: &str = "installation_id";
-const TOKEN_DIR: &str = ".techfusion";
 
-fn identity_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
-    home.join(TOKEN_DIR)
+fn installation_id_path(state_dir: &Path) -> PathBuf {
+    state_dir.join(INSTALLATION_ID_FILE)
 }
 
-fn installation_id_path() -> PathBuf {
-    identity_dir().join(INSTALLATION_ID_FILE)
-}
-
-pub fn get_or_create_installation_id() -> String {
-    let path = installation_id_path();
+/// Read or create the persistent installation UUID inside `state_dir`.
+pub fn get_or_create_installation_id_in(state_dir: &Path) -> String {
+    let path = installation_id_path(state_dir);
     if let Ok(id) = fs::read_to_string(&path) {
         let trimmed = id.trim().to_string();
         if !trimmed.is_empty() {

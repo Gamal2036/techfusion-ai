@@ -69,10 +69,7 @@ fn run_cmd(cmd: &str, args: &[&str], timeout: Duration) -> Option<String> {
                 if start.elapsed() > timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    debug!(
-                        "[CMD] Timed out after {:?}: {} {:?}",
-                        timeout, cmd, args
-                    );
+                    debug!("[CMD] Timed out after {:?}: {} {:?}", timeout, cmd, args);
                     return None;
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -116,7 +113,11 @@ fn is_private_subnet(ip_str: &str, prefix_len: u32) -> bool {
 }
 
 fn get_local_ip_and_subnet() -> Option<(String, String, String)> {
-    let output = run_cmd("ip", &["-4", "addr", "show", "scope", "global"], CMD_TIMEOUT)?;
+    let output = run_cmd(
+        "ip",
+        &["-4", "addr", "show", "scope", "global"],
+        CMD_TIMEOUT,
+    )?;
     let mut last_ip = None;
     let mut last_cidr = None;
     let mut last_iface = None;
@@ -137,12 +138,7 @@ fn get_local_ip_and_subnet() -> Option<(String, String, String)> {
                     if is_private_subnet(ip, prefix) {
                         last_ip = Some(ip.to_string());
                         last_cidr = Some(cidr.to_string());
-                        last_iface = Some(
-                            parts
-                                .last()
-                                .unwrap_or(&"")
-                                .to_string(),
-                        );
+                        last_iface = Some(parts.last().unwrap_or(&"").to_string());
                     }
                 }
             }
@@ -552,7 +548,10 @@ pub fn discover_network() -> DiscoveryResult {
     info!("[DISCOVERY] Detecting gateway...");
     let (gateway_ip, _gateway_iface) = match get_gateway() {
         Some(gw) => {
-            info!("[DISCOVERY] Gateway detected: ip={}, interface={}", gw.0, gw.1);
+            info!(
+                "[DISCOVERY] Gateway detected: ip={}, interface={}",
+                gw.0, gw.1
+            );
             gw
         }
         None => {
@@ -655,12 +654,11 @@ pub fn discover_network() -> DiscoveryResult {
         }
     }
 
-    if !local_ip.is_empty()
-        && !seen.contains(&local_ip)
-        && local_ip.split('.').count() == 4
-    {
+    if !local_ip.is_empty() && !seen.contains(&local_ip) && local_ip.split('.').count() == 4 {
         let hostname = run_cmd("hostname", &[], CMD_TIMEOUT);
-        let local_mac_str = local_mac.clone().unwrap_or_else(|| "00:00:00:00:00:00".to_string());
+        let local_mac_str = local_mac
+            .clone()
+            .unwrap_or_else(|| "00:00:00:00:00:00".to_string());
         let vendor = if local_mac_str != "00:00:00:00:00:00" {
             resolve_vendor(&local_mac_str)
         } else {
