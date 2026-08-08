@@ -1,10 +1,11 @@
-FROM rust:latest AS builder
+FROM rust:1.96.0 AS builder
 WORKDIR /app
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
+COPY rust-toolchain.toml ./
 COPY src/ ./src/
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/agent /app/agent
 CMD ["/app/agent"]

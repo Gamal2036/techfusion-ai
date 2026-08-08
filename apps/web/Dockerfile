@@ -14,6 +14,8 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages ./packages
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY packages ./packages
 COPY apps/web ./apps/web
 ENV NEXT_TELEMETRY_DISABLED=1

@@ -1,0 +1,46 @@
+# VCS
+.git
+.gitignore
+.github
+
+# Dependency trees — never ship installed node_modules into a build context
+node_modules
+**/node_modules
+
+# Build outputs and caches
+dist
+**/dist
+.next
+**/.next
+target
+**/target
+.turbo
+**/.turbo
+coverage
+**/coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Logs
+*.log
+**/*.log
+
+# Secrets and local env files — never copy into an image or build context
+.env
+.env.*
+!.env.example
+
+# Local runtime / generated state (never required to build an image)
+report-storage
+**/report-storage
+backups
+reports
+blueprints
+roadmap
+templates
+docs
+test
+
+# Local database artifacts
+*.db
+**/*.db

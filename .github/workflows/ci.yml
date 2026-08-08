@@ -355,15 +355,29 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        service:
-          - name: api-gateway
-            context: apps/api-gateway
-          - name: web
-            context: apps/web
-          - name: worker
-            context: apps/worker
-          - name: agent
-            context: apps/agent
+        # The api-gateway / web / worker Dockerfiles are pnpm-monorepo
+        # Dockerfiles: every COPY path (package.json, pnpm-workspace.yaml,
+        # pnpm-lock.yaml, packages/, apps/<service>/...) is resolved from the
+        # REPOSITORY ROOT. They therefore MUST be built with context: "." and
+        # an explicit file: path — never with the app directory as the context.
+        # (infra/docker/docker-compose.yml uses the identical context ../.. +
+        # dockerfile: apps/<service>/Dockerfile mapping.)
+        #
+        # The agent is a standalone Rust crate whose Dockerfile COPYs Cargo.toml
+        # and src/ relative to its own directory, so it keeps an app-local
+        # context (apps/agent) with its own .dockerignore.
+        - name: api-gateway
+          context: .
+          file: apps/api-gateway/Dockerfile
+        - name: web
+          context: .
+          file: apps/web/Dockerfile
+        - name: worker
+          context: .
+          file: apps/worker/Dockerfile
+        - name: agent
+          context: apps/agent
+          file: Dockerfile
 
     env:
       REGISTRY: ghcr.io
@@ -395,6 +409,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.file }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
