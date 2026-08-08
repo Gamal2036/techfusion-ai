@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PLAN_CONFIGS, PlanTier } from './plan-features';
+
+const PRO_PRICE_ID = PLAN_CONFIGS[PlanTier.Pro].stripePriceId;
+const BUSINESS_PRICE_ID = PLAN_CONFIGS[PlanTier.Business].stripePriceId;
 
 describe('BillingService (integration)', () => {
   let service: BillingService;
@@ -45,7 +49,7 @@ describe('BillingService (integration)', () => {
       customers: { create: jest.fn().mockResolvedValue({ id: 'cus_mock' }) },
       checkout: { sessions: { create: jest.fn().mockResolvedValue({ url: 'https://checkout.stripe.com/test', id: 'cs_test' }) } },
       billingPortal: { sessions: { create: jest.fn().mockResolvedValue({ url: 'https://portal.stripe.com/test' }) } },
-      subscriptions: { retrieve: jest.fn().mockResolvedValue({ id: 'sub_mock', status: 'active', current_period_start: Math.floor(Date.now() / 1000), current_period_end: Math.floor(Date.now() / 1000) + 2592000, items: { data: [{ price: { id: 'price_pro' } }] } }) },
+      subscriptions: { retrieve: jest.fn().mockResolvedValue({ id: 'sub_mock', status: 'active', current_period_start: Math.floor(Date.now() / 1000), current_period_end: Math.floor(Date.now() / 1000) + 2592000, items: { data: [{ price: { id: PRO_PRICE_ID } }] } }) },
       webhooks: { constructEvent: jest.fn() },
     };
   });
@@ -222,7 +226,7 @@ describe('BillingService (integration)', () => {
         status: 'active',
         current_period_start: Math.floor(Date.now() / 1000),
         current_period_end: Math.floor(Date.now() / 1000) + 2592000,
-        items: { data: [{ price: { id: 'price_pro' } }] },
+        items: { data: [{ price: { id: PRO_PRICE_ID } }] },
       });
 
       prisma.subscription.findUnique.mockResolvedValue(null);
@@ -251,7 +255,7 @@ describe('BillingService (integration)', () => {
             current_period_start: Math.floor(Date.now() / 1000),
             current_period_end: Math.floor(Date.now() / 1000) + 2592000,
             cancel_at_period_end: false,
-            items: { data: [{ price: { id: 'price_business' } }] },
+            items: { data: [{ price: { id: BUSINESS_PRICE_ID } }] },
           },
         },
       });
