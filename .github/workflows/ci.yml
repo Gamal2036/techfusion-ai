@@ -1,38 +1,69 @@
 name: CI
 
+# ===========================================================================
+# TechFusion AI — V1 CI/CD Reliability & Release Gate (V1-STAGE-01C)
+#
+# Architecture (see docs/v1/V1-STAGE-01C_CICD_RELEASE_GATE_CERTIFICATION_REPORT.md):
+#
+#   ci-api         install -> typecheck -> API tests (913) -> build   [Postgres+Redis]
+#   ci-web         install -> typecheck -> web tests (790) -> build
+#   ci-worker      install -> typecheck -> worker tests (79) -> build
+#   ci-agent       cargo fmt/check/test (78) -> release build -> capability check
+#   ci-bootstrap   installer static + arch-resolution + systemd verifiers (no network)
+#   ci-migration   fresh-DB migrate deploy/status + schema validate + worker sync
+#   ci-security    repo-native secret scan
+#   --------------------------------------------------------------------------
+#   v1-green-gate  REQUIRED aggregator — fails closed if any required job is
+#                  not "success" (covers failure, skip, cancellation).
+#
+# Release-specific verification (published-artifact downloads) lives in
+# release-agent.yml post-publish, NOT here, so ordinary PR/main code changes
+# never fail because a future unpublished release returns HTTP 404.
+# ===========================================================================
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+# Branch CI: supersede obsolete runs of the same ref. Release/tag workflows use
+# a separate concurrency group WITHOUT cancel-in-progress (see release-agent.yml).
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  REGISTRY: ghcr.io
-  IMAGE_TAG: ${{ github.sha }}
+  # Deterministic, non-production TEST constants. Never point CI at a real
+  # development/production database or at real secrets.
+  CI: "true"
+  NODE_ENV: test
+  DATABASE_URL: postgresql://techfusion:techfusion@localhost:5432/techfusion
+  DATABASE_URL_TEST: postgresql://techfusion:techfusion@localhost:5432/techfusion
+  REDIS_URL: redis://localhost:6379
+  JWT_SECRET: ci-jwt-secret-00000000000000000000000000000000000000000000000000000000
+  JWT_REFRESH_SECRET: ci-refresh-secret-0000000000000000000000000000000000000000000000000000
+  AI_ENCRYPTION_KEY: ci-encryption-key-000000000000000000000000000000000000000000000000
+  REPORT_URL_SECRET: ci-report-secret-000000000000000000000000000000000000000000000000000
+  ALLOWED_ORIGINS: http://localhost:3000
+  WS_ALLOWED_ORIGINS: http://localhost:3000
+  PORT: 3000
 
+# Node is pinned to the exact version used to author the lockfile (22.22.3);
+# pnpm is pinned via `packageManager` (pnpm/action-setup@v4) — see package.json.
 jobs:
-  lint-build-test:
+  ci-api:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [22]
-
-    env:
-      NODE_ENV: test
-      DATABASE_URL: postgresql://techfusion:techfusion@localhost:5432/techfusion
-      DATABASE_URL_TEST: postgresql://techfusion:techfusion@localhost:5432/techfusion
-      REDIS_URL: redis://localhost:6379
-      JWT_SECRET: ci-jwt-secret-00000000000000000000000000000000000000000000000000000000
-      JWT_REFRESH_SECRET: ci-refresh-secret-0000000000000000000000000000000000000000000000000000
-      AI_ENCRYPTION_KEY: ci-encryption-key-000000000000000000000000000000000000000000000000
-      REPORT_URL_SECRET: ci-report-secret-000000000000000000000000000000000000000000000000000
-      ALLOWED_ORIGINS: http://localhost:3000
-      WS_ALLOWED_ORIGINS: http://localhost:3000
-      PORT: 3000
-
+    timeout-minutes: 45
     services:
       postgres:
-        image: postgres:16-alpine
+        # ROOT-CAUSE FIX (V1-STAGE-01C): the schema requires the TimescaleDB
+        # extension (CREATE EXTENSION timescaledb / create_hypertable). The old
+        # plain `postgres:16-alpine` image made `prisma migrate deploy` fail on
+        # the very first migration, which is what produced the historic
+        # "API: 485 passed / 160 failed" CI runs. This image matches the local
+        # test environment (infra/docker/docker-compose.test.yml) exactly.
+        image: timescale/timescaledb:latest-pg16
         env:
           POSTGRES_USER: techfusion
           POSTGRES_PASSWORD: techfusion
@@ -53,35 +84,98 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js (pinned)
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22.22.3
           cache: "pnpm"
 
-      - name: Install dependencies
+      - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Build
-        run: pnpm run build
+      - name: Typecheck
+        working-directory: apps/api-gateway
+        run: pnpm lint
 
       - name: Test
-        run: pnpm run test
+        working-directory: apps/api-gateway
+        run: pnpm test
 
-  agent-rust:
+      - name: Build
+        working-directory: apps/api-gateway
+        run: pnpm build
+
+  ci-web:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - name: Use Node.js (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: "pnpm"
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: apps/web
+        run: pnpm lint
+
+      - name: Test
+        working-directory: apps/web
+        run: pnpm test
+
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+
+  ci-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Use Node.js (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: "pnpm"
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: apps/worker
+        run: pnpm lint
+
+      - name: Test
+        working-directory: apps/worker
+        run: pnpm test
+
+      - name: Build
+        working-directory: apps/worker
+        run: pnpm build
+
+  ci-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the exact stable toolchain used for the
+      # certified beta.4 build; dtolnay/rust-toolchain honors the file.
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -98,12 +192,38 @@ jobs:
         working-directory: apps/agent
         run: cargo test
 
-  linux-bootstrap-verify:
+      - name: Release build
+        working-directory: apps/agent
+        run: cargo build --release
+
+      - name: Verify version + lifecycle capabilities (non-destructive)
+        working-directory: apps/agent
+        run: |
+          set -euo pipefail
+          BIN="target/release/agent"
+          CARGO_VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          VER_OUT="$("$BIN" --version)"
+          if ! printf '%s\n' "$VER_OUT" | grep -q "techfusion-agent ${CARGO_VERSION}$"; then
+            echo "ERROR: version mismatch: got '$VER_OUT', want techfusion-agent ${CARGO_VERSION}" >&2
+            exit 1
+          fi
+          for cap in reset-identity identity-status; do
+            if ! "$BIN" --help | grep -qw "$cap"; then
+              echo "ERROR: artifact missing required lifecycle command: ${cap}" >&2
+              exit 1
+            fi
+          done
+          echo "Version + capabilities OK"
+
+  # Static, offline verification of the Linux installer contract and its
+  # web-served assets (source of truth consistency). No external downloads.
+  ci-bootstrap:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify installer assets
+      - name: Verify installer assets + source-of-truth consistency
         run: bash scripts/verify-linux-bootstrap.sh
 
       - name: Verify installer arch resolution
@@ -112,18 +232,115 @@ jobs:
       - name: Verify systemd unit contract
         run: bash scripts/verify-agent-systemd-unit.sh
 
-      # V1-STAGE-00B-R1 gate: on main pushes, the installer must download the
-      # CURRENT certified release artifact (which exposes reset-identity +
-      # identity-status). Fails closed when the release is stale or not yet
-      # published, so a stale artifact can never be presented as current.
-      - name: Installer artifact regression test — published release is current
-        if: github.event_name == 'push'
-        run: bash scripts/test-installer-artifact-regression.sh
+  # Migration gate: a brand-new (CI-provisioned) TimescaleDB must accept every
+  # committed migration in order, report up-to-date, validate, and the worker's
+  # synced schema must match the API schema. Never runs against real data.
+  ci-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_USER: techfusion
+          POSTGRES_PASSWORD: techfusion
+          POSTGRES_DB: techfusion
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U techfusion"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - name: Use Node.js (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: "pnpm"
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations on fresh DB
+        working-directory: apps/api-gateway
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+
+      - name: Verify no pending migrations
+        working-directory: apps/api-gateway
+        run: npx prisma migrate status --schema=prisma/schema.prisma
+
+      - name: Validate schema
+        working-directory: apps/api-gateway
+        run: npx prisma validate --schema=prisma/schema.prisma
+
+      - name: Worker schema must stay in sync (no stale generated asset)
+        run: |
+          set -euo pipefail
+          bash scripts/sync-prisma-schema.sh
+          if git diff --quiet -- apps/worker/prisma/schema.prisma; then
+            echo "Worker schema is in sync with the API schema"
+          else
+            echo "ERROR: apps/worker/prisma/schema.prisma is stale." >&2
+            echo "Run: bash scripts/sync-prisma-schema.sh and commit the result." >&2
+            exit 1
+          fi
+
+  # Lightweight, repository-native secret scan (no third-party platform).
+  ci-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secret / credential scan over tracked files
+        run: bash scripts/ci-secret-scan.sh
+
+  # Authoritative V1 green gate. Fails CLOSED: every required job must report
+  # "success" explicitly — a failed, skipped, or cancelled dependency fails the
+  # gate (never a naive pass-through).
+  v1-green-gate:
+    needs: [ci-api, ci-web, ci-worker, ci-agent, ci-bootstrap, ci-migration, ci-security]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate required CI jobs (fail closed)
+        run: |
+          set -euo pipefail
+          failed=0
+          check() {
+            local job="$1" result="$2"
+            if [ "$result" != "success" ]; then
+              echo "::error::Required job '${job}' finished with '${result}'"
+              failed=1
+            else
+              echo "OK: ${job} = success"
+            fi
+          }
+          check ci-api        "${{ needs.ci-api.result }}"
+          check ci-web        "${{ needs.ci-web.result }}"
+          check ci-worker     "${{ needs.ci-worker.result }}"
+          check ci-agent      "${{ needs.ci-agent.result }}"
+          check ci-bootstrap  "${{ needs.ci-bootstrap.result }}"
+          check ci-migration  "${{ needs.ci-migration.result }}"
+          check ci-security   "${{ needs.ci-security.result }}"
+          if [ "$failed" = "1" ]; then
+            echo "::error::V1 GREEN GATE FAILED — a required job is not green."
+            exit 1
+          fi
+          echo "V1 GREEN GATE: PASS — baseline is releasable."
+
+  # Docker images are only built/pushed from a fully green main baseline.
   docker-build:
-    needs: lint-build-test
+    needs: v1-green-gate
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         service:
@@ -135,6 +352,10 @@ jobs:
             context: apps/worker
           - name: agent
             context: apps/agent
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4

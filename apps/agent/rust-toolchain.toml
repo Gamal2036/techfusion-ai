@@ -1,0 +1,12 @@
+# TechFusion AI — Agent toolchain pin (V1-STAGE-01C)
+#
+# Pins the exact Rust stable toolchain used for the certified
+# v1.0.0-agent-beta.4 build (rustc 1.96.0, cargo 1.97.1). Both the local
+# developer environment and GitHub Actions (dtolnay/rust-toolchain honors this
+# file) resolve to the same toolchain, so local and CI builds cannot silently
+# drift. Dependency-level reproducibility is additionally locked by the
+# committed Cargo.lock. Bump deliberately with a release.
+[toolchain]
+channel = "1.96.0"
+components = ["rustfmt"]
+targets = []

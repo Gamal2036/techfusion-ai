@@ -9,6 +9,14 @@ import { AiOrchestratorService } from '../src/ai/ai-orchestrator.service';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
+// Full-stack E2E scenario (real HTTP server, DB, SSE streaming, PDF generation).
+// Steps routinely run 0.5-2s each, but under CI memory pressure (52 suites in
+// one run-in-band worker) the slowest step (Step 5: AI SSE troubleshooting)
+// has exceeded the 5s default and flaked. 30s is a generous, justified ceiling
+// for a scenario; it does not mask a race — Step 5 completes in ~1.2s when
+// unloaded (see V1-STAGE-01C report §23).
+jest.setTimeout(30000);
+
 const JWT_SECRET = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -151,6 +159,13 @@ describe('Full E2E Scenario (Phase 15)', () => {
     });
     expect(tech.id).toBeDefined();
     state.techId = tech.id;
+
+    await prisma.organizationMember.createMany({
+      data: [
+        { userId: admin.id, orgId: state.orgId, role: 'Admin' },
+        { userId: tech.id, orgId: state.orgId, role: 'Technician' },
+      ],
+    });
 
     const rosterRes = await request(app.getHttpServer())
       .get('/admin/users')
@@ -306,9 +321,8 @@ describe('Full E2E Scenario (Phase 15)', () => {
 
     const discoveryRes = await request(app.getHttpServer())
       .post('/network/discovery')
-      .set('x-org-id', state.orgId)
+      .set('Authorization', `Bearer ${device.deviceToken}`)
       .send({
-        deviceToken: device.deviceToken,
         gatewayIp: '192.168.1.1',
         gatewayMac: '00:11:22:33:44:55',
         localIp: '192.168.1.100',

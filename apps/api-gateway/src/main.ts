@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -53,10 +54,9 @@ async function bootstrap() {
 }
 
 bootstrap().catch(async (err) => {
-  logger.error('Failed to start API Gateway', {
-    errorType: err?.name || 'StartupError',
-    errorMessage: err?.message || String(err),
-  });
+  const errorType = err?.name || 'StartupError';
+  const errorMessage = err?.message || String(err);
+  logger.error(`Failed to start API Gateway: ${errorMessage}`, { errorType });
   await shutdownTelemetry();
   process.exit(1);
 });

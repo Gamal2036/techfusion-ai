@@ -1,11 +1,19 @@
 name: release-agent
 
-# Builds and publishes the TechFusion Linux agent binaries consumed by the
-# V1-ENROLL-01A bootstrap installer. Triggered on version tags (v*).
+# Builds, tests, packages, publishes and then POST-PUBLISH VERIFIES the
+# TechFusion Linux agent binaries consumed by the V1-ENROLL-01A bootstrap
+# installer. Triggered on version tags (v*).
 #
 # The installer fetches binaries via TECHFUSION_AGENT_DOWNLOAD_URL or --url,
 # defaulting to the GitHub release asset pattern:
 #   https://github.com/<owner>/techfusion-ai/releases/download/<tag>/techfusion-agent-linux-<arch>
+#
+# Ordering contract (V1-STAGE-01C):
+#   tag -> checkout exact tag commit -> deterministic build (pinned toolchain)
+#         -> tests -> capability/version verification -> package -> checksum
+#         -> publish -> post-publish artifact verification
+# A release is NOT published if any required Agent test/build/capability check
+# fails.
 #
 # Requires the repository to allow GitHub Actions write access to releases.
 
@@ -17,9 +25,16 @@ on:
 permissions:
   contents: write
 
+# Tag runs are authoritative: a newer run must NEVER cancel an in-progress
+# release. Separate concurrency group, cancel-in-progress disabled.
+concurrency:
+  group: release-agent-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -29,12 +44,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # rust-toolchain.toml pins the exact stable toolchain used for the
+      # certified beta.4 build; dtolnay/rust-toolchain honors the file.
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
       - uses: taiki-e/install-action@cross
         if: matrix.target == 'aarch64-unknown-linux-gnu'
+
+      - name: Format check
+        working-directory: apps/agent
+        run: cargo fmt --check
+
+      # Release gate: the full agent test suite must pass before any artifact
+      # may be packaged. Runs on the native x86_64 job; both matrix jobs must
+      # succeed for the release to publish.
+      - name: Run agent tests (release gate)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        working-directory: apps/agent
+        run: cargo test
 
       - name: Build agent (x86_64 native)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
@@ -96,6 +125,7 @@ jobs:
   publish:
     needs: build-linux
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -110,3 +140,35 @@ jobs:
             dist/techfusion-agent-linux-aarch64
             dist/techfusion-agent-linux-aarch64.sha256
           generate_release_notes: true
+
+  # POST-PUBLISH verification (V1-STAGE-01C §19/§20): after the release exists,
+  # download the exact published artifacts and re-verify the full contract —
+  # HTTP 200, sibling .sha256, checksum match, ELF architecture, certified
+  # version and required lifecycle capabilities. This is the correct home for
+  # network artifact checks (NOT in the PR/main CI, where an unpublished future
+  # tag would 404 ordinary code changes).
+  verify-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_BASE: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify published release assets (with propagation retry)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 6); do
+            if bash scripts/verify-agent-release-assets.sh "$RELEASE_BASE"; then
+              echo "Release asset verification PASSED on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i failed; release assets may still be propagating." >&2
+            sleep 15
+          done
+          echo "ERROR: published release assets did not pass verification after 6 attempts." >&2
+          exit 1
+
+      - name: Installer artifact regression test against published release
+        run: bash scripts/test-installer-artifact-regression.sh --release "$RELEASE_BASE"

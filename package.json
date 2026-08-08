@@ -7,7 +7,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "ci:v1": "bash scripts/ci-v1-gate.sh"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -19,5 +20,5 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.15.9"
 }
