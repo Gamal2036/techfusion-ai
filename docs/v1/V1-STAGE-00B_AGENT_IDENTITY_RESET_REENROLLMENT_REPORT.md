@@ -519,3 +519,57 @@ test against the live release, then re-run the real-device install to confirm th
 stale artifact can no longer be installed.
 
 ---
+
+## 24. R2 Addendum — beta.4 Release Publication & Real-Device Certification
+
+> **Date:** 2026-08-08 · **Priority:** P0
+> **Canonical record:** `V1-STAGE-00B-R2_BETA4_RELEASE_REAL_DEVICE_CERTIFICATION_REPORT.md`.
+> This section is the abbreviated outcome appended to the parent report.
+
+### RESULT
+
+The beta.4 release was fully prepared, isolated, and verified locally, but **publication
+is BLOCKED by missing GitHub push authentication** in this environment.
+
+| Item | Value |
+|---|---|
+| Release commit | `71c6bb1` `release(agent): prepare v1.0.0-agent-beta.4` (21 files; local, **not pushed**) |
+| Release tag | `v1.0.0-agent-beta.4` (local, lightweight → `71c6bb1`; **not pushed**) |
+| Agent version | `techfusion-agent 1.0.0-beta.4` |
+| Agent tests | **78/78 PASS** (working tree and release commit, isolated worktree) |
+| Release build | **PASS** (working tree and release commit) |
+| `reset-identity` / `identity-status` | **PASS** |
+| Working-tree build SHA256 | `41f271d1…ba64ea1` (= R1 expected; dist + sidecar identical) |
+| Release-commit build SHA256 (local reference) | `7172c5a2…2465dc` (CI regenerates its own sidecar) |
+| Verify scripts | bootstrap / arch-resolution / systemd-unit **ALL PASS**; local installer regression **PASS** |
+| Web installer contract | source-level **PASS** (`DEFAULT_AGENT_RELEASE_BASE_URL` = beta.4; no beta.3 anywhere) |
+| Push `main` | **BLOCKED** — `could not read Username for 'https://github.com'` |
+| Push tag | **BLOCKED** — same auth failure |
+| Release workflow | **NOT TRIGGERED** (tag not pushed) |
+| Post-publish verification | **PENDING** (release not published; scripts fail closed by design) |
+| Real-device installer test (TEST R2-A) | **PENDING HUMAN TEST** |
+
+### EXACT BLOCKER
+
+No GitHub push authentication is available in this environment: no `credential.helper`,
+no `gh` CLI, no SSH key (`ssh -T git@github.com` → `Permission denied (publickey)`),
+no token env vars; `origin` is the HTTPS URL
+`https://github.com/Gamal2036/techfusion-ai.git`. Per mission rule, authentication
+security settings were **not** modified to bypass it.
+
+### OPERATOR NEXT ACTIONS
+
+1. Authenticate git (e.g. `gh auth login`, PAT, or SSH key) using normal platform
+   mechanisms.
+2. `git push origin main` → pushes `71c6bb1` (+ docs commit).
+3. `git push origin v1.0.0-agent-beta.4` → triggers `release-agent` (builds/verifies/
+   publishes x86_64 + aarch64 + sidecars).
+4. `bash scripts/verify-agent-release-assets.sh` and
+   `bash scripts/test-installer-artifact-regression.sh` → must PASS against the
+   published beta.4.
+5. Run manual TEST R2-A (Section 11 of the R2 report) on the real device; mark
+   REAL-DEVICE INSTALLER certification PASS only after it is actually run.
+
+**STATUS: V1-STAGE-00B-R2 BLOCKED — GitHub push authentication unavailable.**
+
+---
