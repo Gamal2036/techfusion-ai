@@ -14,6 +14,13 @@ enum Role {
   Viewer
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 enum Plan {
   Free
   Pro
@@ -42,34 +49,36 @@ model Organization {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
-  users              User[]
-  devices            Device[]
-  deviceMetrics      DeviceMetric[]
-  deviceHealthScores DeviceHealthScore[]
-  alertRules         AlertRule[]
-  alerts             Alert[]
-  aiProviderConfigs  AiProviderConfig[]
-  aiUsageLogs        AiUsageLog[]
-  aiConversations    AiConversation[]
-  securityScans      SecurityScan[]
-  securityFindings   SecurityFinding[]
-  securityScores     SecurityScore[]
-  networkDevices     NetworkDevice[]
-  networkScans       NetworkScan[]
-  drivers            Driver[]
-  softwareInventory  SoftwareInventory[]
-  backupJobs         BackupJob[]
-  backupRuns         BackupRun[]
-  reportTemplate     ReportTemplate?
-  reports            Report[]
-  reportSchedules    ReportSchedule[]
-  remoteSessions     RemoteSession[]
-  auditLogs          AuditLog[]
-  kbArticles         KbArticle[]
-  ssoConfig          SsoConfig?
-  retentionPolicy    DataRetentionPolicy?
-  enrollmentTokens   EnrollmentToken[]
+  users                    User[]
+  memberships              OrganizationMember[]
+  devices                  Device[]
+  deviceMetrics            DeviceMetric[]
+  deviceHealthScores       DeviceHealthScore[]
+  alertRules               AlertRule[]
+  alerts                   Alert[]
+  aiProviderConfigs        AiProviderConfig[]
+  aiUsageLogs              AiUsageLog[]
+  aiConversations          AiConversation[]
+  securityScans            SecurityScan[]
+  securityFindings         SecurityFinding[]
+  securityScores           SecurityScore[]
+  networkDevices           NetworkDevice[]
+  networkScans             NetworkScan[]
+  drivers                  Driver[]
+  softwareInventory        SoftwareInventory[]
+  backupJobs               BackupJob[]
+  backupRuns               BackupRun[]
+  reportTemplate           ReportTemplate?
+  reports                  Report[]
+  reportSchedules          ReportSchedule[]
+  remoteSessions           RemoteSession[]
+  auditLogs                AuditLog[]
+  kbArticles               KbArticle[]
+  ssoConfig                SsoConfig?
+  retentionPolicy          DataRetentionPolicy?
+  enrollmentTokens         EnrollmentToken[]
   credentialRotationEvents CredentialRotationEvent[]
+  invitations              OrganizationInvitation[]
 }
 
 model User {
@@ -88,10 +97,54 @@ model User {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id])
 
-  role          Role           @default(Viewer)
+  role          Role                 @default(Viewer)
   refreshTokens RefreshToken[]
+  memberships   OrganizationMember[]
 
   @@unique([orgId, email])
+}
+
+model OrganizationMember {
+  id        String   @id @default(uuid())
+  userId    String
+  orgId     String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([userId])
+  @@index([orgId])
+}
+
+model OrganizationInvitation {
+  id              String           @id @default(uuid())
+  organizationId  String
+  // Normalized lower-case email the invitation is bound to. Email ownership is
+  // enforced at acceptance (authenticated user's email must match).
+  email           String
+  role            Role
+  // SHA-256 hash of the raw invitation token. The raw token is never stored.
+  tokenHash       String           @unique
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime
+  invitedByUserId String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  acceptedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // At most one PENDING invitation per (organization, email). Enforced by the
+  // partial unique index added in the migration (Prisma schema cannot express
+  // partial indexes); historical ACCEPTED/REVOKED/EXPIRED rows are unconstrained.
+  @@index([organizationId])
+  @@index([email])
+  @@index([organizationId, status])
+  @@index([expiresAt])
 }
 
 model RefreshToken {
@@ -106,40 +159,40 @@ model RefreshToken {
 }
 
 model Device {
-  id                 String   @id @default(uuid())
-  orgId              String
-  name               String
-  hostname           String?
-  os                 String?
-  osVersion          String?
-  cpuModel           String?
-  cpuCores           Int?
-  cpuLogical         Int?
-  ramTotal           BigInt?
-  gpuInfo            String?
-  diskTotal          BigInt?
-  isLaptop           Boolean  @default(false)
-  inactive           Boolean  @default(false)
-  registeredAt       DateTime @default(now())
-  lastSeenAt         DateTime @default(now())
-  deviceToken        String   @unique
-  metadata           Json?
+  id                  String   @id @default(uuid())
+  orgId               String
+  name                String
+  hostname            String?
+  os                  String?
+  osVersion           String?
+  cpuModel            String?
+  cpuCores            Int?
+  cpuLogical          Int?
+  ramTotal            BigInt?
+  gpuInfo             String?
+  diskTotal           BigInt?
+  isLaptop            Boolean  @default(false)
+  inactive            Boolean  @default(false)
+  registeredAt        DateTime @default(now())
+  lastSeenAt          DateTime @default(now())
+  deviceToken         String   @unique
+  metadata            Json?
   identityFingerprint String?
-  installationId     String?
-  agentVersion       String?
-  identityVersion    Int      @default(1)
-  credentialVersion  Int      @default(1)
-  lastRegisteredAt   DateTime @default(now())
-  deviceTokenHash    String?  @unique
+  installationId      String?
+  agentVersion        String?
+  identityVersion     Int      @default(1)
+  credentialVersion   Int      @default(1)
+  lastRegisteredAt    DateTime @default(now())
+  deviceTokenHash     String?  @unique
 
-  org              Organization        @relation(fields: [orgId], references: [id])
-  metrics          DeviceMetric[]
-  scores           DeviceHealthScore[]
-  alerts           Alert[]
-  conversations    AiConversation[]
-  securityScans    SecurityScan[]
-  securityFindings SecurityFinding[]
-  securityScores   SecurityScore[]
+  org                 Organization              @relation(fields: [orgId], references: [id])
+  metrics             DeviceMetric[]
+  scores              DeviceHealthScore[]
+  alerts              Alert[]
+  conversations       AiConversation[]
+  securityScans       SecurityScan[]
+  securityFindings    SecurityFinding[]
+  securityScores      SecurityScore[]
   credentialRotations CredentialRotationEvent[]
 
   @@unique([orgId, identityFingerprint], name: "unique_identity_per_org")
@@ -196,6 +249,9 @@ model AlertRule {
   orgId           String
   name            String
   description     String?
+  // kind: "metric" (evaluated against telemetry metrics) or "presence"
+  // (evaluated against device heartbeat freshness by the monitoring sweep).
+  kind            String   @default("metric")
   metricName      String
   threshold       Float
   operator        String   @default("gt")
@@ -222,15 +278,30 @@ model Alert {
   threshold      Float
   severity       String
   message        String
+  // Lifecycle status: OPEN -> ACKNOWLEDGED -> RESOLVED.  RESOLVED is reached
+  // automatically when the triggering condition clears or manually via the
+  // resolve endpoint.  Backed by activeKey for DB-level one-open-alert-per
+  // (org, device, rule) dedup.
+  status         String    @default("OPEN")
+  // Source of the alert: "metric", "presence", or "security".
+  source         String    @default("metric")
+  // Set to the latest detected timestamp while the alert is OPEN and reset to
+  // NULL when it is RESOLVED.  A non-null value is unique so at most one OPEN
+  // alert can exist per (alertRuleId, deviceId) within an org.
+  activeKey      String?   @unique
+  // Most recent time the breach condition was observed while the alert is OPEN.
+  lastDetectedAt DateTime?
   acknowledgedAt DateTime?
   resolvedAt     DateTime?
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   org       Organization @relation(fields: [orgId], references: [id])
   alertRule AlertRule    @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
   device    Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([orgId, createdAt])
+  @@index([orgId, status])
   @@index([alertRuleId])
   @@index([deviceId])
 }
@@ -674,13 +745,13 @@ model RemoteSession {
 model SsoConfig {
   id                    String   @id @default(uuid())
   orgId                 String   @unique
-  provider              String   // "saml" | "oidc"
-  issuer                String?  // IdP entity ID / issuer URL
-  entryPoint            String?  // SSO endpoint URL
-  certificate           String?  // IdP public cert (SAML) / JWKS URL (OIDC)
-  clientId              String?  // OIDC client ID
-  clientSecretEncrypted String?  // OIDC client secret (AES-256-GCM encrypted)
-  attributeMapping      Json?    // { "email": "...", "displayName": "...", "role": "..." }
+  provider              String // "saml" | "oidc"
+  issuer                String? // IdP entity ID / issuer URL
+  entryPoint            String? // SSO endpoint URL
+  certificate           String? // IdP public cert (SAML) / JWKS URL (OIDC)
+  clientId              String? // OIDC client ID
+  clientSecretEncrypted String? // OIDC client secret (AES-256-GCM encrypted)
+  attributeMapping      Json? // { "email": "...", "displayName": "...", "role": "..." }
   isEnabled             Boolean  @default(false)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -693,11 +764,11 @@ model SsoConfig {
 model DataRetentionPolicy {
   id                        String   @id @default(uuid())
   orgId                     String   @unique
-  metricsRetentionDays      Int      @default(90)   // DeviceMetric, DeviceHealthScore
-  recordingsRetentionDays   Int      @default(365)  // RemoteSession recordings
-  auditRetentionDays        Int      @default(730)  // AuditLog entries
-  securityScanRetentionDays Int      @default(365)  // SecurityScan, SecurityFinding
-  backupRetentionDays       Int      @default(90)   // BackupRun records
+  metricsRetentionDays      Int      @default(90) // DeviceMetric, DeviceHealthScore
+  recordingsRetentionDays   Int      @default(365) // RemoteSession recordings
+  auditRetentionDays        Int      @default(730) // AuditLog entries
+  securityScanRetentionDays Int      @default(365) // SecurityScan, SecurityFinding
+  backupRetentionDays       Int      @default(90) // BackupRun records
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
@@ -761,15 +832,15 @@ model KbEmbedding {
 }
 
 model EnrollmentToken {
-  id           String   @id @default(uuid())
-  orgId        String
-  tokenHash    String   @unique
-  label        String?
-  maxUses      Int      @default(1)
-  useCount     Int      @default(0)
-  expiresAt    DateTime?
-  revokedAt    DateTime?
-  createdAt    DateTime @default(now())
+  id              String    @id @default(uuid())
+  orgId           String
+  tokenHash       String    @unique
+  label           String?
+  maxUses         Int       @default(1)
+  useCount        Int       @default(0)
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
   createdByUserId String?
 
   org Organization @relation(fields: [orgId], references: [id])
