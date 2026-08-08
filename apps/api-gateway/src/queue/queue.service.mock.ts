@@ -44,6 +44,10 @@ export class MockQueueService implements IQueueService {
     this.jobs.push({ type: 'kb_embedding', data });
   }
 
+  async addPresenceSweep(data: { allOrgs: boolean; scheduledAt?: string }): Promise<void> {
+    this.jobs.push({ type: 'presence_sweep', data });
+  }
+
   async getQueueDepth(name: QueueName): Promise<number> {
     return 0;
   }

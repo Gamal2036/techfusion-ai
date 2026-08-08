@@ -96,10 +96,34 @@ export class EnrollmentService {
       throw new ForbiddenException('Enrollment token has been fully used');
     }
 
-    await this.prisma.enrollmentToken.update({
-      where: { id: record.id },
+    // Consumption is a single conditional UPDATE so the lifecycle guards
+    // (not revoked, not expired, below maxUses) are re-asserted atomically with
+    // the increment. Two concurrent consumers of the same single-use token are
+    // serialized by the row lock on the UPDATE: exactly one request affects a
+    // row, the other matches zero rows and is rejected below.
+    const consumed = await this.prisma.enrollmentToken.updateMany({
+      where: {
+        tokenHash,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        useCount: { lt: record.maxUses },
+      },
       data: { useCount: { increment: 1 } },
     });
+
+    if (consumed.count !== 1) {
+      const current = await this.prisma.enrollmentToken.findUnique({
+        where: { tokenHash },
+        select: { revokedAt: true, expiresAt: true },
+      });
+      if (current?.revokedAt) {
+        throw new ForbiddenException('Enrollment token has been revoked');
+      }
+      if (current?.expiresAt && current.expiresAt < new Date()) {
+        throw new ForbiddenException('Enrollment token has expired');
+      }
+      throw new ForbiddenException('Enrollment token has been fully used');
+    }
 
     await this.audit.log({
       orgId: record.orgId,

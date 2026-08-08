@@ -14,6 +14,7 @@ export interface IQueueService {
   addSecurityFindingAlert(data: { findingId: string; orgId: string; deviceId: string; severity: string; finding: string }): Promise<void>;
   addRetentionEnforce(data: { orgId?: string; allOrgs: boolean; requestedBy?: string }): Promise<void>;
   addKbEmbedding(data: { orgId: string; articleId: string }): Promise<void>;
+  addPresenceSweep(data: { allOrgs: boolean; scheduledAt?: string }): Promise<void>;
   getQueueDepth(name: QueueName): Promise<number>;
   getAllQueueDepths(): Promise<Record<string, number>>;
 }
@@ -228,6 +229,20 @@ export class QueueService implements IQueueService, OnModuleDestroy {
       jobId: `kb-embed-${data.articleId}`,
     });
     this.logger.log(`KB embedding job added for article ${data.articleId}`);
+  }
+
+  async addPresenceSweep(data: { allOrgs: boolean; scheduledAt?: string }): Promise<void> {
+    const queue = this.getQueue(QUEUE_NAMES.MONITORING);
+    const enriched = this.attachCorrelation(data);
+    const minuteKey = new Date().toISOString().slice(0, 16).replace(':', '-');
+    await queue.add(JOB_NAMES.MONITORING.PRESENCE_SWEEP, enriched, {
+      ...DEFAULT_JOB_OPTIONS,
+      priority: 10,
+      jobId: `presence-sweep-${minuteKey}`,
+      removeOnComplete: { count: 50 },
+      removeOnFail: { count: 20 },
+    });
+    this.logger.log(`Presence sweep job added (allOrgs: ${data.allOrgs})`);
   }
 
   async getQueueDepth(name: QueueName): Promise<number> {

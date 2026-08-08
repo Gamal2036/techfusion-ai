@@ -458,7 +458,7 @@ impl Agent {
 
         match self
             .client
-            .get_pending_security_scans(&self.device_id)
+            .get_pending_security_scans(&self.device_token, &self.device_id)
             .await
         {
             Ok(scans) => {
@@ -475,7 +475,11 @@ impl Agent {
                             start.elapsed()
                         );
 
-                        match self.client.complete_security_scan(scan_id, &findings).await {
+                        match self
+                            .client
+                            .complete_security_scan(&self.device_token, scan_id, &findings)
+                            .await
+                        {
                             Ok(()) => {
                                 tracing::info!("Security scan {} completed successfully", scan_id);
                             }
@@ -537,7 +541,7 @@ impl Agent {
 
         match self
             .client
-            .get_pending_discovery_commands(&self.device_id)
+            .get_pending_discovery_commands(&self.device_token, &self.device_id)
             .await
         {
             Ok(commands) => {
@@ -550,7 +554,7 @@ impl Agent {
 
                         if let Err(e) = self
                             .client
-                            .update_discovery_status(scan_id, "running")
+                            .update_discovery_status(&self.device_token, scan_id, "running")
                             .await
                         {
                             tracing::warn!(
@@ -581,7 +585,11 @@ impl Agent {
 
                                 match self
                                     .client
-                                    .report_discovery_result(&scan_id_owned, &result)
+                                    .report_discovery_result(
+                                        &self.device_token,
+                                        &scan_id_owned,
+                                        &result,
+                                    )
                                     .await
                                 {
                                     Ok(()) => {
@@ -599,6 +607,7 @@ impl Agent {
                                         let _ = self
                                             .client
                                             .report_discovery_error_with_status(
+                                                &self.device_token,
                                                 &scan_id_owned,
                                                 &format!("Failed to POST result: {}", e),
                                             )
@@ -611,7 +620,11 @@ impl Agent {
                                 tracing::error!("[DISCOVERY] {}", error_msg);
                                 let _ = self
                                     .client
-                                    .report_discovery_error_with_status(&scan_id_owned, &error_msg)
+                                    .report_discovery_error_with_status(
+                                        &self.device_token,
+                                        &scan_id_owned,
+                                        &error_msg,
+                                    )
                                     .await;
                             }
                             Err(_timeout) => {
@@ -622,7 +635,11 @@ impl Agent {
                                 tracing::warn!("[DISCOVERY] Scan {}: {}", scan_id_owned, error_msg);
                                 let _ = self
                                     .client
-                                    .report_discovery_error_with_status(&scan_id_owned, &error_msg)
+                                    .report_discovery_error_with_status(
+                                        &self.device_token,
+                                        &scan_id_owned,
+                                        &error_msg,
+                                    )
                                     .await;
                             }
                         }

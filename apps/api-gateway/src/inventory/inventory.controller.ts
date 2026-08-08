@@ -1,14 +1,20 @@
-import { Controller, Get, Post, Query, Body, Req, Param, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Query, Body, Req, Param, UseGuards, UnauthorizedException, ForbiddenException, Logger } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { InventoryService } from './inventory.service';
 import { QueueService } from '../queue/queue.service';
 import { DevicesService } from '../devices/devices.service';
+import { DeviceTokenGuard } from '../devices/device-token.guard';
 import { Public } from '../common/public.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
+import { createStructuredLogger } from '../common/structured-logger';
 import { throttle } from '../config/rate-limits';
 import * as crypto from 'crypto';
 
 @Controller('inventory')
 export class InventoryController {
+  private readonly logger = createStructuredLogger(InventoryController.name);
+
   constructor(
     private inventoryService: InventoryService,
     private queueService: QueueService,
@@ -16,65 +22,71 @@ export class InventoryController {
   ) {}
 
   @Public()
+  @UseGuards(DeviceTokenGuard)
   @Throttle(throttle(20, 60000))
   @Post('report')
   async ingestReport(@Req() req: any, @Body() body: any) {
-    try {
-      let orgId = req.headers['x-org-id'] || body?.orgId;
-      let deviceId = body.deviceId || 'unknown';
+    const device = req.device;
+    const orgId = device.orgId;
+    const deviceId = device.id;
 
-      const authHeader = req.headers['authorization'] as string | undefined;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.slice(7);
-        const device = await this.devicesService.findByToken(token);
-        if (device) {
-          orgId = device.orgId;
-          deviceId = device.id;
-        }
-      }
-
-      if (!orgId) {
-        orgId = '00000000-0000-0000-0000-000000000000';
-      }
-
-      const drivers = body.drivers || [];
-      const software = body.software || [];
-      const reportType = body.reportType || 'full';
-
-      const payloadHash = crypto
-        .createHash('sha256')
-        .update(JSON.stringify({ orgId, deviceId, drivers, software }))
-        .digest('hex')
-        .slice(0, 16);
-
-      console.log(`[INVENTORY] Report received: device=${deviceId} org=${orgId} drivers=${drivers.length} software=${software.length}`);
-
-      await this.queueService.addInventoryIngest({
+    const clientOrgId = req.headers['x-org-id'] || body?.orgId;
+    if (clientOrgId && clientOrgId !== orgId) {
+      this.logger.warn('tenant_ingestion_denied', {
+        event: 'tenant_ingestion_denied',
         orgId,
         deviceId,
-        drivers,
-        software,
-        reportType,
-        reportVersion: body.reportVersion || '1.0',
-        collectedAt: body.collectedAt || new Date().toISOString(),
-        payloadHash,
+        reason: 'client_org_id_mismatch',
+        clientOrgId,
       });
+      throw new ForbiddenException('Organization context mismatch');
+    }
 
-      await this.inventoryService.clearPendingInventory(deviceId);
-
-      return {
-        status: 'accepted',
-        message: 'Inventory report queued for processing',
+    if (body.deviceId && body.deviceId !== deviceId) {
+      this.logger.warn('device_org_mismatch', {
+        event: 'device_org_mismatch',
         orgId,
         deviceId,
-        payloadHash,
-      };
-    } catch (err) {
-      console.error('[INVENTORY] Error:', err);
-      throw err;
+        claimedDeviceId: body.deviceId,
+      });
+      throw new ForbiddenException('Device ownership mismatch');
     }
+
+    const drivers = body.drivers || [];
+    const software = body.software || [];
+    const reportType = body.reportType || 'full';
+
+    const payloadHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify({ orgId, deviceId, drivers, software }))
+      .digest('hex')
+      .slice(0, 16);
+
+    this.logger.log(`[INVENTORY] Report received: device=${deviceId} org=${orgId} drivers=${drivers.length} software=${software.length}`);
+
+    await this.queueService.addInventoryIngest({
+      orgId,
+      deviceId,
+      drivers,
+      software,
+      reportType,
+      reportVersion: body.reportVersion || '1.0',
+      collectedAt: body.collectedAt || new Date().toISOString(),
+      payloadHash,
+    });
+
+    await this.inventoryService.clearPendingInventory(deviceId);
+
+    return {
+      status: 'accepted',
+      message: 'Inventory report queued for processing',
+      orgId,
+      deviceId,
+      payloadHash,
+    };
   }
 
+  @RequirePermissions(Permission.INVENTORY_VIEW)
   @Get('drivers')
   async listDrivers(@Req() req: any, @Query('status') status?: string) {
     const orgId = req.user?.orgId;
@@ -82,6 +94,7 @@ export class InventoryController {
     return this.inventoryService.getDrivers(orgId, status);
   }
 
+  @RequirePermissions(Permission.INVENTORY_VIEW)
   @Get('software')
   async listSoftware(@Req() req: any, @Query('source') source?: string) {
     const orgId = req.user?.orgId;
@@ -89,11 +102,13 @@ export class InventoryController {
     return this.inventoryService.getSoftware(orgId, source);
   }
 
+  @RequirePermissions(Permission.INVENTORY_VIEW)
   @Get('catalog')
   async getCatalog() {
     return this.inventoryService.getCatalog();
   }
 
+  @RequirePermissions(Permission.DEVICES_MANAGE)
   @Post('refresh')
   async refreshInventory(@Req() req: any, @Body() body: { deviceId?: string }) {
     const orgId = req.user?.orgId;
@@ -130,16 +145,12 @@ export class InventoryController {
   }
 
   @Public()
+  @UseGuards(DeviceTokenGuard)
   @Throttle(throttle(30, 60000))
   @Get('pending/:deviceId')
   async checkPendingInventory(@Req() req: any, @Param('deviceId') deviceId: string) {
-    const token = req.headers?.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return { pending: false };
-    }
-
-    const device = await this.devicesService.findByToken(token);
-    if (!device || device.id !== deviceId) {
+    const device = req.device;
+    if (device.id !== deviceId) {
       throw new UnauthorizedException('Invalid device token');
     }
 
@@ -148,16 +159,12 @@ export class InventoryController {
   }
 
   @Public()
+  @UseGuards(DeviceTokenGuard)
   @Throttle(throttle(30, 60000))
   @Post('pending/:deviceId/clear')
   async clearPendingInventory(@Req() req: any, @Param('deviceId') deviceId: string) {
-    const token = req.headers?.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return { cleared: false };
-    }
-
-    const device = await this.devicesService.findByToken(token);
-    if (!device || device.id !== deviceId) {
+    const device = req.device;
+    if (device.id !== deviceId) {
       throw new UnauthorizedException('Invalid device token');
     }
 

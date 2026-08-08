@@ -20,6 +20,11 @@ export interface LogContext {
   jobId?: string;
   errorType?: string;
   errorMessage?: string;
+  event?: string;
+  reason?: string;
+  clientOrgId?: string;
+  claimedDeviceId?: string;
+  scanId?: string;
 }
 
 export interface StructuredLogEntry {
@@ -44,6 +49,11 @@ export interface StructuredLogEntry {
   jobId?: string;
   errorType?: string;
   errorMessage?: string;
+  event?: string;
+  reason?: string;
+  clientOrgId?: string;
+  claimedDeviceId?: string;
+  scanId?: string;
 }
 
 const SENSITIVE_PATTERNS = [
@@ -136,6 +146,11 @@ function createLogEntry(level: string, message: string, context?: string, extra?
   if (extra?.jobId) entry.jobId = extra.jobId;
   if (extra?.errorType) entry.errorType = extra.errorType;
   if (extra?.errorMessage) entry.errorMessage = extra.errorMessage;
+  if (extra?.event) entry.event = extra.event;
+  if (extra?.reason) entry.reason = extra.reason;
+  if (extra?.clientOrgId) entry.clientOrgId = extra.clientOrgId;
+  if (extra?.claimedDeviceId) entry.claimedDeviceId = extra.claimedDeviceId;
+  if (extra?.scanId) entry.scanId = extra.scanId;
   return entry;
 }
 

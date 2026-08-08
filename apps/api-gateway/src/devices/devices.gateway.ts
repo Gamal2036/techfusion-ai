@@ -10,6 +10,7 @@ import { AlertsGateway } from '../alerts/alerts.gateway';
 import { createWsAuthMiddleware } from '../common/ws-auth.middleware';
 import { getWsCorsOrigins } from '../common/ws-cors';
 import { Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { trackWsConnection, trackWsDisconnection, trackWsAuthFailure } from '../metrics.interceptor';
 
 @WebSocketGateway({
@@ -23,11 +24,14 @@ export class DevicesGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   private orgRooms = new Map<string, Set<string>>();
   private readonly logger = new Logger(DevicesGateway.name);
 
-  constructor(private alertsGateway: AlertsGateway) {}
+  constructor(
+    private alertsGateway: AlertsGateway,
+    private prisma: PrismaService,
+  ) {}
 
   afterInit(server: Server) {
     this.alertsGateway.setServer(server);
-    server.use(createWsAuthMiddleware());
+    server.use(createWsAuthMiddleware(this.prisma));
   }
 
   handleConnection(client: Socket) {

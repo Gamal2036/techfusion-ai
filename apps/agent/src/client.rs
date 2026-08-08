@@ -474,12 +474,14 @@ impl ApiClient {
 
     pub async fn get_pending_security_scans(
         &self,
+        device_token: &str,
         device_id: &str,
     ) -> Result<Vec<serde_json::Value>, ClientError> {
         let url = format!("{}/security/pending/{}", self.api_url, device_id);
         let resp = self
             .client
             .get(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .send()
             .await
             .map_err(|e| ClientError::Network(e.to_string()))?;
@@ -497,6 +499,7 @@ impl ApiClient {
 
     pub async fn complete_security_scan(
         &self,
+        device_token: &str,
         scan_id: &str,
         findings: &[SecurityFinding],
     ) -> Result<(), ClientError> {
@@ -509,6 +512,7 @@ impl ApiClient {
         let resp = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .json(&payload)
             .send()
             .await
@@ -534,6 +538,7 @@ impl ApiClient {
 
     pub async fn get_pending_discovery_commands(
         &self,
+        device_token: &str,
         device_id: &str,
     ) -> Result<Vec<serde_json::Value>, ClientError> {
         let url = format!(
@@ -543,6 +548,7 @@ impl ApiClient {
         let resp = self
             .client
             .get(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .send()
             .await
             .map_err(|e| ClientError::Network(e.to_string()))?;
@@ -560,6 +566,7 @@ impl ApiClient {
 
     pub async fn report_discovery_result(
         &self,
+        device_token: &str,
         scan_id: &str,
         result: &crate::network_discovery::DiscoveryResult,
     ) -> Result<(), ClientError> {
@@ -579,6 +586,7 @@ impl ApiClient {
         let resp = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .json(&payload)
             .send()
             .await
@@ -608,6 +616,7 @@ impl ApiClient {
 
     pub async fn update_discovery_status(
         &self,
+        device_token: &str,
         scan_id: &str,
         status: &str,
     ) -> Result<(), ClientError> {
@@ -620,6 +629,7 @@ impl ApiClient {
         let resp = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .json(&payload)
             .send()
             .await
@@ -638,6 +648,7 @@ impl ApiClient {
 
     pub async fn report_discovery_error_with_status(
         &self,
+        device_token: &str,
         scan_id: &str,
         error: &str,
     ) -> Result<(), ClientError> {
@@ -653,6 +664,7 @@ impl ApiClient {
         let resp = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", device_token))
             .json(&payload)
             .send()
             .await
@@ -667,10 +679,11 @@ impl ApiClient {
 
     pub async fn report_discovery_error(
         &self,
+        device_token: &str,
         scan_id: &str,
         error: &str,
     ) -> Result<(), ClientError> {
-        self.report_discovery_error_with_status(scan_id, error)
+        self.report_discovery_error_with_status(device_token, scan_id, error)
             .await
     }
 

@@ -51,6 +51,7 @@ describe('Authentication & Session Recovery', () => {
         isMfaEnabled: mfaEnabled,
       },
     });
+    await prisma.organizationMember.create({ data: { userId: user.id, orgId: org.id, role } });
     return { org, user };
   }
 

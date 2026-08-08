@@ -1,10 +1,12 @@
 import { Socket } from 'socket.io';
-import * as jwt from 'jsonwebtoken';
+import { PrismaService } from '../prisma/prisma.service';
+import { verifyAndValidateJwt, resolveMembershipUser } from './membership-auth';
+import { Role } from '@prisma/client';
 
 export interface WsUser {
   userId: string;
   orgId: string;
-  role: string;
+  role: Role;
 }
 
 declare module 'socket.io' {
@@ -13,32 +15,29 @@ declare module 'socket.io' {
   }
 }
 
-export function createWsAuthMiddleware() {
+export function createWsAuthMiddleware(prisma: PrismaService) {
   return (socket: Socket, next: (err?: Error) => void) => {
     const token = extractToken(socket);
     if (!token) {
       return next(new Error('Authentication required'));
     }
 
-    const secret = process.env.JWT_SECRET;
-    if (!secret) {
-      return next(new Error('Server configuration error'));
-    }
-
     try {
-      const payload = jwt.verify(token, secret) as jwt.JwtPayload;
-      if (!payload.sub || !payload.orgId || !payload.role) {
-        return next(new Error('Invalid token payload'));
-      }
-
-      socket.data.user = {
-        userId: payload.sub,
-        orgId: payload.orgId,
-        role: payload.role as string,
-      };
-      next();
-    } catch {
-      return next(new Error('Invalid or expired token'));
+      const payload = verifyAndValidateJwt(token);
+      resolveMembershipUser(prisma, payload)
+        .then((user) => {
+          socket.data.user = {
+            userId: user.sub,
+            orgId: user.orgId,
+            role: user.role,
+          };
+          next();
+        })
+        .catch((err: unknown) => {
+          next(err instanceof Error ? err : new Error('Invalid or expired token'));
+        });
+    } catch (err) {
+      return next(err instanceof Error ? err : new Error('Invalid or expired token'));
     }
   };
 }

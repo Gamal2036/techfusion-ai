@@ -101,12 +101,24 @@ export class NetworkService {
     return scan;
   }
 
-  async getPendingDiscoveryCommands(deviceId: string) {
+  async getPendingDiscoveryCommands(orgId: string, deviceId: string) {
     return this.prisma.networkScan.findMany({
       where: {
         status: 'pending',
+        orgId,
+        OR: [{ deviceId }, { deviceId: null }],
       },
       orderBy: { startedAt: 'asc' },
+    });
+  }
+
+  async getScanForDevice(scanId: string, orgId: string, deviceId: string) {
+    return this.prisma.networkScan.findFirst({
+      where: {
+        id: scanId,
+        orgId,
+        OR: [{ deviceId }, { deviceId: null }],
+      },
     });
   }
 

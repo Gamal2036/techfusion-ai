@@ -69,6 +69,15 @@ export function validateEnvironment(): void {
         '[ENV VALIDATION] WS_ALLOWED_ORIGINS must be set in production.',
       );
     }
+
+    // Human-facing base URL. Invitation links and future email links must
+    // resolve to the web app, not the API gateway.
+    const webAppUrl = process.env.WEB_APP_URL;
+    if (!webAppUrl || webAppUrl.trim() === '') {
+      throw new Error(
+        '[ENV VALIDATION] WEB_APP_URL must be set in production (e.g. https://app.example.com).',
+      );
+    }
   } else {
     optionalEnv('AI_ENCRYPTION_KEY', 'dev-key-not-for-production');
     optionalEnv('REPORT_URL_SECRET', 'dev-key-not-for-production');

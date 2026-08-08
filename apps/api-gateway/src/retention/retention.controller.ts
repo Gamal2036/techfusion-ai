@@ -1,10 +1,11 @@
 import { Controller, Get, Post, Body, Req } from '@nestjs/common';
 import { RetentionService } from './retention.service';
 import { QueueService } from '../queue/queue.service';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller('admin/retention')
-@Roles('Owner', 'Admin')
+@RequirePermissions(Permission.ORGANIZATION_SETTINGS)
 export class RetentionController {
   constructor(
     private retentionService: RetentionService,
@@ -45,8 +46,8 @@ export class RetentionController {
     };
   }
 
+  @RequirePermissions(Permission.ORGANIZATION_UPDATE)
   @Post('enforce-all')
-  @Roles('Owner')
   async enforceAll(@Req() req: any) {
     await this.queueService.addRetentionEnforce({
       allOrgs: true,

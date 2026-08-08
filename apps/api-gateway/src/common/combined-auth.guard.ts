@@ -1,14 +1,24 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import * as jwt from 'jsonwebtoken';
 import { IS_PUBLIC_KEY } from './public.decorator';
-import { ROLES_KEY } from './roles.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+import { verifyAndValidateJwt, resolveMembershipUser } from './membership-auth';
 
+/**
+ * Global authentication guard (ORG-01A3). Verifies the JWT and resolves the
+ * authenticated principal from the authoritative OrganizationMember row; the
+ * membership role/org are copied onto `req.user` live. Role-based capability
+ * enforcement is delegated to PermissionsGuard (V1-RBAC-01) which runs after
+ * this guard and never re-queries the database.
+ */
 @Injectable()
 export class CombinedAuthGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private prisma: PrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -23,37 +33,10 @@ export class CombinedAuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing or invalid authorization header');
     }
     const token = authHeader.slice(7);
-    let user: any;
-    try {
-      const secret = process.env.JWT_SECRET;
-      if (!secret) {
-        throw new UnauthorizedException('JWT_SECRET environment variable is not configured');
-      }
-      user = jwt.verify(token, secret);
-      request.user = user;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
 
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
-    if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
-    }
-
-    const roleHierarchy: Record<string, number> = {
-      Owner: 4,
-      Admin: 3,
-      Technician: 2,
-      Viewer: 1,
-    };
-    const userLevel = roleHierarchy[user.role] ?? 0;
-    const minLevel = Math.min(...requiredRoles.map((r) => roleHierarchy[r] ?? 0));
-    if (userLevel < minLevel) {
-      throw new ForbiddenException('Insufficient role permissions');
-    }
+    const payload = verifyAndValidateJwt(token);
+    const user = await resolveMembershipUser(this.prisma, payload);
+    request.user = user;
     return true;
   }
 }

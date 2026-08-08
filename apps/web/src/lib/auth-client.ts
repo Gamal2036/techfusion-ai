@@ -10,7 +10,33 @@ export interface JwtPayload {
   exp?: number;
 }
 
-let refreshPromise: Promise<boolean> | null = null;
+export type RefreshOutcome = 'ok' | 'invalid' | 'unavailable';
+
+let refreshPromise: Promise<RefreshOutcome> | null = null;
+
+export type AuthEvent =
+  | 'auth_access_expired'
+  | 'auth_refresh_started'
+  | 'auth_refresh_succeeded'
+  | 'auth_refresh_failed'
+  | 'auth_session_cleared';
+
+/**
+ * Safe auth diagnostics: dispatches a DOM CustomEvent and (in non-production)
+ * a debug log. Never includes token values — only event name and safe reason.
+ */
+function emitAuthEvent(event: AuthEvent, detail?: { reason?: string }): void {
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug(`[auth] ${event}`, detail ?? {});
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('techfusion:auth-event', {
+        detail: { event, ...(detail ?? {}) },
+      }),
+    );
+  }
+}
 
 export function getAccessToken(): string | null {
   try {
@@ -72,28 +98,57 @@ export function getApiUrl(): string {
   return API_URL;
 }
 
-async function performRefresh(): Promise<boolean> {
+async function performRefresh(): Promise<RefreshOutcome> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
+  if (!refreshToken) return 'invalid';
 
+  emitAuthEvent('auth_refresh_started');
+
+  let res: Response;
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
+    res = await fetch(`${API_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     });
-
-    if (!res.ok) return false;
-
-    const data = await res.json();
-    setTokens(data.accessToken, data.refreshToken);
-    return true;
   } catch {
-    return false;
+    // Network failure / API unreachable: the refresh session may still be
+    // valid. Never classify a transient outage as an invalid session.
+    emitAuthEvent('auth_refresh_failed', { reason: 'unavailable' });
+    return 'unavailable';
   }
+
+  if (res.status === 401 || res.status === 403) {
+    emitAuthEvent('auth_refresh_failed', { reason: 'invalid' });
+    return 'invalid';
+  }
+  if (res.status === 429 || res.status >= 500) {
+    emitAuthEvent('auth_refresh_failed', { reason: 'unavailable' });
+    return 'unavailable';
+  }
+  if (!res.ok) {
+    emitAuthEvent('auth_refresh_failed', { reason: 'invalid' });
+    return 'invalid';
+  }
+
+  let data: { accessToken?: unknown; refreshToken?: unknown };
+  try {
+    data = await res.json();
+  } catch {
+    emitAuthEvent('auth_refresh_failed', { reason: 'invalid' });
+    return 'invalid';
+  }
+  if (typeof data.accessToken !== 'string' || typeof data.refreshToken !== 'string') {
+    emitAuthEvent('auth_refresh_failed', { reason: 'invalid' });
+    return 'invalid';
+  }
+
+  setTokens(data.accessToken, data.refreshToken);
+  emitAuthEvent('auth_refresh_succeeded');
+  return 'ok';
 }
 
-export async function refreshSession(): Promise<boolean> {
+export function refreshSession(): Promise<RefreshOutcome> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = performRefresh().finally(() => {
@@ -101,6 +156,32 @@ export async function refreshSession(): Promise<boolean> {
   });
 
   return refreshPromise;
+}
+
+/**
+ * Destroys the local session after a definitively invalid refresh outcome:
+ * clears tokens and disconnects authenticated sockets. The caller decides how
+ * to redirect. Explicit logout should use `logout()` instead.
+ */
+export async function invalidateSession(): Promise<void> {
+  emitAuthEvent('auth_session_cleared');
+  clearTokens();
+  try {
+    const { disconnectAll } = await import('./socket-client');
+    disconnectAll();
+  } catch {
+    // socket-client may not be loaded yet
+  }
+}
+
+function redirectToLogin(): void {
+  if (
+    typeof window !== 'undefined' &&
+    !window.location.pathname.startsWith('/login') &&
+    !window.location.pathname.startsWith('/signup')
+  ) {
+    window.location.href = '/login';
+  }
 }
 
 export async function apiFetch(
@@ -113,21 +194,35 @@ export async function apiFetch(
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  const res = await fetch(url, { ...options, headers });
+  let res = await fetch(url, { ...options, headers });
 
-  if (res.status === 401 && getRefreshToken()) {
-    const refreshed = await refreshSession();
-    if (refreshed) {
+  if (res.status === 401) {
+    emitAuthEvent('auth_access_expired');
+    if (!getRefreshToken()) return res;
+
+    const outcome = await refreshSession();
+    if (outcome === 'ok') {
       const retryHeaders = {
         ...getAuthHeaders(),
         ...((options.headers as Record<string, string>) || {}),
       };
-      return fetch(url, { ...options, headers: retryHeaders });
+      res = await fetch(url, { ...options, headers: retryHeaders });
+      if (res.status === 401) {
+        // A fresh token is still rejected: the session is truly invalid.
+        await invalidateSession();
+        redirectToLogin();
+      }
+      return res;
     }
-    clearTokens();
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/signup')) {
-      window.location.href = '/login';
+    if (outcome === 'invalid') {
+      await invalidateSession();
+      redirectToLogin();
+      return res;
     }
+    // 'unavailable' — transient refresh failure. Preserve the session and
+    // return the original 401 to the caller; polling continues and the next
+    // cycle retries the refresh.
+    return res;
   }
 
   return res;

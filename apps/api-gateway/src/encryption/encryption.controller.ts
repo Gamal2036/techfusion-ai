@@ -1,9 +1,10 @@
 import { Controller, Post, Body, Req } from '@nestjs/common';
 import { EncryptionService } from './encryption.service';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller('admin/encryption')
-@Roles('Owner')
+@RequirePermissions(Permission.ORGANIZATION_UPDATE)
 export class EncryptionController {
   constructor(private encryptionService: EncryptionService) {}
 

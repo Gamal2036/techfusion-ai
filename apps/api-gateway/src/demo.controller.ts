@@ -1,21 +1,22 @@
 import { Controller, Get } from '@nestjs/common';
-import { Roles } from './common/roles.decorator';
+import { RequirePermissions } from './common/permissions.decorator';
+import { Permission } from './common/permissions';
 
 @Controller('demo')
 export class DemoController {
-  @Roles('Owner', 'Admin')
+  @RequirePermissions(Permission.MEMBERS_MANAGE)
   @Get('admin')
   adminOnly() {
     return { message: 'Admin or Owner access granted' };
   }
 
-  @Roles('Owner', 'Admin', 'Technician')
+  @RequirePermissions(Permission.SECURITY_SCAN_TRIGGER)
   @Get('technician')
   technicianOnly() {
     return { message: 'Technician or above access granted' };
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get('viewer')
   viewerOnly() {
     return { message: 'Viewer or above access granted' };

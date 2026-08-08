@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Body, Param, Req } from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller('admin')
-@Roles('Owner', 'Admin')
+@RequirePermissions(Permission.ORGANIZATION_SETTINGS)
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
@@ -31,8 +32,8 @@ export class AdminController {
     return this.adminService.getUser(req.user.orgId, userId);
   }
 
+  @RequirePermissions(Permission.MEMBERS_MANAGE)
   @Post('users/:userId/role')
-  @Roles('Owner')
   async updateUserRole(
     @Req() req: any,
     @Param('userId') userId: string,
@@ -41,8 +42,8 @@ export class AdminController {
     return this.adminService.updateUserRole(req.user.orgId, req.user.sub, userId, body.role);
   }
 
+  @RequirePermissions(Permission.MEMBERS_REMOVE)
   @Post('users/:userId/remove')
-  @Roles('Owner')
   async removeUser(@Req() req: any, @Param('userId') userId: string) {
     return this.adminService.removeUser(req.user.orgId, req.user.sub, userId);
   }

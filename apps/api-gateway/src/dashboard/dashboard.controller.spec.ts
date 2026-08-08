@@ -6,6 +6,7 @@ import * as jwt from 'jsonwebtoken';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 import { CombinedAuthGuard } from '../common/combined-auth.guard';
+import { PrismaService } from '../prisma/prisma.service';
 
 const JWT_SECRET = 'dashboard-controller-test-secret';
 
@@ -13,6 +14,19 @@ describe('DashboardController', () => {
   let app: INestApplication;
   const mockService = {
     getSummary: jest.fn(),
+  };
+
+  // Membership is the authority for org access; the guard resolves the token
+  // against this membership row before letting the request through.
+  const mockPrisma = {
+    organizationMember: {
+      findUnique: jest.fn(({ where }: any) => ({
+        id: 'membership-1',
+        userId: where.userId_orgId.userId,
+        orgId: where.userId_orgId.orgId,
+        role: 'Viewer',
+      })),
+    },
   };
 
   const summaryPayload = {
@@ -38,6 +52,7 @@ describe('DashboardController', () => {
       controllers: [DashboardController],
       providers: [
         { provide: DashboardService, useValue: mockService },
+        { provide: PrismaService, useValue: mockPrisma },
         { provide: APP_GUARD, useClass: CombinedAuthGuard },
       ],
     }).compile();

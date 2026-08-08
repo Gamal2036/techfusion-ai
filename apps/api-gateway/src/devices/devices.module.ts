@@ -13,6 +13,6 @@ import { EnrollmentModule } from '../enrollment/enrollment.module';
   imports: [PrismaModule, AlertsModule, QueueModule, EnrollmentModule],
   controllers: [DevicesController],
   providers: [DevicesService, ScoringService, DeviceTokenGuard, DevicesGateway],
-  exports: [DevicesService, ScoringService],
+  exports: [DevicesService, ScoringService, DeviceTokenGuard],
 })
 export class DevicesModule {}

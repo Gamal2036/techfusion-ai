@@ -9,6 +9,7 @@ import { Server, Socket } from 'socket.io';
 import { createWsAuthMiddleware } from '../common/ws-auth.middleware';
 import { getWsCorsOrigins } from '../common/ws-cors';
 import { Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { trackWsConnection, trackWsDisconnection, trackWsAuthFailure } from '../metrics.interceptor';
 
 @WebSocketGateway({
@@ -22,8 +23,10 @@ export class NetworkGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   private orgRooms = new Map<string, Set<string>>();
   private readonly logger = new Logger(NetworkGateway.name);
 
+  constructor(private prisma: PrismaService) {}
+
   afterInit(server: Server) {
-    server.use(createWsAuthMiddleware());
+    server.use(createWsAuthMiddleware(this.prisma));
   }
 
   handleConnection(client: Socket) {

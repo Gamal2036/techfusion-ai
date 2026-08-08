@@ -135,13 +135,25 @@ export class SecurityService {
     return scan;
   }
 
-  async getPendingScansForAgent(deviceId: string) {
+  async getPendingScansForAgent(orgId: string, deviceId: string) {
     return this.prisma.securityScan.findMany({
       where: {
         deviceId,
+        orgId,
         status: 'pending',
       },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async getPendingScanForDevice(scanId: string, orgId: string, deviceId: string) {
+    return this.prisma.securityScan.findFirst({
+      where: {
+        id: scanId,
+        orgId,
+        deviceId,
+        status: { in: ['pending', 'running'] },
+      },
     });
   }
 
@@ -162,11 +174,13 @@ export class SecurityService {
 
   async completePendingScan(
     scanId: string,
+    orgId: string,
+    deviceId: string,
     findings: FindingDto[],
     scoreResult: ScoreResult,
   ) {
     const scan = await this.prisma.securityScan.findFirst({
-      where: { id: scanId, status: { in: ['pending', 'running'] } },
+      where: { id: scanId, orgId, deviceId, status: { in: ['pending', 'running'] } },
     });
 
     if (!scan) {

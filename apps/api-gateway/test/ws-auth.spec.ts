@@ -25,6 +25,23 @@ function createMockSocket(overrides: Partial<{ token: string; headerAuth: string
   return socket;
 }
 
+function createMockPrisma(memberships: Record<string, string>) {
+  return {
+    organizationMember: {
+      findUnique: jest.fn(({ where }: { where: { userId_orgId: { userId: string; orgId: string } } }) => {
+        const role = memberships[where.userId_orgId.userId];
+        if (!role) return null;
+        return {
+          id: `membership-${where.userId_orgId.userId}`,
+          userId: where.userId_orgId.userId,
+          orgId: where.userId_orgId.orgId,
+          role,
+        };
+      }),
+    },
+  };
+}
+
 describe('WebSocket Authentication Middleware', () => {
   let middleware: (socket: MockSocket, next: (err?: Error) => void) => void;
 
@@ -33,7 +50,12 @@ describe('WebSocket Authentication Middleware', () => {
     // Import fresh to pick up env
     jest.resetModules();
     const mod = require('../src/common/ws-auth.middleware');
-    middleware = mod.createWsAuthMiddleware();
+    const prisma = createMockPrisma({
+      'user-1': 'Owner',
+      'user-2': 'Admin',
+      'user-a': 'Owner',
+    });
+    middleware = mod.createWsAuthMiddleware(prisma);
   });
 
   afterAll(() => {
@@ -145,6 +167,34 @@ describe('WebSocket Authentication Middleware', () => {
     middleware(socket, (err) => {
       expect(err).toBeDefined();
       expect(err!.message).toBe('Authentication required');
+      done();
+    });
+  });
+
+  // Test 9: Valid JWT for a user without a membership is rejected
+  it('should reject a valid JWT when no membership exists', (done) => {
+    const token = signToken({ sub: 'unknown-user', orgId: 'org-9', role: 'Owner' });
+    const socket = createMockSocket({ token });
+
+    middleware(socket, (err) => {
+      expect(err).toBeDefined();
+      expect(err!.message).toBe('No active membership for this organization');
+      done();
+    });
+  });
+
+  // Test 10: Membership role is authoritative over the JWT role claim
+  it('should attach the membership role, not the JWT role claim', (done) => {
+    const token = signToken({ sub: 'user-1', orgId: 'org-1', role: 'Viewer' });
+    const socket = createMockSocket({ token });
+
+    middleware(socket, (err) => {
+      expect(err).toBeUndefined();
+      expect(socket.data.user).toEqual({
+        userId: 'user-1',
+        orgId: 'org-1',
+        role: 'Owner',
+      });
       done();
     });
   });

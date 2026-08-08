@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ForbiddenException } from '@nestjs/common';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
 import { QueueService } from '../queue/queue.service';
 import { DevicesService } from '../devices/devices.service';
+import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
 
 describe('InventoryController', () => {
@@ -31,6 +33,8 @@ describe('InventoryController', () => {
       getDrivers: jest.fn().mockResolvedValue([]),
       getSoftware: jest.fn().mockResolvedValue([]),
       getCatalog: jest.fn().mockResolvedValue([]),
+      getPendingInventoryFlag: jest.fn().mockResolvedValue(false),
+      setPendingInventory: jest.fn().mockResolvedValue(undefined),
     };
 
     mockQueueService = {
@@ -43,6 +47,7 @@ describe('InventoryController', () => {
         { provide: InventoryService, useValue: mockInventoryService },
         { provide: QueueService, useValue: mockQueueService },
         { provide: DevicesService, useValue: mockDevicesService },
+        { provide: PrismaService, useValue: {} },
       ],
     }).compile();
 
@@ -50,13 +55,10 @@ describe('InventoryController', () => {
   });
 
   describe('ingestReport', () => {
-    it('accepts inventory report with device token auth via hashed lookup', async () => {
-      mockDevicesService.findByToken.mockResolvedValue(mockDevice);
-
+    it('derives org and device from the authenticated device (request.device)', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer tok-test-123',
-        },
+        device: mockDevice,
+        headers: {},
       } as any;
 
       const body = {
@@ -69,145 +71,94 @@ describe('InventoryController', () => {
       };
 
       const result = await controller.ingestReport(req, body);
-      expect(result).toBeDefined();
       expect(result.status).toBe('accepted');
       expect(result.orgId).toBe('org-001');
-      expect(mockDevicesService.findByToken).toHaveBeenCalledWith('tok-test-123');
+      expect(result.deviceId).toBe('dev-001');
       expect(mockQueueService.addInventoryIngest).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: 'org-001' }),
+        expect.objectContaining({ orgId: 'org-001', deviceId: 'dev-001' }),
       );
-    });
-
-    it('uses x-org-id header when no device token', async () => {
-      const req = {
-        headers: {
-          'x-org-id': 'org-002',
-        },
-      } as any;
-
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('org-002');
       expect(mockDevicesService.findByToken).not.toHaveBeenCalled();
-      expect(mockQueueService.addInventoryIngest).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: 'org-002' }),
-      );
     });
 
-    it('falls back to default org when no auth info', async () => {
-      const req = { headers: {} } as any;
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('00000000-0000-0000-0000-000000000000');
-      expect(mockDevicesService.findByToken).not.toHaveBeenCalled();
-      expect(mockQueueService.addInventoryIngest).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: '00000000-0000-0000-0000-000000000000' }),
-      );
-    });
-
-    it('scopes inventory to device organization via hashed lookup', async () => {
-      mockDevicesService.findByToken.mockResolvedValue({
-        ...mockDevice,
-        orgId: 'org-specific',
-      });
-
+    it('does not trust x-org-id header when it matches (metadata consistency only)', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer tok-test-123',
-        },
+        device: mockDevice,
+        headers: { 'x-org-id': 'org-001' },
       } as any;
 
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('org-specific');
-      expect(mockQueueService.addInventoryIngest).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: 'org-specific' }),
-      );
+      const result = await controller.ingestReport(req, { drivers: [], software: [] });
+      expect(result.orgId).toBe('org-001');
     });
 
-    it('rejects invalid device token and falls back to header org', async () => {
-      mockDevicesService.findByToken.mockResolvedValue(null);
-
+    it('rejects x-org-id header that does not match the authenticated device org', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer invalid-token',
-          'x-org-id': 'org-fallback',
-        },
+        device: mockDevice,
+        headers: { 'x-org-id': 'org-victim' },
       } as any;
 
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('org-fallback');
-      expect(mockDevicesService.findByToken).toHaveBeenCalledWith('invalid-token');
+      await expect(controller.ingestReport(req, { drivers: [], software: [] }))
+        .rejects.toThrow(ForbiddenException);
+      expect(mockQueueService.addInventoryIngest).not.toHaveBeenCalled();
     });
 
-    it('does not accept raw plaintext token as valid credential', async () => {
-      mockDevicesService.findByToken.mockResolvedValue(null);
-
+    it('rejects payload deviceId that does not match the authenticated device', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer plaintext-raw-token',
-        },
+        device: mockDevice,
+        headers: {},
       } as any;
 
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('00000000-0000-0000-0000-000000000000');
-      expect(mockDevicesService.findByToken).toHaveBeenCalledWith('plaintext-raw-token');
+      const body = { deviceId: 'dev-victim', drivers: [], software: [] };
+      await expect(controller.ingestReport(req, body))
+        .rejects.toThrow(ForbiddenException);
+      expect(mockQueueService.addInventoryIngest).not.toHaveBeenCalled();
     });
 
-    it('authenticates via SHA-256 hash lookup, not plaintext database match', async () => {
-      const rawToken = 'tok-rotation-test-456';
-      const expectedHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-      mockDevicesService.findByToken.mockImplementation(async (token: string) => {
-        expect(token).toBe(rawToken);
-        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-        expect(tokenHash).toBe(expectedHash);
-        return { ...mockDevice, orgId: 'org-hash-verified' };
-      });
-
+    it('accepts payload deviceId matching the authenticated device', async () => {
       const req = {
-        headers: {
-          authorization: `Bearer ${rawToken}`,
-        },
+        device: mockDevice,
+        headers: {},
       } as any;
 
-      const body = { drivers: [], software: [] };
+      const body = { deviceId: 'dev-001', drivers: [], software: [] };
       const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('org-hash-verified');
-      expect(mockDevicesService.findByToken).toHaveBeenCalledTimes(1);
+      expect(result.orgId).toBe('org-001');
+      expect(result.deviceId).toBe('dev-001');
     });
   });
 
-  describe('negative: raw token cannot bypass hashed auth', () => {
-    it('returns default org when token does not match any hashed credential', async () => {
-      mockDevicesService.findByToken.mockResolvedValue(null);
-
+  describe('checkPendingInventory', () => {
+    it('rejects when device token belongs to a different device', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer completely-fake-token',
-        },
+        device: { ...mockDevice, id: 'dev-other' },
+        headers: {},
       } as any;
 
-      const body = { drivers: [], software: [] };
-      const result = await controller.ingestReport(req, body);
-      expect(result.orgId).toBe('00000000-0000-0000-0000-000000000000');
-      expect(mockQueueService.addInventoryIngest).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: '00000000-0000-0000-0000-000000000000' }),
-      );
+      await expect(controller.checkPendingInventory(req, 'dev-001')).rejects.toThrow();
     });
 
-    it('does not perform direct prisma.device.findUnique for auth', async () => {
+    it('returns pending flag for the authenticated device', async () => {
+      mockInventoryService.getPendingInventoryFlag.mockResolvedValue(true);
+      const req = { device: mockDevice, headers: {} } as any;
+      const result = await controller.checkPendingInventory(req, 'dev-001');
+      expect(result).toEqual({ pending: true });
+    });
+  });
+
+  describe('clearPendingInventory', () => {
+    it('rejects when device token belongs to a different device', async () => {
       const req = {
-        headers: {
-          authorization: 'Bearer any-token',
-        },
+        device: { ...mockDevice, id: 'dev-other' },
+        headers: {},
       } as any;
 
-      const body = { drivers: [], software: [] };
-      await controller.ingestReport(req, body);
-      expect(mockDevicesService.findByToken).toHaveBeenCalledWith('any-token');
+      await expect(controller.clearPendingInventory(req, 'dev-001')).rejects.toThrow();
+    });
+
+    it('clears pending flag for the authenticated device', async () => {
+      const req = { device: mockDevice, headers: {} } as any;
+      const result = await controller.clearPendingInventory(req, 'dev-001');
+      expect(result).toEqual({ cleared: true });
+      expect(mockInventoryService.clearPendingInventory).toHaveBeenCalledWith('dev-001');
     });
   });
 

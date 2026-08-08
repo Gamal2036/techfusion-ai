@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, UnauthorizedException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 
@@ -115,7 +116,9 @@ export class SsoService {
     });
 
     if (!user) {
-      // Create new user via JIT provisioning
+      // Create new user via JIT provisioning. A membership row is created
+      // alongside so the issued token resolves against the authoritative
+      // OrganizationMember record on every subsequent request.
       user = await this.prisma.user.create({
         data: {
           email,
@@ -127,17 +130,30 @@ export class SsoService {
           role: 'Viewer',
         },
       });
+      await this.prisma.organizationMember.create({
+        data: { userId: user.id, orgId: org.id, role: 'Viewer' },
+      });
       this.logger.log(`JIT provisioned user ${email} in org ${org.slug}`);
     } else if (!user.ssoId) {
-      // Link existing user to SSO
+      // Link existing user to SSO. The user already belongs to this org, so a
+      // membership must exist; if it is missing the link is repaired with the
+      // user's own role so the user does not lose access mid-link.
+      await this.ensureMembership(user, org.id);
       user = await this.prisma.user.update({
         where: { id: user.id },
         data: { ssoId, ssoProvider: provider },
       });
+    } else {
+      await this.ensureMembership(user, org.id);
     }
 
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId: user.id, orgId: org.id } },
+    });
+    const role = membership?.role ?? 'Viewer';
+
     const accessToken = jwt.sign(
-      { sub: user.id, orgId: org.id, role: user.role },
+      { sub: user.id, orgId: org.id, role },
       JWT_SECRET(),
       { expiresIn: '15m' },
     );
@@ -153,9 +169,24 @@ export class SsoService {
     });
 
     return {
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, orgId: org.id },
+      user: { id: user.id, email: user.email, displayName: user.displayName, role, orgId: org.id },
       accessToken,
       refreshToken: refreshTokenStr,
     };
+  }
+
+  private async ensureMembership(
+    user: { id: string; orgId: string | null; role: Role },
+    orgId: string,
+  ) {
+    const existing = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId: user.id, orgId } },
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.organizationMember.create({
+      data: { userId: user.id, orgId, role: user.orgId === orgId ? user.role : 'Viewer' },
+    });
   }
 }

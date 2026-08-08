@@ -69,6 +69,7 @@ describe('Enterprise Phase 13 Integration', () => {
         role,
       },
     });
+    await prisma.organizationMember.create({ data: { userId: user.id, orgId: org.id, role } });
     return { org, user };
   }
 
@@ -476,7 +477,7 @@ describe('Enterprise Phase 13 Integration', () => {
       const token = await loginAs('owner@admin.com');
 
       // Add more users
-      await prisma.user.create({
+      const tech1 = await prisma.user.create({
         data: {
           email: 'tech1@admin.com',
           passwordHash: 'hash',
@@ -485,7 +486,7 @@ describe('Enterprise Phase 13 Integration', () => {
           role: 'Technician',
         },
       });
-      await prisma.user.create({
+      const viewer1 = await prisma.user.create({
         data: {
           email: 'viewer1@admin.com',
           passwordHash: 'hash',
@@ -493,6 +494,12 @@ describe('Enterprise Phase 13 Integration', () => {
           orgId: org.id,
           role: 'Viewer',
         },
+      });
+      await prisma.organizationMember.createMany({
+        data: [
+          { userId: tech1.id, orgId: org.id, role: 'Technician' },
+          { userId: viewer1.id, orgId: org.id, role: 'Viewer' },
+        ],
       });
 
       const res = await request(app.getHttpServer())
@@ -521,6 +528,9 @@ describe('Enterprise Phase 13 Integration', () => {
           role: 'Technician',
         },
       });
+      await prisma.organizationMember.create({
+        data: { userId: techUser.id, orgId: org.id, role: 'Technician' },
+      });
 
       const res = await request(app.getHttpServer())
         .post(`/admin/users/${techUser.id}/role`)
@@ -547,6 +557,9 @@ describe('Enterprise Phase 13 Integration', () => {
           role: 'Technician',
         },
       });
+      await prisma.organizationMember.create({
+        data: { userId: removableUser.id, orgId: org.id, role: 'Technician' },
+      });
 
       await request(app.getHttpServer())
         .post(`/admin/users/${removableUser.id}/remove`)
@@ -554,7 +567,12 @@ describe('Enterprise Phase 13 Integration', () => {
         .expect(201);
 
       const deleted = await prisma.user.findUnique({ where: { id: removableUser.id } });
-      expect(deleted).toBeNull();
+      // ORG-01C: removing a member never deletes the global User account.
+      expect(deleted).not.toBeNull();
+      const membership = await prisma.organizationMember.findUnique({
+        where: { userId_orgId: { userId: removableUser.id, orgId: org.id } },
+      });
+      expect(membership).toBeNull();
     });
 
     it('shows org dashboard stats', async () => {

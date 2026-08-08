@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
@@ -8,42 +9,49 @@ export class AdminService {
   constructor(private prisma: PrismaService) {}
 
   // ─── User Management ─────────────────────────────────────────
+  //
+  // Membership rows (OrganizationMember) are authoritative for who belongs to an
+  // organization. User.orgId/User.role are snapshot fields of the user's active
+  // org only and are NOT a reliable "team" listing source for a multi-org user.
+  // Team management endpoints therefore resolve users through OrganizationMember.
 
   async listUsers(orgId: string) {
-    return this.prisma.user.findMany({
+    const members = await this.prisma.organizationMember.findMany({
       where: { orgId },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        role: true,
-        isMfaEnabled: true,
-        ssoId: true,
-        ssoProvider: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      include: { user: true },
       orderBy: { createdAt: 'asc' },
     });
+    return members.map((m) => ({
+      id: m.userId,
+      email: m.user.email,
+      displayName: m.user.displayName,
+      role: m.role,
+      isMfaEnabled: m.user.isMfaEnabled,
+      ssoId: m.user.ssoId,
+      ssoProvider: m.user.ssoProvider,
+      createdAt: m.createdAt,
+      updatedAt: m.updatedAt,
+    }));
   }
 
   async getUser(orgId: string, userId: string) {
-    const user = await this.prisma.user.findFirst({
-      where: { id: userId, orgId },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        role: true,
-        isMfaEnabled: true,
-        ssoId: true,
-        ssoProvider: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      include: { user: true },
     });
-    if (!user) throw new NotFoundException('User not found');
-    return user;
+    if (!membership) throw new NotFoundException('User not found');
+    const user = membership.user;
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: membership.role,
+      isMfaEnabled: user.isMfaEnabled,
+      ssoId: user.ssoId,
+      ssoProvider: user.ssoProvider,
+      createdAt: membership.createdAt,
+      updatedAt: membership.updatedAt,
+    };
   }
 
   async updateUserRole(orgId: string, actorId: string, userId: string, newRole: string) {
@@ -52,45 +60,88 @@ export class AdminService {
       throw new BadRequestException(`Invalid role: ${newRole}. Must be one of: ${VALID_ROLES.join(', ')}`);
     }
 
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, orgId },
+    // The OrganizationMember row is the authority for the target user's role in
+    // this org; the User.role field is a snapshot of their active org only.
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      include: { user: true },
     });
-    if (!target) throw new NotFoundException('User not found');
+    if (!membership) throw new NotFoundException('User not found');
 
     // Cannot change role of another Owner
-    if (target.role === 'Owner' && actorId !== userId) {
+    if (membership.role === 'Owner' && actorId !== userId) {
       throw new BadRequestException('Cannot change role of another Owner');
     }
 
-    const updated = await this.prisma.user.update({
-      where: { id: userId },
-      data: { role: newRole as any },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        role: true,
-        updatedAt: true,
-      },
+    const updated = await this.prisma.organizationMember.update({
+      where: { id: membership.id },
+      data: { role: newRole as Role },
     });
 
-    return updated;
+    // Keep the legacy snapshot field in sync when this is the user's active org.
+    if (membership.user.orgId === orgId) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { role: newRole as Role },
+      });
+    }
+
+    return {
+      id: membership.user.id,
+      email: membership.user.email,
+      displayName: membership.user.displayName,
+      role: newRole,
+      updatedAt: updated.updatedAt,
+    };
   }
 
+  /**
+   * Removes a user's membership from an organization. ORG-01C: this deletes the
+   * OrganizationMember row only — never the global User — because a User may hold
+   * memberships in multiple organizations. The last Owner can never be removed.
+   */
   async removeUser(orgId: string, actorId: string, userId: string) {
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, orgId },
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+      include: { user: true },
     });
-    if (!target) throw new NotFoundException('User not found');
-    if (target.role === 'Owner') {
-      throw new BadRequestException('Cannot remove the Owner of the organization');
+    if (!membership) throw new NotFoundException('User not found');
+    if (membership.role === 'Owner') {
+      const ownerCount = await this.prisma.organizationMember.count({
+        where: { orgId, role: 'Owner' },
+      });
+      if (ownerCount <= 1) {
+        throw new ConflictException(
+          'This organization must keep at least one Owner. Transfer ownership before removing the last Owner.',
+        );
+      }
     }
-    if (target.id === actorId) {
+    if (membership.user.id === actorId) {
       throw new BadRequestException('Cannot remove yourself');
     }
 
-    await this.prisma.user.delete({ where: { id: userId } });
-    return { message: 'User removed' };
+    await this.prisma.organizationMember.delete({ where: { id: membership.id } });
+
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, orgId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    // If the removed org was the user's active org, fall back deterministically.
+    if (membership.user.orgId === orgId) {
+      const fallback = await this.prisma.organizationMember.findFirst({
+        where: { userId, orgId: { not: orgId } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (fallback) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { orgId: fallback.orgId, role: fallback.role },
+        });
+      }
+    }
+
+    return { message: 'User removed', userId };
   }
 
   // ─── Org Info ─────────────────────────────────────────────────

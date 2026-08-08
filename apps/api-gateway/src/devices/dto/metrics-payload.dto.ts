@@ -1,5 +1,5 @@
 import {
-  IsString, IsNumber, IsOptional, IsInt, Min, Max, IsArray, ValidateNested,
+  IsString, IsNumber, IsOptional, IsInt, Min, Max, IsArray, ValidateNested, IsISO8601,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -100,6 +100,8 @@ export class MetricsPayloadDto {
   deviceToken?: string;
 
   @IsOptional()
+  @IsString()
+  @IsISO8601()
   timestamp?: string;
 
   @ValidateNested()

@@ -1,8 +1,8 @@
 import { Controller, Post, Body, Res, Req, HttpCode, Logger, Optional, ForbiddenException } from '@nestjs/common';
 import { Response, Request } from 'express';
-import { Roles } from '../../common/roles.decorator';
-import { AiOrchestratorService } from '../ai-orchestrator.service';
-import { PrismaService } from '../../prisma/prisma.service';
+import { RequirePermissions } from '../../common/permissions.decorator';
+import { Permission } from '../../common/permissions';
+import { AiOrchestratorService } from '../ai-orchestrator.service';import { PrismaService } from '../../prisma/prisma.service';
 import { KbService } from '../../kb/kb.service';
 import { TroubleshootDto } from '../dto/troubleshoot.dto';
 import { classifyFreshness, metricAge } from '../../devices/device-presence';
@@ -42,7 +42,7 @@ export class TroubleshootingController {
     @Optional() private readonly kbService?: KbService,
   ) {}
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Post('troubleshoot')
   @HttpCode(200)
   async troubleshoot(

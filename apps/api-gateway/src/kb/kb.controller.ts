@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { KbService, CreateKbArticleDto, UpdateKbArticleDto, KbQueryRequest } from './kb.service';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 import { OrgContext } from '../common/decorators/org-context.decorator';
 
 @Controller('kb')
@@ -24,6 +26,7 @@ export class KbController {
    * POST /kb/articles
    * Create a new KB article
    */
+  @RequirePermissions(Permission.SOFTWARE_MANAGE)
   @Post('articles')
   async createArticle(
     @OrgContext() orgId: string,
@@ -45,6 +48,7 @@ export class KbController {
    * GET /kb/articles
    * List all articles for the organization
    */
+  @RequirePermissions(Permission.SOFTWARE_VIEW)
   @Get('articles')
   async listArticles(
     @OrgContext() orgId: string,
@@ -72,6 +76,7 @@ export class KbController {
    * GET /kb/articles/:id
    * Get a single article
    */
+  @RequirePermissions(Permission.SOFTWARE_VIEW)
   @Get('articles/:id')
   async getArticle(
     @Param('id') articleId: string,
@@ -93,6 +98,7 @@ export class KbController {
    * PUT /kb/articles/:id
    * Update an article
    */
+  @RequirePermissions(Permission.SOFTWARE_MANAGE)
   @Put('articles/:id')
   async updateArticle(
     @Param('id') articleId: string,
@@ -122,6 +128,7 @@ export class KbController {
    * POST /kb/articles/:id/reindex
    * Re-chunk and re-embed an article
    */
+  @RequirePermissions(Permission.SOFTWARE_MANAGE)
   @Post('articles/:id/reindex')
   async reindexArticle(
     @Param('id') articleId: string,
@@ -142,6 +149,7 @@ export class KbController {
    * DELETE /kb/articles/:id
    * Delete an article
    */
+  @RequirePermissions(Permission.SOFTWARE_MANAGE)
   @Delete('articles/:id')
   async deleteArticle(
     @Param('id') articleId: string,
@@ -166,6 +174,7 @@ export class KbController {
    * POST /kb/query
    * Query the KB and get relevant articles/chunks
    */
+  @RequirePermissions(Permission.SOFTWARE_VIEW)
   @Post('query')
   async queryKb(
     @OrgContext() orgId: string,

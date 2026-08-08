@@ -6,7 +6,6 @@ import { getRateLimitConfig } from './config/rate-limits';
 import { HealthController } from './health.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsInterceptor } from './metrics.interceptor';
-import { OrgContextInterceptor } from './common/org-context.interceptor';
 import { CorrelationIdInterceptor } from './common/correlation-id';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor';
 import { BigIntSerializerInterceptor } from './common/bigint-serializer.interceptor';
@@ -19,6 +18,7 @@ import { AiModule } from './ai/ai.module';
 import { SecurityModule } from './security/security.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { CombinedAuthGuard } from './common/combined-auth.guard';
+import { PermissionsGuard } from './common/permissions.guard';
 import { PlanGuard } from './billing/plan.guard';
 import { DemoController } from './demo.controller';
 import { BillingModule } from './billing/billing.module';
@@ -35,12 +35,15 @@ import { AdminModule } from './admin/admin.module';
 import { QueueModule } from './queue/queue.module';
 import { EnrollmentModule } from './enrollment/enrollment.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
+import { OrganizationsModule } from './organizations/organizations.module';
+import { AccountModule } from './account/account.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot(getRateLimitConfig()),
-    PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule, QueueModule, EnrollmentModule, DashboardModule,
+    PrismaModule, AuthModule, MfaModule, DevicesModule, AlertsModule, AiModule, SecurityModule, ReportingModule, BillingModule, RemoteSupportModule, NetworkModule, InventoryModule, BackupsModule, KbModule, SsoModule, AuditModule, EncryptionModule, RetentionModule, AdminModule, QueueModule, EnrollmentModule, DashboardModule, MonitoringModule, OrganizationsModule, AccountModule,
   ],
   controllers: [HealthController, DemoController, MetricsController],
   providers: [
@@ -54,15 +57,15 @@ import { DashboardModule } from './dashboard/dashboard.module';
     },
     {
       provide: APP_INTERCEPTOR,
-      useClass: OrgContextInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
       useClass: BigIntSerializerInterceptor,
     },
     {
       provide: APP_GUARD,
       useClass: CombinedAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
     },
     {
       provide: APP_GUARD,

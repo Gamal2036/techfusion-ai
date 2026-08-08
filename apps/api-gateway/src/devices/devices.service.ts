@@ -351,6 +351,9 @@ export class DevicesService {
         loadAverage1Min: dto.cpu?.loadAverage1Min ?? null,
         processes: dto.processes ?? null,
         services: dto.services ?? null,
+        healthScore: scores.healthScore,
+        performanceScore: scores.performanceScore,
+        riskScore: scores.riskScore,
       });
 
       for (const alert of triggeredAlerts) {

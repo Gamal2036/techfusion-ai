@@ -1,13 +1,17 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import * as jwt from 'jsonwebtoken';
 import { IS_PUBLIC_KEY } from './public.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+import { verifyAndValidateJwt, resolveMembershipUser } from './membership-auth';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private prisma: PrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -22,16 +26,10 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing or invalid authorization header');
     }
     const token = authHeader.slice(7);
-    try {
-      const secret = process.env.JWT_SECRET;
-      if (!secret) {
-        throw new UnauthorizedException('JWT_SECRET environment variable is not configured');
-      }
-      const payload = jwt.verify(token, secret) as any;
-      request.user = payload;
-      return true;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired token');
-    }
+
+    const payload = verifyAndValidateJwt(token);
+    const user = await resolveMembershipUser(this.prisma, payload);
+    request.user = user;
+    return true;
   }
 }

@@ -1,14 +1,15 @@
 import { Controller, Get, Post, Query, Req, Res, Headers } from '@nestjs/common';
 import { Response } from 'express';
 import { AuditService } from './audit.service';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller()
 export class AuditController {
   constructor(private auditService: AuditService) {}
 
+  @RequirePermissions(Permission.AUDIT_VIEW)
   @Get('audit/logs')
-  @Roles('Owner', 'Admin')
   async getAuditLogs(
     @Req() req: any,
     @Query('action') action?: string,
@@ -32,8 +33,8 @@ export class AuditController {
     });
   }
 
+  @RequirePermissions(Permission.AUDIT_VIEW)
   @Get('audit/export/csv')
-  @Roles('Owner', 'Admin')
   async exportCsv(
     @Req() req: any,
     @Res() res: Response,
@@ -47,8 +48,8 @@ export class AuditController {
     res.send(csv);
   }
 
+  @RequirePermissions(Permission.AUDIT_VIEW)
   @Get('audit/export/json')
-  @Roles('Owner', 'Admin')
   async exportJson(
     @Req() req: any,
     @Query('action') action?: string,

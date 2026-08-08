@@ -8,13 +8,14 @@ import { MetricsPayloadDto } from './dto/metrics-payload.dto';
 import { QueryMetricsDto } from './dto/query-metrics.dto';
 import { DeviceTokenGuard } from './device-token.guard';
 import { Public } from '../common/public.decorator';
-import { Roles } from '../common/roles.decorator';
-import { RolesGuard } from '../common/roles.guard';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 import { DevicesGateway } from './devices.gateway';
 import { EnrollmentService } from '../enrollment/enrollment.service';
 import { throttle } from '../config/rate-limits';
 import { RegisterPublicDto } from '../enrollment/dto/register-public.dto';
 import { ForbiddenException } from '@nestjs/common';
+import { derivePresenceState } from './device-presence-state';
 
 @Controller('devices')
 export class DevicesController {
@@ -152,6 +153,7 @@ export class DevicesController {
     return result;
   }
 
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get()
   async listDevices(@Req() req: any) {
     const orgId = req.user?.orgId;
@@ -159,6 +161,7 @@ export class DevicesController {
     if (!orgId) return [];
 
     const devices = await this.devicesService.findByOrg(orgId);
+    const now = new Date();
     const safe = devices.map((d: any) => ({
       id: d.id,
       orgId: d.orgId,
@@ -176,6 +179,7 @@ export class DevicesController {
       inactive: d.inactive,
       registeredAt: d.registeredAt,
       lastSeenAt: d.lastSeenAt,
+      presence: derivePresenceState(d.lastSeenAt, now),
       agentVersion: d.agentVersion,
     }));
 
@@ -188,12 +192,14 @@ export class DevicesController {
     return safe;
   }
 
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get(':id')
   async getDevice(@Req() req: any, @Param('id') id: string) {
     const device = await this.devicesService.findById(id, req.user.orgId);
     return this.sanitizeDevice(device);
   }
 
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get(':id/metrics')
   async getMetrics(
     @Req() req: any,
@@ -208,11 +214,13 @@ export class DevicesController {
     );
   }
 
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get(':id/scores')
   async getScores(@Req() req: any, @Param('id') id: string) {
     return this.devicesService.getLatestScores(id, req.user.orgId);
   }
 
+  @RequirePermissions(Permission.DEVICES_VIEW)
   @Get(':id/latest')
   async getLatest(@Req() req: any, @Param('id') id: string) {
     const [device, metrics, scores] = await Promise.all([

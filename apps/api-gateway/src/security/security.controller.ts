@@ -1,18 +1,22 @@
-import { Controller, Get, Post, Body, Param, Query, Req, Res, HttpCode, NotFoundException, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Req, Res, HttpCode, NotFoundException, ForbiddenException, Logger, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response, Request } from 'express';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 import { Public } from '../common/public.decorator';
 import { SecurityService } from './security.service';
 import { SecurityScoringService } from './services/security-scoring.service';
 import { SecurityReportingService } from './services/security-reporting.service';
 import { SubmitFindingsDto, FindingDto } from './dto/submit-findings.dto';
 import { ScanQueryDto } from './dto/scan-query.dto';
+import { DeviceTokenGuard } from '../devices/device-token.guard';
+import { createStructuredLogger } from '../common/structured-logger';
 import { throttle } from '../config/rate-limits';
 
 @Controller()
 export class SecurityController {
   private readonly logger = new Logger(SecurityController.name);
+  private readonly secLogger = createStructuredLogger('SecurityIngestion');
 
   constructor(
     private readonly securityService: SecurityService,
@@ -45,7 +49,7 @@ export class SecurityController {
     };
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_SCAN_TRIGGER)
   @Post('security/scans/:deviceId/trigger')
   @HttpCode(201)
   async triggerScan(@Param('deviceId') deviceId: string, @Req() req: Request) {
@@ -56,18 +60,47 @@ export class SecurityController {
   }
 
   @Public()
+  @UseGuards(DeviceTokenGuard)
+  @Throttle(throttle(30, 60000))
   @Get('security/pending/:deviceId')
-  async getPendingScansForAgent(@Param('deviceId') deviceId: string) {
-    const scans = await this.securityService.getPendingScansForAgent(deviceId);
+  async getPendingScansForAgent(@Req() req: any, @Param('deviceId') deviceId: string) {
+    const device = req.device;
+    if (device.id !== deviceId) {
+      this.secLogger.warn('tenant_ingestion_denied', {
+        event: 'tenant_ingestion_denied',
+        orgId: device.orgId,
+        deviceId: device.id,
+        reason: 'device_id_mismatch',
+        claimedDeviceId: deviceId,
+      });
+      throw new ForbiddenException('Device ownership mismatch');
+    }
+    const scans = await this.securityService.getPendingScansForAgent(device.orgId, deviceId);
     return scans;
   }
 
   @Public()
+  @UseGuards(DeviceTokenGuard)
+  @Throttle(throttle(30, 60000))
   @Post('security/scan-result')
   @HttpCode(200)
   async completeScanResult(
+    @Req() req: any,
     @Body() body: { scanId: string; findings: FindingDto[]; error?: string },
   ) {
+    const device = req.device;
+    const owned = await this.securityService.getPendingScanForDevice(body.scanId, device.orgId, device.id);
+    if (!owned) {
+      this.secLogger.warn('tenant_ingestion_denied', {
+        event: 'tenant_ingestion_denied',
+        orgId: device.orgId,
+        deviceId: device.id,
+        reason: 'scan_not_owned',
+        scanId: body.scanId,
+      });
+      throw new ForbiddenException('Scan not found or not owned by this device');
+    }
+
     if (body.error) {
       const scan = await this.securityService.updateScanStatus(body.scanId, 'failed', {
         error: body.error,
@@ -82,6 +115,8 @@ export class SecurityController {
 
     const result = await this.securityService.completePendingScan(
       body.scanId,
+      device.orgId,
+      device.id,
       body.findings,
       scoreResult,
     );
@@ -99,7 +134,7 @@ export class SecurityController {
     };
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_VIEW)
   @Get('security/latest/:deviceId')
   async getLatestScan(@Param('deviceId') deviceId: string, @Req() req: Request) {
     const orgId = (req as any).user?.orgId;
@@ -110,7 +145,7 @@ export class SecurityController {
     return result;
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_VIEW)
   @Get('security/scans/:deviceId')
   async listScans(
     @Param('deviceId') deviceId: string,
@@ -121,7 +156,7 @@ export class SecurityController {
     return this.securityService.listScans(deviceId, orgId, query.limit || 10);
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_VIEW)
   @Get('security/scans/detail/:scanId')
   async getScanDetail(@Param('scanId') scanId: string, @Req() req: Request) {
     const orgId = (req as any).user?.orgId;
@@ -132,7 +167,7 @@ export class SecurityController {
     return scan;
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_SCAN_TRIGGER)
   @Post('security/findings/:findingId/remediate')
   @HttpCode(200)
   async remediateFinding(@Param('findingId') findingId: string, @Req() req: Request) {
@@ -144,7 +179,7 @@ export class SecurityController {
     return finding;
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_VIEW)
   @Get('security/executive-summary/:deviceId')
   async executiveSummary(@Param('deviceId') deviceId: string, @Req() req: Request) {
     const orgId = (req as any).user?.orgId;
@@ -156,7 +191,7 @@ export class SecurityController {
     return summary;
   }
 
-  @Roles('Owner', 'Admin', 'Technician', 'Viewer')
+  @RequirePermissions(Permission.SECURITY_VIEW)
   @Get('security/export-pdf/:deviceId')
   async exportPdf(@Param('deviceId') deviceId: string, @Req() req: Request, @Res() res: Response) {
     const orgId = (req as any).user?.orgId;

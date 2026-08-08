@@ -8,7 +8,8 @@ import { Response } from 'express';
 import { ReportingService } from './reporting.service';
 import { ReportStorageService } from './services/report-storage.service';
 import { GenerateReportDto, CreateTemplateDto, CreateScheduleDto, UpdateScheduleDto } from './dto/generate-report.dto';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 import { Public } from '../common/public.decorator';
 import { RequireFeature } from '../common/plan.decorator';
 
@@ -20,8 +21,8 @@ export class ReportingController {
   ) {}
 
   // Generate a new report
+  @RequirePermissions(Permission.REPORTS_CREATE)
   @Post('generate')
-  @Roles('Admin', 'Owner')
   async generate(@Body() dto: GenerateReportDto, @Req() req: any) {
     const orgId = req.user.orgId;
     const userId = req.user.sub;
@@ -29,6 +30,7 @@ export class ReportingController {
   }
 
   // List reports
+  @RequirePermissions(Permission.REPORTS_VIEW)
   @Get()
   async list(@Query('type') type: string, @Req() req: any) {
     return this.reporting.list(req.user.orgId, type);
@@ -74,21 +76,22 @@ export class ReportingController {
   }
 
   // Branding
+  @RequirePermissions(Permission.REPORTS_VIEW)
   @Get('branding')
   @RequireFeature('customBranding')
   async getBranding(@Req() req: any) {
     return this.reporting.getBranding(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.REPORTS_MANAGE)
   @Post('branding')
-  @Roles('Admin', 'Owner')
   @RequireFeature('customBranding')
   async setBranding(@Body() dto: CreateTemplateDto, @Req() req: any) {
     return this.reporting.setBranding(req.user.orgId, dto);
   }
 
+  @RequirePermissions(Permission.REPORTS_MANAGE)
   @Delete(':id')
-  @Roles('Admin', 'Owner')
   async deleteReport(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const deleted = await this.reporting.deleteReport(id, req.user.orgId);
     if (!deleted) {
@@ -103,19 +106,20 @@ export class ReportingController {
   }
 
   // Schedules
+  @RequirePermissions(Permission.REPORTS_VIEW)
   @Get('schedules')
   async listSchedules(@Req() req: any) {
     return this.reporting.listSchedules(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.REPORTS_MANAGE)
   @Post('schedules')
-  @Roles('Admin', 'Owner')
   async createSchedule(@Body() dto: CreateScheduleDto, @Req() req: any) {
     return this.reporting.createSchedule(req.user.orgId, dto);
   }
 
+  @RequirePermissions(Permission.REPORTS_MANAGE)
   @Patch('schedules/:id')
-  @Roles('Admin', 'Owner')
   async updateSchedule(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateScheduleDto,
@@ -133,8 +137,8 @@ export class ReportingController {
     return updated;
   }
 
+  @RequirePermissions(Permission.REPORTS_MANAGE)
   @Delete('schedules/:id')
-  @Roles('Admin', 'Owner')
   async deleteSchedule(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const deleted = await this.reporting.deleteSchedule(id, req.user.orgId);
     if (!deleted) {

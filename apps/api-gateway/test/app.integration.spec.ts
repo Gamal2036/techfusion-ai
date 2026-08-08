@@ -70,6 +70,7 @@ describe('TechFusion API (integration)', () => {
         role,
       },
     });
+    await prisma.organizationMember.create({ data: { userId: user.id, orgId: org.id, role } });
     return { org, user };
   }
 
@@ -117,21 +118,19 @@ describe('TechFusion API (integration)', () => {
         .send({ email: 'owner@a.com', password: 'password123' })
         .expect(201);
 
-    // Try to tamper with org context by creating a token with different org
+    // Try to tamper with org context by creating a token with different org.
+    // The membership-authoritative guard resolves the token against the
+    // OrganizationMember row and rejects it (401) before any controller runs.
     const tamperedToken = jwt.sign(
       { sub: owner.id, orgId: '00000000-0000-0000-0000-000000000099', role: 'Owner' },
       JWT_SECRET(),
       { expiresIn: '15m' },
     );
 
-    const res = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .get('/demo/admin')
       .set('Authorization', `Bearer ${tamperedToken}`)
-      .expect(200);
-
-    // The request goes through (token is valid), but DB RLS would block data access
-    // Since we have no data fetch in demo endpoints, the isolation is at DB level
-    expect(res.body).toBeDefined();
+      .expect(401);
     });
   });
 

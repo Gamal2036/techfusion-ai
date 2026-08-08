@@ -3,14 +3,15 @@ import {
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { Public } from '../common/public.decorator';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller('billing')
 export class BillingController {
   constructor(private billingService: BillingService) {}
 
+  @RequirePermissions(Permission.BILLING_MANAGE)
   @Post('checkout')
-  @Roles('Owner')
   async createCheckout(
     @Req() req: any,
     @Body() body: { priceId: string; successUrl: string; cancelUrl: string },
@@ -23,8 +24,8 @@ export class BillingController {
     );
   }
 
+  @RequirePermissions(Permission.BILLING_MANAGE)
   @Post('portal')
-  @Roles('Owner')
   async createPortal(
     @Req() req: any,
     @Body() body: { returnUrl?: string },
@@ -35,24 +36,26 @@ export class BillingController {
     );
   }
 
+  @RequirePermissions(Permission.BILLING_VIEW)
   @Get('plan')
   async getPlan(@Req() req: any) {
     return this.billingService.getCurrentPlan(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.BILLING_VIEW)
   @Get('usage')
   async getUsage(@Req() req: any) {
     return this.billingService.getUsageMetrics(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.BILLING_MANAGE)
   @Get('history')
-  @Roles('Owner')
   async getHistory(@Req() req: any) {
     return this.billingService.getBillingHistory(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.BILLING_MANAGE)
   @Get('admin')
-  @Roles('Owner')
   async getAdminView(@Req() req: any) {
     return this.billingService.getAllEntitlements(req.user.orgId);
   }

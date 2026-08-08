@@ -11,6 +11,9 @@ import { createWsAuthMiddleware } from '../common/ws-auth.middleware';
 import { getWsCorsOrigins } from '../common/ws-cors';
 import { PrismaService } from '../prisma/prisma.service';
 import { Logger } from '@nestjs/common';
+import { hasPermission } from '../common/permissions';
+import { Permission } from '../common/permissions';
+import { Role } from '@prisma/client';
 import { trackWsConnection, trackWsDisconnection, trackWsAuthFailure, trackRemoteSupportSession, trackRemoteSupportSessionEnd } from '../metrics.interceptor';
 
 interface PeerEntry {
@@ -35,7 +38,7 @@ export class RemoteSupportGateway implements OnGatewayInit, OnGatewayConnection,
   constructor(private prisma: PrismaService) {}
 
   afterInit(server: Server) {
-    server.use(createWsAuthMiddleware());
+    server.use(createWsAuthMiddleware(this.prisma));
   }
 
   async handleConnection(client: Socket) {
@@ -110,6 +113,16 @@ export class RemoteSupportGateway implements OnGatewayInit, OnGatewayConnection,
     const peer = this.peers.get(client.id);
     if (!peer) return;
 
+    const user = client.data.user as { role?: Role } | undefined;
+    if (user && !hasPermission(user.role as Role, Permission.REMOTE_SUPPORT_START)) {
+      this.logger.warn('WS permission denied', {
+        event: 'ws_permission_denied',
+        socketId: client.id,
+        reason: `missing_permission:${Permission.REMOTE_SUPPORT_START}`,
+      });
+      return;
+    }
+
     this.server.to(`session:${peer.sessionId}`).emit('signal', {
       from: client.id,
       type: payload.type,
@@ -131,6 +144,16 @@ export class RemoteSupportGateway implements OnGatewayInit, OnGatewayConnection,
   handleInputEvent(client: Socket, payload: { sessionId: string; eventType: string; data: any }) {
     const peer = this.peers.get(client.id);
     if (!peer || peer.role !== 'technician') return;
+
+    const user = client.data.user as { role?: Role } | undefined;
+    if (user && !hasPermission(user.role as Role, Permission.REMOTE_SUPPORT_CONTROL)) {
+      this.logger.warn('WS permission denied', {
+        event: 'ws_permission_denied',
+        socketId: client.id,
+        reason: `missing_permission:${Permission.REMOTE_SUPPORT_CONTROL}`,
+      });
+      return;
+    }
 
     this.server
       .to(`session:${peer.sessionId}`)

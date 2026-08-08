@@ -22,6 +22,7 @@ import {
   DropdownMenuSeparator,
 } from '@techfusion/ui';
 import { logout } from '@/lib/auth-client';
+import { OrganizationSwitcher } from '@/components/org/OrganizationSwitcher';
 
 interface TopbarProps {
   onToggleChat: () => void;
@@ -34,7 +35,7 @@ interface TopbarProps {
 export function Topbar({ onToggleChat, onOpenPalette, userName, userRole, orgName }: TopbarProps) {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const [orgMenuOpen, setOrgMenuOpen] = useState(false);
+  const [orgSwitcherOpen, setOrgSwitcherOpen] = useState(false);
 
   async function handleLogout() {
     await logout();
@@ -43,20 +44,18 @@ export function Topbar({ onToggleChat, onOpenPalette, userName, userRole, orgNam
   return (
     <header className="flex items-center justify-between h-14 px-4 border-b border-border bg-background/80 backdrop-blur-xl z-20">
       <div className="flex items-center gap-3">
-        <DropdownMenu open={orgMenuOpen} onOpenChange={setOrgMenuOpen}>
-          <DropdownMenuTrigger className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
-            <Building2 className="h-4 w-4" />
-            <span className="hidden sm:inline">{orgName || 'My Organization'}</span>
-            <ChevronDown className="h-3.5 w-3.5 transition-transform data-[state=open]:rotate-180" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" sideOffset={4}>
-            <DropdownMenuLabel>Switch Organization</DropdownMenuLabel>
-            <DropdownMenuItem>
-              <Building2 className="h-4 w-4 mr-2" />
-              {orgName || 'My Organization'}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          onClick={() => setOrgSwitcherOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={orgSwitcherOpen}
+          className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <Building2 className="h-4 w-4" />
+          <span className="hidden sm:inline max-w-[160px] truncate">{orgName || 'My Organization'}</span>
+          <ChevronDown className="h-3.5 w-3.5 transition-transform" />
+        </button>
+        <OrganizationSwitcher open={orgSwitcherOpen} onOpenChange={setOrgSwitcherOpen} />
       </div>
 
       <div className="flex items-center gap-2">

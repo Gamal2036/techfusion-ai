@@ -191,6 +191,152 @@ describe('Auth Client', () => {
 
       expect(refreshCallCount).toBe(1);
     });
+
+    it('exactly one refresh for five simultaneous polling 401s', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let refreshCallCount = 0;
+      const endpointHits: Record<string, number> = {};
+
+      global.fetch = jest.fn().mockImplementation(async (input: any) => {
+        const url = typeof input === 'string' ? input : input.url || '';
+        if (url.includes('/auth/refresh')) {
+          refreshCallCount++;
+          await new Promise(r => setTimeout(r, 25));
+          return new Response(JSON.stringify({
+            accessToken: 'new-access',
+            refreshToken: 'new-refresh',
+          }), { status: 201 });
+        }
+        endpointHits[url] = (endpointHits[url] || 0) + 1;
+        if (endpointHits[url] === 1) return new Response('', { status: 401 });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const results = await Promise.all([
+        apiFetch('/p1'),
+        apiFetch('/p2'),
+        apiFetch('/p3'),
+        apiFetch('/p4'),
+        apiFetch('/p5'),
+      ]);
+
+      expect(refreshCallCount).toBe(1);
+      expect(results.every((r: Response) => r.status === 200)).toBe(true);
+    });
+
+    it('retries the original request with the fresh token after refresh', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let callCount = 0;
+      const seenAuthHeaders: (string | undefined)[] = [];
+
+      global.fetch = jest.fn().mockImplementation(async (_input: any, init?: any) => {
+        callCount++;
+        seenAuthHeaders.push(init?.headers?.Authorization);
+        if (callCount === 1) return new Response('', { status: 401 });
+        if (callCount === 2) return new Response(JSON.stringify({
+          accessToken: 'new-access',
+          refreshToken: 'new-refresh',
+        }), { status: 201 });
+        return new Response(JSON.stringify({ data: 'ok' }), { status: 200 });
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const res = await apiFetch('/test-endpoint');
+
+      expect(res.status).toBe(200);
+      expect(seenAuthHeaders[0]).toBe('Bearer expired-token');
+      expect(seenAuthHeaders[2]).toBe('Bearer new-access');
+      expect(callCount).toBe(3);
+    });
+
+    it('preserves the session when refresh fails with a network error', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let callCount = 0;
+
+      global.fetch = jest.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) return new Response('', { status: 401 });
+        throw new TypeError('Failed to fetch');
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const res = await apiFetch('/test-endpoint');
+
+      expect(res.status).toBe(401);
+      expect(getAccessToken()).toBe('expired-token');
+      expect(getRefreshToken()).toBe('valid-refresh');
+    });
+
+    it('preserves the session when the refresh endpoint returns 5xx', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let callCount = 0;
+
+      global.fetch = jest.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) return new Response('', { status: 401 });
+        return new Response('Service Unavailable', { status: 503 });
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const res = await apiFetch('/test-endpoint');
+
+      expect(res.status).toBe(401);
+      expect(getAccessToken()).toBe('expired-token');
+      expect(getRefreshToken()).toBe('valid-refresh');
+    });
+
+    it('clears the session when the retried request still returns 401', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let callCount = 0;
+
+      global.fetch = jest.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) return new Response('', { status: 401 });
+        if (callCount === 2) return new Response(JSON.stringify({
+          accessToken: 'new-access',
+          refreshToken: 'new-refresh',
+        }), { status: 201 });
+        return new Response('', { status: 401 });
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const res = await apiFetch('/test-endpoint');
+
+      expect(res.status).toBe(401);
+      expect(getAccessToken()).toBeNull();
+      expect(getRefreshToken()).toBeNull();
+    });
+
+    it('clears the session when the refresh response is malformed', async () => {
+      setTokens('expired-token', 'valid-refresh');
+      let callCount = 0;
+
+      global.fetch = jest.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) return new Response('', { status: 401 });
+        return new Response(JSON.stringify({ nope: true }), { status: 200 });
+      });
+
+      const { apiFetch } = require('@/lib/auth-client');
+      await apiFetch('/test-endpoint');
+
+      expect(getAccessToken()).toBeNull();
+      expect(getRefreshToken()).toBeNull();
+    });
+
+    it('does not attempt navigation when already on /login', async () => {
+      window.history.pushState({}, '', '/login');
+      setTokens('expired-token', 'revoked-refresh');
+      global.fetch = jest.fn().mockResolvedValue(new Response('', { status: 401 }));
+
+      const { apiFetch } = require('@/lib/auth-client');
+      const res = await apiFetch('/test-endpoint');
+
+      expect(res.status).toBe(401);
+      expect(getAccessToken()).toBeNull();
+      window.history.pushState({}, '', '/');
+    });
   });
 
   describe('Logout', () => {

@@ -1,14 +1,15 @@
 import { Controller, Post, Get, Delete, Patch, Param, Body, Req, HttpCode } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
 import { CreateEnrollmentTokenDto } from './dto/create-enrollment-token.dto';
-import { Roles } from '../common/roles.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 
 @Controller('enrollment')
 export class EnrollmentController {
   constructor(private enrollmentService: EnrollmentService) {}
 
+  @RequirePermissions(Permission.DEVICES_ENROLL)
   @Post('tokens')
-  @Roles('Owner', 'Admin')
   async createToken(@Req() req: any, @Body() dto: CreateEnrollmentTokenDto) {
     return this.enrollmentService.createToken(
       req.user.orgId,
@@ -20,15 +21,15 @@ export class EnrollmentController {
     );
   }
 
+  @RequirePermissions(Permission.DEVICES_ENROLL)
   @Get('tokens')
-  @Roles('Owner', 'Admin')
   async listTokens(@Req() req: any) {
     return this.enrollmentService.listTokens(req.user.orgId);
   }
 
+  @RequirePermissions(Permission.DEVICES_ENROLL)
   @Delete('tokens/:id')
   @HttpCode(204)
-  @Roles('Owner', 'Admin')
   async revokeToken(@Req() req: any, @Param('id') id: string) {
     await this.enrollmentService.revokeToken(
       id,
@@ -38,8 +39,8 @@ export class EnrollmentController {
     );
   }
 
+  @RequirePermissions(Permission.DEVICES_ENROLL)
   @Patch('tokens/:id/regenerate')
-  @Roles('Owner', 'Admin')
   async regenerateToken(@Req() req: any, @Param('id') id: string) {
     return this.enrollmentService.regenerateToken(
       id,
@@ -49,8 +50,8 @@ export class EnrollmentController {
     );
   }
 
+  @RequirePermissions(Permission.AUDIT_VIEW)
   @Get('audit')
-  @Roles('Owner', 'Admin')
   async getAuditLogs(@Req() req: any) {
     return this.enrollmentService.getAuditLogs(req.user.orgId);
   }

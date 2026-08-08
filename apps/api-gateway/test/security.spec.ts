@@ -71,6 +71,7 @@ describe('Security Hardening (AH-2D.1)', () => {
         role,
       },
     });
+    await prisma.organizationMember.create({ data: { userId: user.id, orgId: org.id, role } });
     return { org, user };
   }
 

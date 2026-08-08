@@ -84,7 +84,9 @@ describe('DashboardService', () => {
     expect(summary.fleet).toEqual({
       total: 0,
       online: 0,
+      degraded: 0,
       offline: 0,
+      unknown: 0,
       freshness: { live: 0, recent: 0, stale: 0, unavailable: 0 },
       deviceHealth: null,
       recentDevices: [],
@@ -141,38 +143,56 @@ describe('DashboardService', () => {
     expect(summary.fleet.freshness.live).toBe(1);
   });
 
-  it('treats an offline device as offline and stale', async () => {
+  it('treats a device silent for 20 minutes as offline and stale', async () => {
+    prisma.device.findMany.mockResolvedValue([
+      { id: 'd1', name: 'host-a', hostname: null, os: null, lastSeenAt: minutesAgo(20) },
+    ]);
+    const summary = await getSummary();
+    expect(summary.fleet.total).toBe(1);
+    expect(summary.fleet.online).toBe(0);
+    expect(summary.fleet.degraded).toBe(0);
+    expect(summary.fleet.offline).toBe(1);
+    expect(summary.fleet.freshness.stale).toBe(1);
+  });
+
+  it('treats a device silent for 10 minutes as degraded but not offline', async () => {
     prisma.device.findMany.mockResolvedValue([
       { id: 'd1', name: 'host-a', hostname: null, os: null, lastSeenAt: minutesAgo(10) },
     ]);
     const summary = await getSummary();
     expect(summary.fleet.total).toBe(1);
     expect(summary.fleet.online).toBe(0);
-    expect(summary.fleet.offline).toBe(1);
+    expect(summary.fleet.degraded).toBe(1);
+    expect(summary.fleet.offline).toBe(0);
     expect(summary.fleet.freshness.stale).toBe(1);
   });
 
-  it('treats missing lastSeenAt as unavailable and offline', async () => {
+  it('treats missing lastSeenAt as unavailable and unknown presence', async () => {
     prisma.device.findMany.mockResolvedValue([
       { id: 'd1', name: 'host-a', hostname: null, os: null, lastSeenAt: null },
     ]);
     const summary = await getSummary();
     expect(summary.fleet.freshness.unavailable).toBe(1);
     expect(summary.fleet.online).toBe(0);
-    expect(summary.fleet.offline).toBe(1);
+    expect(summary.fleet.degraded).toBe(0);
+    expect(summary.fleet.offline).toBe(0);
+    expect(summary.fleet.unknown).toBe(1);
   });
 
-  it('populates all four freshness bands truthfully', async () => {
+  it('populates all four freshness bands and presence states truthfully', async () => {
     prisma.device.findMany.mockResolvedValue([
       { id: 'd1', name: 'a', hostname: null, os: null, lastSeenAt: nowDate() },
       { id: 'd2', name: 'b', hostname: null, os: null, lastSeenAt: minutesAgo(2) },
       { id: 'd3', name: 'c', hostname: null, os: null, lastSeenAt: minutesAgo(10) },
-      { id: 'd4', name: 'd', hostname: null, os: null, lastSeenAt: null },
+      { id: 'd4', name: 'd', hostname: null, os: null, lastSeenAt: minutesAgo(20) },
+      { id: 'd5', name: 'e', hostname: null, os: null, lastSeenAt: null },
     ]);
     const summary = await getSummary();
-    expect(summary.fleet.freshness).toEqual({ live: 1, recent: 1, stale: 1, unavailable: 1 });
+    expect(summary.fleet.freshness).toEqual({ live: 1, recent: 1, stale: 2, unavailable: 1 });
     expect(summary.fleet.online).toBe(2);
-    expect(summary.fleet.offline).toBe(2);
+    expect(summary.fleet.degraded).toBe(1);
+    expect(summary.fleet.offline).toBe(1);
+    expect(summary.fleet.unknown).toBe(1);
   });
 
   it('returns an authoritative unacknowledged alert count beyond 10', async () => {

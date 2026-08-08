@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NetworkGateway } from './network.gateway';
+import { PrismaService } from '../prisma/prisma.service';
 import { Server, Socket } from 'socket.io';
+
+const mockPrisma = {
+  organizationMember: { findUnique: jest.fn() },
+};
 
 describe('NetworkGateway', () => {
   let gateway: NetworkGateway;
@@ -13,7 +18,10 @@ describe('NetworkGateway', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [NetworkGateway],
+      providers: [
+        NetworkGateway,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
     }).compile();
 
     gateway = module.get<NetworkGateway>(NetworkGateway);

@@ -3,6 +3,8 @@ import { Throttle } from '@nestjs/throttler';
 import { RemoteSupportService } from './remote-support.service';
 import { DevicesService } from '../devices/devices.service';
 import { Public } from '../common/public.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
+import { Permission } from '../common/permissions';
 import { throttle } from '../config/rate-limits';
 
 @Controller('remote-support')
@@ -12,6 +14,7 @@ export class RemoteSupportController {
     private devicesService: DevicesService,
   ) {}
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_START)
   @Post('sessions')
   async createSession(@Req() req: any, @Body() body: { deviceId: string; unattendedPolicy?: string }) {
     const orgId = req.user?.orgId;
@@ -20,6 +23,7 @@ export class RemoteSupportController {
     return this.remoteService.createSession(orgId, userId, body.deviceId, body.unattendedPolicy);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('sessions')
   async listSessions(@Req() req: any, @Query('status') status?: string) {
     const orgId = req.user?.orgId;
@@ -27,6 +31,7 @@ export class RemoteSupportController {
     return this.remoteService.listSessions(orgId, status);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('sessions/:id')
   async getSession(@Req() req: any, @Param('id') id: string) {
     const orgId = req.user?.orgId;
@@ -34,6 +39,7 @@ export class RemoteSupportController {
     return this.remoteService.getSession(orgId, id);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_CONTROL)
   @Post('sessions/:id/end')
   async endSession(@Req() req: any, @Param('id') id: string) {
     const orgId = req.user?.orgId;
@@ -41,6 +47,7 @@ export class RemoteSupportController {
     return this.remoteService.endSession(orgId, id);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('devices')
   async listDevices(@Req() req: any) {
     const orgId = req.user?.orgId;
@@ -56,6 +63,7 @@ export class RemoteSupportController {
     }));
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('recordings')
   async getRecordings(@Req() req: any) {
     const orgId = req.user?.orgId;
@@ -63,6 +71,7 @@ export class RemoteSupportController {
     return this.remoteService.getRecordings(orgId);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('recordings/:sessionId')
   async getSessionRecording(@Req() req: any, @Param('sessionId') sessionId: string) {
     const orgId = req.user?.orgId;
@@ -70,6 +79,7 @@ export class RemoteSupportController {
     return this.remoteService.getSessionRecordings(orgId, sessionId);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_VIEW)
   @Get('audit-logs')
   async getAuditLogs(@Req() req: any, @Query('sessionId') sessionId?: string, @Query('limit') limit?: string) {
     const orgId = req.user?.orgId;
@@ -77,6 +87,7 @@ export class RemoteSupportController {
     return this.remoteService.getAuditLogs(orgId, sessionId, limit ? parseInt(limit, 10) : 50);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_CONTROL)
   @Post('audit-logs')
   async logAction(@Req() req: any, @Body() body: any) {
     const orgId = req.user?.orgId;
@@ -88,6 +99,7 @@ export class RemoteSupportController {
     });
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_CONTROL)
   @Post('recordings/:sessionId')
   async saveRecording(
     @Req() req: any,
@@ -99,6 +111,7 @@ export class RemoteSupportController {
     return this.remoteService.saveRecording(orgId, sessionId, body.recordingPath, body.sizeBytes, body.durationSeconds);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_CONTROL)
   @Post('recordings/:sessionId/frames')
   async updateRecordingFrames(
     @Req() req: any,
@@ -110,6 +123,7 @@ export class RemoteSupportController {
     return this.remoteService.updateRecording(orgId, sessionId, body);
   }
 
+  @RequirePermissions(Permission.REMOTE_SUPPORT_CONTROL)
   @Post('cleanup')
   async cleanupStaleSessions(@Req() req: any) {
     const orgId = req.user?.orgId;
