@@ -354,6 +354,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
+      # Run all four matrix builds even if one fails, so a Docker regression is
+      # visible across every image during certification. A failed job still
+      # fails the overall workflow; this only disables cancelling the remaining
+      # matrix jobs.
+      fail-fast: false
       matrix:
         # The api-gateway / web / worker Dockerfiles are pnpm-monorepo
         # Dockerfiles: every COPY path (package.json, pnpm-workspace.yaml,
@@ -366,6 +371,11 @@ jobs:
         # The agent is a standalone Rust crate whose Dockerfile COPYs Cargo.toml
         # and src/ relative to its own directory, so it keeps an app-local
         # context (apps/agent) with its own .dockerignore.
+        #
+        # NOTE: docker/build-push-action passes `file` to buildx as -f, which is
+        # resolved relative to the runner WORKSPACE (repo root), NOT relative to
+        # the build context. The agent entry therefore uses the workspace-relative
+        # path apps/agent/Dockerfile even though its context is apps/agent.
         service:
           - name: api-gateway
             context: .
@@ -378,7 +388,7 @@ jobs:
             file: apps/worker/Dockerfile
           - name: agent
             context: apps/agent
-            file: Dockerfile
+            file: apps/agent/Dockerfile
 
     env:
       REGISTRY: ghcr.io
