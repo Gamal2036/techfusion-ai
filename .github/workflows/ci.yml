@@ -353,6 +353,15 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # GHCR publish authorization (V1-STAGE-01C-R5): GITHUB_TOKEN defaults to the
+    # repository's read-only workflow permission, which is why the registry push
+    # was denied with "installation not allowed to Create organization package".
+    # Granting packages: write here is the minimal, job-scoped authorization —
+    # no PAT is required. contents: read keeps checkout working; every other
+    # scope is set to none for this job.
+    permissions:
+      contents: read
+      packages: write
     strategy:
       # Run all four matrix builds even if one fails, so a Docker regression is
       # visible across every image during certification. A failed job still
