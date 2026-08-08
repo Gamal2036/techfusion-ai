@@ -55,6 +55,18 @@ jobs:
   ci-api:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Deterministic, non-production TEST placeholders (never GitHub Secrets).
+      # BillingService requires STRIPE_SECRET_KEY at construction and the
+      # AppModule is imported by every API integration spec, so a clean GitHub
+      # checkout (which lacks the local-only apps/api-gateway/.env.test) needs
+      # these values for the test suite to boot. Production validation is
+      # untouched — env.validation.ts still rejects placeholders under NODE_ENV=production.
+      STRIPE_SECRET_KEY: sk_test_placeholder
+      STRIPE_WEBHOOK_SECRET: whsec_placeholder
+      STRIPE_PRO_PRICE_ID: price_test_pro
+      STRIPE_BUSINESS_PRICE_ID: price_test_business
+      STRIPE_ENTERPRISE_PRICE_ID: price_test_enterprise
     services:
       postgres:
         # ROOT-CAUSE FIX (V1-STAGE-01C): the schema requires the TimescaleDB
