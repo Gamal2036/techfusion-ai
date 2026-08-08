@@ -39,6 +39,7 @@ export class AlertsService {
     if (query.alertRuleId) where.alertRuleId = query.alertRuleId;
     if (query.severity) where.severity = query.severity;
     if (query.acknowledged === 'false') where.acknowledgedAt = null;
+    if (query.status) where.status = query.status;
 
     const [data, total] = await Promise.all([
       this.prisma.alert.findMany({
@@ -48,7 +49,7 @@ export class AlertsService {
         skip: query.offset ?? 0,
         include: {
           device: { select: { id: true, name: true, hostname: true } },
-          alertRule: { select: { id: true, name: true, metricName: true } },
+          alertRule: { select: { id: true, name: true, metricName: true, kind: true } },
         },
       }),
       this.prisma.alert.count({ where }),
@@ -58,13 +59,14 @@ export class AlertsService {
   }
 
   async getLatestAlerts(orgId: string, limit = 10) {
+    // The actionable feed: open alerts only, most recently detected first.
     return this.prisma.alert.findMany({
-      where: { orgId },
-      orderBy: { createdAt: 'desc' },
+      where: { orgId, status: 'OPEN' },
+      orderBy: { lastDetectedAt: 'desc' },
       take: limit,
       include: {
         device: { select: { id: true, name: true, hostname: true } },
-        alertRule: { select: { id: true, name: true, metricName: true } },
+        alertRule: { select: { id: true, name: true, metricName: true, kind: true } },
       },
     });
   }
@@ -74,7 +76,20 @@ export class AlertsService {
     if (!alert) throw new NotFoundException('Alert not found');
     return this.prisma.alert.update({
       where: { id },
-      data: { acknowledgedAt: new Date() },
+      data: { acknowledgedAt: new Date(), status: 'ACKNOWLEDGED' },
+    });
+  }
+
+  async resolveAlert(id: string, orgId: string) {
+    const alert = await this.prisma.alert.findFirst({ where: { id, orgId } });
+    if (!alert) throw new NotFoundException('Alert not found');
+    if (alert.status === 'RESOLVED') {
+      return this.prisma.alert.findUnique({ where: { id } });
+    }
+    // Clear activeKey so the unique dedup slot frees up for a future incident.
+    return this.prisma.alert.update({
+      where: { id },
+      data: { resolvedAt: new Date(), status: 'RESOLVED', activeKey: null },
     });
   }
 }

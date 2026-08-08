@@ -109,6 +109,42 @@ const workerUptimeGauge = new Gauge({
   registers: [register],
 });
 
+const monitoringSweepRuns = new Counter({
+  name: 'monitoring_sweep_runs_total',
+  help: 'Total monitoring sweep executions',
+  labelNames: ['status'],
+  registers: [register],
+});
+
+const monitoringSweepDuration = new Histogram({
+  name: 'monitoring_sweep_duration_seconds',
+  help: 'Monitoring sweep duration in seconds',
+  labelNames: [],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 30, 60],
+  registers: [register],
+});
+
+const monitoringAlertsOpened = new Counter({
+  name: 'monitoring_alerts_opened_total',
+  help: 'Total alerts opened by the monitoring pipeline',
+  labelNames: ['source'],
+  registers: [register],
+});
+
+const monitoringAlertsResolved = new Counter({
+  name: 'monitoring_alerts_resolved_total',
+  help: 'Total alerts resolved by the monitoring pipeline',
+  labelNames: ['source'],
+  registers: [register],
+});
+
+const monitoringPresenceTransitions = new Counter({
+  name: 'monitoring_presence_transitions_total',
+  help: 'Presence state transitions detected by the monitoring sweep',
+  labelNames: ['transition'],
+  registers: [register],
+});
+
 export function trackQueueDepth(queue: string, depth: number): void {
   bullmqQueueDepth.labels(queue).set(depth);
 }
@@ -162,6 +198,32 @@ export function trackWorkerHealth(healthy: boolean): void {
 
 export function trackWorkerUptime(): void {
   workerUptimeGauge.labels('techfusion-worker').set(process.uptime());
+}
+
+export function trackMonitoringSweep(payload: {
+  durationSeconds: number;
+  presenceAlertsCreated: number;
+  presenceAlertsRefreshed: number;
+  presenceAlertsResolved: number;
+  metricAlertsResolved: number;
+}): void {
+  monitoringSweepRuns.labels('success').inc();
+  monitoringSweepDuration.observe(payload.durationSeconds);
+  if (payload.presenceAlertsCreated > 0) {
+    monitoringAlertsOpened.labels('presence').inc(payload.presenceAlertsCreated);
+    monitoringPresenceTransitions.labels('offline').inc(payload.presenceAlertsCreated);
+  }
+  if (payload.presenceAlertsResolved > 0) {
+    monitoringAlertsResolved.labels('presence').inc(payload.presenceAlertsResolved);
+    monitoringPresenceTransitions.labels('recovered').inc(payload.presenceAlertsResolved);
+  }
+  if (payload.metricAlertsResolved > 0) {
+    monitoringAlertsResolved.labels('metric').inc(payload.metricAlertsResolved);
+  }
+}
+
+export function trackMonitoringSweepFailure(): void {
+  monitoringSweepRuns.labels('failed').inc();
 }
 
 export function getMetricsContentType(): string {

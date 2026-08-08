@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-interface MetricSnapshot {
+export const ALERT_STATUS_OPEN = 'OPEN';
+export const ALERT_STATUS_ACKNOWLEDGED = 'ACKNOWLEDGED';
+export const ALERT_STATUS_RESOLVED = 'RESOLVED';
+export const ALERT_SOURCE_METRIC = 'metric';
+export const ALERT_SOURCE_PRESENCE = 'presence';
+
+export interface MetricSnapshot {
   deviceId: string;
   orgId: string;
   cpuUsage: number;
@@ -11,18 +17,41 @@ interface MetricSnapshot {
   loadAverage1Min: number | null;
   processes: number | null;
   services: { name: string; status: string }[] | null;
+  healthScore?: number | null;
+  performanceScore?: number | null;
+  riskScore?: number | null;
+}
+
+/**
+ * Builds the DB-level dedup key for an alert.  A non-null activeKey is unique,
+ * so at most one OPEN/ACKNOWLEDGED alert can exist per (alertRuleId, deviceId).
+ * RESOLVED alerts clear activeKey and never collide.
+ */
+export function buildActiveKey(alertRuleId: string, deviceId: string): string {
+  return `${alertRuleId}:${deviceId}`;
 }
 
 @Injectable()
 export class AlertEvaluationService {
   private readonly logger = new Logger(AlertEvaluationService.name);
-  private lastAlertedTimestamps = new Map<string, number>();
 
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Evaluate the enabled metric rules for a device against the latest snapshot.
+   *
+   * Dedup semantics: a sustained breach produces exactly one OPEN alert per
+   * (org, device, rule).  When an OPEN/ACKNOWLEDGED alert already exists it is
+   * refreshed (metricValue, severity, lastDetectedAt) instead of creating a
+   * duplicate.  A resolved alert means the condition cleared, so a re-breach
+   * opens a brand new alert.
+   *
+   * Returns ONLY the newly created alerts so callers notify/broadcast exactly
+   * once per incident, not on every re-detection.
+   */
   async evaluateMetrics(deviceId: string, orgId: string, metric: MetricSnapshot): Promise<any[]> {
     const rules = await this.prisma.alertRule.findMany({
-      where: { orgId, enabled: true },
+      where: { orgId, enabled: true, kind: 'metric' },
     });
 
     const createdAlerts: any[] = [];
@@ -34,30 +63,71 @@ export class AlertEvaluationService {
       const breached = this.evaluateThreshold(value, rule.threshold, rule.operator);
       if (!breached) continue;
 
-      const key = `${rule.id}:${deviceId}`;
-      const lastAlerted = this.lastAlertedTimestamps.get(key) ?? 0;
-      const now = Date.now();
-
-      if (now - lastAlerted < rule.debounceSeconds * 1000) continue;
-
-      this.lastAlertedTimestamps.set(key, now);
-
+      const activeKey = buildActiveKey(rule.id, deviceId);
+      const now = new Date();
       const message = this.buildAlertMessage(rule, deviceId, value);
 
-      const alert = await this.prisma.alert.create({
-        data: {
-          orgId,
-          alertRuleId: rule.id,
-          deviceId,
-          metricValue: value,
-          threshold: rule.threshold,
-          severity: rule.severity,
-          message,
-        },
+      const existing = await this.prisma.alert.findFirst({
+        where: { orgId, activeKey },
+        select: { id: true },
       });
 
-      this.logger.log(`Alert created: ${alert.id} - ${message}`);
-      createdAlerts.push(alert);
+      if (existing) {
+        await this.prisma.alert.update({
+          where: { id: existing.id },
+          data: {
+            metricValue: value,
+            threshold: rule.threshold,
+            severity: rule.severity,
+            message,
+            lastDetectedAt: now,
+          },
+        });
+        continue;
+      }
+
+      try {
+        const alert = await this.prisma.alert.create({
+          data: {
+            orgId,
+            alertRuleId: rule.id,
+            deviceId,
+            metricValue: value,
+            threshold: rule.threshold,
+            severity: rule.severity,
+            message,
+            status: ALERT_STATUS_OPEN,
+            source: ALERT_SOURCE_METRIC,
+            activeKey,
+            lastDetectedAt: now,
+          },
+        });
+
+        this.logger.log(`Alert created: ${alert.id} - ${message}`);
+        createdAlerts.push(alert);
+      } catch (err: any) {
+        // Unique constraint race (parallel instance opened it first): refresh it.
+        if (err?.code === 'P2002') {
+          const raced = await this.prisma.alert.findFirst({
+            where: { orgId, activeKey },
+            select: { id: true },
+          });
+          if (raced) {
+            await this.prisma.alert.update({
+              where: { id: raced.id },
+              data: {
+                metricValue: value,
+                threshold: rule.threshold,
+                severity: rule.severity,
+                message,
+                lastDetectedAt: now,
+              },
+            });
+          }
+        } else {
+          throw err;
+        }
+      }
     }
 
     return createdAlerts;
@@ -71,6 +141,9 @@ export class AlertEvaluationService {
       case 'tempCpu': return metric.tempCpu;
       case 'loadAverage1Min': return metric.loadAverage1Min;
       case 'processes': return metric.processes != null ? metric.processes : null;
+      case 'healthScore': return metric.healthScore != null ? metric.healthScore : null;
+      case 'performanceScore': return metric.performanceScore != null ? metric.performanceScore : null;
+      case 'riskScore': return metric.riskScore != null ? metric.riskScore : null;
       default: return null;
     }
   }

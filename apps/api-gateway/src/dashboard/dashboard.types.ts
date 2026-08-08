@@ -40,7 +40,9 @@ export interface DashboardSummaryResponse {
   fleet: {
     total: number;
     online: number;
+    degraded: number;
     offline: number;
+    unknown: number;
     freshness: FreshnessCounts;
     deviceHealth: number | null;
     recentDevices: RecentDevice[];

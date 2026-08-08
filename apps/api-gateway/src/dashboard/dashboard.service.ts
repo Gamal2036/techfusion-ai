@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { classifyFreshness, isDeviceOnline } from '../devices/device-presence';
+import { classifyFreshness } from '../devices/device-presence';
+import { derivePresenceState } from '../devices/device-presence-state';
 import {
   DashboardSummaryResponse,
   SeverityCounts,
@@ -54,7 +55,7 @@ export class DashboardService {
       }),
       this.prisma.alert.groupBy({
         by: ['severity'],
-        where: { orgId, acknowledgedAt: null },
+        where: { orgId, status: 'OPEN' },
         _count: { _all: true },
       }),
       this.prisma.securityFinding.groupBy({
@@ -121,11 +122,21 @@ export class DashboardService {
 
     const onlineDevices: string[] = [];
     const freshness = emptyFreshnessCounts();
+    let degradedCount = 0;
+    let offlineCount = 0;
+    let unknownCount = 0;
     for (const device of devices) {
       const band = classifyFreshness(device.lastSeenAt, now);
       freshness[band] += 1;
-      if (isDeviceOnline(device.lastSeenAt, now)) {
+      const presence = derivePresenceState(device.lastSeenAt, now);
+      if (presence === 'ONLINE') {
         onlineDevices.push(device.id);
+      } else if (presence === 'DEGRADED') {
+        degradedCount += 1;
+      } else if (presence === 'OFFLINE') {
+        offlineCount += 1;
+      } else {
+        unknownCount += 1;
       }
     }
 
@@ -173,7 +184,9 @@ export class DashboardService {
       fleet: {
         total: devices.length,
         online: onlineCount,
-        offline: devices.length - onlineCount,
+        degraded: degradedCount,
+        offline: offlineCount,
+        unknown: unknownCount,
         freshness,
         deviceHealth,
         recentDevices: devices.slice(0, 8).map((device) => ({

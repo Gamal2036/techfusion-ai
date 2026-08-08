@@ -1,13 +1,30 @@
-import { Job } from 'bullmq';
-import { trackJobCompleted, trackJobFailed, trackJobDuration } from './metrics';
+import { Job, Queue } from 'bullmq';
+import {
+  trackJobCompleted,
+  trackJobFailed,
+  trackJobDuration,
+  trackMonitoringSweep,
+  trackMonitoringSweepFailure,
+} from './metrics';
 import { QUEUE_NAMES, JOB_NAMES } from './queue-names';
 import { createWorkerLogger } from './structured-logger';
 import { extractCorrelationFromJob } from './correlation';
 import { SecurityFinding } from '@prisma/client';
 import { getPrismaClient } from './prisma-client';
 import { runBackupScript, parseBackupOutput, parseVerificationOutput, type BackupScriptResult } from './backup-runner';
+import { runMonitoringSweep } from './monitoring-sweep';
 
 const EMBEDDING_DIMENSION = 1536;
+
+let alertQueue: Queue | null = null;
+function getAlertQueue(): Queue {
+  if (!alertQueue) {
+    alertQueue = new Queue(QUEUE_NAMES.ALERT, {
+      connection: { url: process.env.REDIS_URL || 'redis://localhost:6379' },
+    });
+  }
+  return alertQueue;
+}
 
 const loggers: Record<string, ReturnType<typeof createWorkerLogger>> = {};
 function getJobLogger(queueName: string): ReturnType<typeof createWorkerLogger> {
@@ -925,6 +942,70 @@ export async function processSecurityJob(job: Job): Promise<any> {
     return { success: true };
   } catch (err) {
     trackJobFailed(QUEUE_NAMES.SECURITY, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}
+
+// ─── Monitoring Processor ─────────────────────────────────────
+
+export async function processMonitoringJob(job: Job): Promise<any> {
+  const start = Date.now();
+  const log = getJobLogger(QUEUE_NAMES.MONITORING);
+  const corr = getCorrelation(job);
+
+  log.log('Processing job', {
+    queueName: QUEUE_NAMES.MONITORING,
+    jobId: job.id?.toString(),
+    jobName: job.name,
+    requestId: corr?.requestId,
+    correlationId: corr?.correlationId,
+  });
+
+  try {
+    if (job.name !== JOB_NAMES.MONITORING.PRESENCE_SWEEP) {
+      trackJobCompleted(QUEUE_NAMES.MONITORING);
+      return { success: true, skipped: true };
+    }
+
+    const prisma = getPrismaClient();
+
+    const result = await runMonitoringSweep(prisma, {
+      now: job.data?.scheduledAt ? new Date(job.data.scheduledAt as string) : new Date(),
+      notify: async (payload) => {
+        try {
+          await getAlertQueue().add(JOB_NAMES.ALERT.NOTIFICATION, {
+            alert: payload.alert,
+            rule: payload.rule,
+            deviceName: payload.deviceName,
+            orgId: payload.orgId,
+          });
+        } catch (err) {
+          log.error('Presence alert notification enqueue failed', {
+            queueName: QUEUE_NAMES.MONITORING,
+            jobId: job.id?.toString(),
+            orgId: payload.orgId,
+            errorType: 'NotificationEnqueueError',
+            errorMessage: err instanceof Error ? err.message : String(err),
+          });
+        }
+      },
+    });
+
+    const duration = (Date.now() - start) / 1000;
+    trackJobCompleted(QUEUE_NAMES.MONITORING);
+    trackJobDuration(QUEUE_NAMES.MONITORING, job.name || 'presence_sweep', duration);
+    trackMonitoringSweep({ durationSeconds: duration, ...result });
+
+    log.log(`Monitoring sweep completed: ${JSON.stringify(result)}`, {
+      queueName: QUEUE_NAMES.MONITORING,
+      jobId: job.id?.toString(),
+      duration,
+    });
+
+    return { success: true, result };
+  } catch (err) {
+    trackMonitoringSweepFailure();
+    trackJobFailed(QUEUE_NAMES.MONITORING, err instanceof Error ? err.message : String(err));
     throw err;
   }
 }

@@ -2,7 +2,7 @@ import { Worker, Queue, Job } from 'bullmq';
 import { initTelemetry, shutdownTelemetry } from './telemetry';
 import { startMetricsServer, trackQueueDepth, trackJobCompleted, trackJobFailed, trackJobDuration, trackJobCounts, trackWorkerHealth, trackWorkerUptime, trackStalledJob, trackWorkerConcurrency, trackProcessorFailure } from './metrics';
 import { QUEUE_NAMES, JOB_NAMES, QueueName } from './queue-names';
-import { processAlertJob, processReportJob, processBackupJob, processInventoryJob, processSecurityJob, processRetentionJob, processKbEmbeddingJob } from './processors';
+import { processAlertJob, processReportJob, processBackupJob, processInventoryJob, processSecurityJob, processRetentionJob, processKbEmbeddingJob, processMonitoringJob } from './processors';
 import { createWorkerLogger } from './structured-logger';
 import { extractCorrelationFromJob, JobCorrelationData } from './correlation';
 import { disconnectPrisma } from './prisma-client';
@@ -95,6 +95,7 @@ const QUEUE_PROCESSORS: Record<string, (job: Job) => Promise<any>> = {
   [QUEUE_NAMES.SECURITY]: processSecurityJob,
   [QUEUE_NAMES.RETENTION]: processRetentionJob,
   [QUEUE_NAMES.KB_EMBEDDING]: processKbEmbeddingJob,
+  [QUEUE_NAMES.MONITORING]: processMonitoringJob,
 };
 
 // ─── Worker Factory ────────────────────────────────────────────

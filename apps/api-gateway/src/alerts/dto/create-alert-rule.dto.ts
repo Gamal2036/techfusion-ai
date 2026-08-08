@@ -9,6 +9,10 @@ export class CreateAlertRuleDto {
   description?: string;
 
   @IsString()
+  @IsIn(['metric', 'presence'])
+  kind: string = 'metric';
+
+  @IsString()
   metricName: string;
 
   @IsNumber()

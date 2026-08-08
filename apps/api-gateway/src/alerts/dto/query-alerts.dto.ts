@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class QueryAlertsDto {
@@ -13,6 +13,11 @@ export class QueryAlertsDto {
   @IsString()
   @IsOptional()
   severity?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['OPEN', 'ACKNOWLEDGED', 'RESOLVED'])
+  status?: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 
   @IsOptional()
   acknowledged?: string;

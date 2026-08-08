@@ -6,6 +6,7 @@ export const QUEUE_NAMES = {
   SECURITY: 'security',
   RETENTION: 'retention',
   KB_EMBEDDING: 'kb_embedding',
+  MONITORING: 'monitoring',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -37,6 +38,9 @@ export const JOB_NAMES = {
   KB_EMBEDDING: {
     EMBED: 'embed',
     REINDEX: 'reindex',
+  },
+  MONITORING: {
+    PRESENCE_SWEEP: 'presence_sweep',
   },
 } as const;
 
