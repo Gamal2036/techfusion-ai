@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# TechFusion AI — Linux Bootstrap Installer Verification (V1-ENROLL-01A)
+# TechFusion AI — Linux Bootstrap Installer Verification (V1-ENROLL-01A,
+# V1-STAGE-00B-R1)
 #
-# Static + integrity checks for the installer and its web-served assets.
+# Static + integrity checks for the installer and its web-served assets,
+# including the single-source-of-truth release consistency contract:
+#   - installer enforces the post-install capability gate (no stale artifact)
+#   - web dashboard default release URL matches the certified release tag
+#   - web required-capability list matches the certified release
 # Run:  bash scripts/verify-linux-bootstrap.sh
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=agent-release-config.sh
+source "$ROOT/scripts/agent-release-config.sh"
 INSTALLER="$ROOT/scripts/install-linux.sh"
 UNINSTALLER="$ROOT/scripts/uninstall-linux.sh"
 WEB_COPY="$ROOT/apps/web/public/install-linux.sh"
 WEB_SUM="$ROOT/apps/web/public/install-linux.sh.sha256"
+WEB_DOWNLOAD_TS="$ROOT/apps/web/src/lib/agent-download.ts"
 
 FAILED=0
 check() {
@@ -26,6 +34,9 @@ check() {
 
 echo "V1-ENROLL-01A Linux Bootstrap Installer Verification"
 echo "────────────────────────────────────────────────────"
+echo "  Certified release: ${AGENT_RELEASE_TAG} (${AGENT_RELEASE_VERSION})"
+echo "  Required capabilities: ${AGENT_REQUIRED_CAPABILITIES}"
+echo ""
 
 [ -f "$INSTALLER" ] && [ -f "$UNINSTALLER" ] && [ -f "$WEB_COPY" ] && [ -f "$WEB_SUM" ]
 
@@ -83,6 +94,21 @@ check "installer selects asset per detected arch" grep -q 'techfusion-agent-linu
 check "installer requires checksum when downloading (fail-closed)" grep -q 'refusing to install an unverified binary' "$INSTALLER"
 check "installer verifies sha256 when provided" grep -q 'sha256sum' "$INSTALLER"
 check "installer fetches checksum with selected fetcher" grep -q '"${BINARY_URL}.sha256"' "$INSTALLER"
+
+# 5b. post-install capability gate (V1-STAGE-00B-R1) — stale artifact refusal
+check "installer enforces post-install capability gate" grep -q 'verify_agent_capabilities' "$INSTALLER"
+check "installer gates the artifact BEFORE install" grep -q 'verify_agent_capabilities "\$BIN_FILE"' "$INSTALLER"
+check "installer re-verifies the installed path" grep -q 'verify_agent_capabilities "\$BIN_PATH"' "$INSTALLER"
+check "installer verifies each required capability" grep -q 'for cap in \$REQUIRED_CAPABILITIES' "$INSTALLER"
+check "installer greps --help for capabilities" grep -q -e '--help 2>/dev/null | grep -qw' "$INSTALLER"
+check "installer fails closed on stale artifact (die 3)" grep -q 'older than the required TechFusion Agent' "$INSTALLER"
+check "installer never installs a stale binary on failure" grep -q 'no stale artifact was installed' "$INSTALLER"
+check "capability list overridable via TF_REQUIRED_AGENT_CAPABILITIES" grep -q 'TF_REQUIRED_AGENT_CAPABILITIES' "$INSTALLER"
+
+# 5c. single-source-of-truth release consistency (V1-STAGE-00B-R1)
+check "web dashboard default release URL uses certified tag" grep -q "releases/download/${AGENT_RELEASE_TAG}" "$WEB_DOWNLOAD_TS"
+check "web required capabilities match certified release" grep -q "reset-identity" "$WEB_DOWNLOAD_TS" && grep -q "identity-status" "$WEB_DOWNLOAD_TS"
+check "installer stale-artifact message references certified release" grep -q 'v1.0.0-agent-beta.4+' "$INSTALLER"
 
 # 6. web-served asset integrity
 check "web copy matches scripts/install-linux.sh" cmp -s "$INSTALLER" "$WEB_COPY"

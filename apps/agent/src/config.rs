@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::env;
 use std::path::PathBuf;
 
@@ -9,6 +9,8 @@ pub struct AgentConfig {
     pub device_id: Option<String>,
     pub org_token: Option<String>,
     pub state_dir: PathBuf,
+    pub state_dir_explicit: bool,
+    pub command: Option<AgentCommand>,
     pub enroll: bool,
     pub interval_secs: u64,
     pub security_interval_secs: u64,
@@ -19,9 +21,33 @@ pub struct AgentConfig {
     pub agent_version: String,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum AgentCommand {
+    /// Remove this device's local identity and credential, returning the Agent
+    /// to the UNENROLLED state. The binary, systemd unit, and non-secret
+    /// configuration are preserved. The service is stopped after a reset.
+    ResetIdentity {
+        /// Skip the interactive confirmation prompt (for automation).
+        #[arg(long)]
+        yes: bool,
+        /// Persistent state directory (defaults to the installed agent state).
+        #[arg(long, env = "TF_STATE_DIR")]
+        state_dir: Option<PathBuf>,
+    },
+    /// Print safe identity/state metadata. Device tokens are never printed.
+    IdentityStatus {
+        /// Persistent state directory (defaults to the installed agent state).
+        #[arg(long, env = "TF_STATE_DIR")]
+        state_dir: Option<PathBuf>,
+    },
+}
+
 #[derive(Parser, Debug, Clone)]
-#[command(name = "agent", version = env!("CARGO_PKG_VERSION"), about = "TechFusion AI Device Agent — monitors and reports system telemetry")]
+#[command(name = "techfusion-agent", version = env!("CARGO_PKG_VERSION"), about = "TechFusion AI Device Agent — monitors and reports system telemetry")]
 struct CliArgs {
+    #[command(subcommand)]
+    command: Option<AgentCommand>,
+
     #[arg(long, env = "TF_API_URL")]
     api_url: Option<String>,
 
@@ -67,23 +93,30 @@ impl AgentConfig {
     pub fn from_env() -> anyhow::Result<Self> {
         let args = CliArgs::parse();
 
-        let api_url = args
+        let command = args.command.clone();
+
+        let provided_api_url = args
             .api_url
             .or_else(|| env::var("TF_API_URL").ok())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "TF_API_URL must be set.\n\n\
-                     Quick start:\n\
-                     \texport TF_API_URL=https://<your-host>\n\
-                     \texport TF_ORG_TOKEN=tfenr_<your-token>\n\
-                     \t/usr/local/bin/techfusion-agent --enroll\n\n\
-                     Or install with the TechFusion Linux installer:\n\
-                     \tcurl -fsSL https://<your-dashboard>/install-linux.sh -o /tmp/tf-install.sh\n\
-                     \tsudo bash /tmp/tf-install.sh --api <TF_API_URL> --enroll-token tfenr_<your-token>\n\n\
-                     Get your enrollment token from the Dashboard → Connect Device."
-                )
-            })?;
+            .filter(|s| !s.is_empty());
+
+        let api_url = if let Some(url) = provided_api_url {
+            url
+        } else if command.is_some() {
+            String::new()
+        } else {
+            anyhow::bail!(
+                "TF_API_URL must be set.\n\n\
+                 Quick start:\n\
+                 \texport TF_API_URL=https://<your-host>\n\
+                 \texport TF_ORG_TOKEN=tfenr_<your-token>\n\
+                 \t/usr/local/bin/techfusion-agent --enroll\n\n\
+                 Or install with the TechFusion Linux installer:\n\
+                 \tcurl -fsSL https://<your-dashboard>/install-linux.sh -o /tmp/tf-install.sh\n\
+                 \tsudo bash /tmp/tf-install.sh --api <TF_API_URL> --enroll-token tfenr_<your-token>\n\n\
+                 Get your enrollment token from the Dashboard → Connect Device."
+            );
+        };
 
         if api_url.starts_with("http://")
             && !api_url.contains("localhost")
@@ -110,8 +143,21 @@ impl AgentConfig {
             .or_else(|| env::var("TF_DEVICE_ID").ok())
             .filter(|s| !s.is_empty());
 
+        let command_state_dir = match &command {
+            Some(AgentCommand::ResetIdentity { state_dir, .. })
+            | Some(AgentCommand::IdentityStatus { state_dir }) => state_dir.clone(),
+            None => None,
+        };
+
+        let state_dir_explicit = args.state_dir.is_some()
+            || command_state_dir.is_some()
+            || env::var("TF_STATE_DIR")
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+
         let state_dir = args
             .state_dir
+            .or(command_state_dir)
             .or_else(|| env::var("TF_STATE_DIR").ok().map(PathBuf::from))
             .unwrap_or_else(default_state_dir);
 
@@ -132,6 +178,8 @@ impl AgentConfig {
             device_id,
             org_token,
             state_dir,
+            state_dir_explicit,
+            command,
             enroll,
             interval_secs: args.interval_secs,
             security_interval_secs: args.security_interval_secs,

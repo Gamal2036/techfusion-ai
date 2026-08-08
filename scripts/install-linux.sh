@@ -29,15 +29,21 @@
 #   0  success
 #   1  usage / argument error
 #   2  unsupported platform or missing dependency
-#   3  binary acquisition or verification failure
+#   3  binary acquisition or verification failure (incl. stale/old artifact)
 #   4  configuration error
 #   5  enrollment failure
 #   6  systemd/service failure
+#
+# Post-install capability gate: after installing, the installer verifies the
+# binary actually provides the certified Agent lifecycle commands
+# (reset-identity / identity-status, overridable via
+# TF_REQUIRED_AGENT_CAPABILITIES). If the downloaded artifact predates those
+# commands, the installer FAILS instead of reporting a successful install.
 # ═══════════════════════════════════════════════════════════════════════════
 
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.3.0"
 
 API_URL=""
 ENROLL_TOKEN=""
@@ -53,6 +59,10 @@ ENV_FILE="${CONFIG_DIR}/agent.env"
 UNIT_PATH="/etc/systemd/system/techfusion-agent.service"
 LOG_LEVEL="info"
 ENROLL_TIMEOUT_SECS="${TF_ENROLL_TIMEOUT_SECS:-90}"
+# Lifecycle capabilities the certified agent build MUST expose. A stale artifact
+# that predates these commands is refused (fail closed). Override for other
+# release tracks with TF_REQUIRED_AGENT_CAPABILITIES="cap1 cap2 ...".
+REQUIRED_CAPABILITIES="${TF_REQUIRED_AGENT_CAPABILITIES:-reset-identity identity-status}"
 
 usage() {
   cat <<'EOF'
@@ -240,12 +250,49 @@ if [ ! -x "$BIN_FILE" ] && [ "${BINARY_PATH_ARG:-}" = "" ]; then
   chmod +x "$BIN_FILE"
 fi
 
+# ── agent capability gate ──────────────────────────────────────────────────
+# Verifies a candidate agent binary actually provides the certified Agent
+# lifecycle commands. Catches exactly the stale-artifact regression where an
+# older published binary (which also reports the same base version) silently
+# replaces a newer local build. Runs BEFORE install (so a stale artifact can
+# never overwrite a working binary) and again on the installed path below.
+# Usage: verify_agent_capabilities <binary-path> <artifact-label>
+verify_agent_capabilities() {
+  local bin="$1" label="$2" cap
+  for cap in $REQUIRED_CAPABILITIES; do
+    if "$bin" --help 2>/dev/null | grep -qw "$cap"; then
+      ok "${label} exposes: ${cap}"
+    else
+      die 3 "Installed Agent artifact is older than the required TechFusion Agent
+  lifecycle build — it is missing the '${cap}' command.
+
+  This usually means the installer downloaded a stale published artifact
+  (e.g. a release tagged before reset-identity/identity-status existed).
+  Installation aborted; no stale artifact was installed and no service was
+  started.
+
+  Re-run with --release/--url pointing at the current certified release
+  (v1.0.0-agent-beta.4+), or with --binary <path> of a current build."
+    fi
+  done
+}
+
+log "Verifying artifact capabilities"
+verify_agent_capabilities "$BIN_FILE" "downloaded artifact"
+
 log "Installing binary"
 mkdir -p "$(dirname "$BIN_PATH")"
 install -m 0755 -o root -g root "$BIN_FILE" "$BIN_PATH"
 ok "Installed ${BIN_PATH}"
 
 "$BIN_PATH" --version >/dev/null 2>&1 || die 3 "Installed binary failed to execute."
+
+# ── post-install capability gate ───────────────────────────────────────────
+# Re-verifies the installed path, so a stale binary can never be presented as
+# a successful current install.
+log "Verifying installed artifact capabilities"
+verify_agent_capabilities "$BIN_PATH" "installed agent"
+ok "Installed agent artifact matches the required TechFusion Agent lifecycle build"
 
 # ── 2. configuration ────────────────────────────────────────────────────────
 log "Writing configuration"
@@ -305,6 +352,12 @@ enroll_with_timeout() {
 
 if [ -s "${STATE_DIR}/device_token" ] && [ -s "${STATE_DIR}/device_id" ]; then
   ok "Existing persistent identity found — reusing it, skipping enrollment"
+  warn "This Agent is already enrolled. The installer never overwrites an"
+  warn "existing device identity (security protection)."
+  warn "To intentionally remove its local identity and return it to the"
+  warn "UNENROLLED state, run:"
+  warn "  sudo techfusion-agent reset-identity"
+  warn "Then re-run this installer with a fresh --enroll-token."
 elif [ -n "$ENROLL_TOKEN" ]; then
   log "Enrolling device (one-shot, token consumed by the API and not stored)"
   ENROLL_LOG="${TMP_DIR}/enroll.log"
@@ -320,7 +373,7 @@ elif [ -n "$ENROLL_TOKEN" ]; then
   This means the binary does not implement the one-shot enrollment contract
   (TF_ENROLL=true → register → exit) expected by this installer — for example it
   predates it. Re-run with --release/--url pointing at a current build
-  (v1.0.0-agent-beta.3+), or with --binary <path> of a current build."
+  (v1.0.0-agent-beta.4+), or with --binary <path> of a current build."
   fi
   if [ "$ENROLL_EXIT" -ne 0 ]; then
     die 5 "Enrollment failed. Check that the token is valid/unused/unexpired and the API is reachable."

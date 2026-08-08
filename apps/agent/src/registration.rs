@@ -400,6 +400,8 @@ mod tests {
             device_id: None,
             org_token: None,
             state_dir,
+            state_dir_explicit: false,
+            command: None,
             enroll: false,
             interval_secs: 30,
             security_interval_secs: 3600,

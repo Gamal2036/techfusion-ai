@@ -3,6 +3,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OnboardingFlow } from '@/components/command-center/OnboardingFlow';
+import { DEFAULT_AGENT_RELEASE_BASE_URL } from '@/lib/agent-download';
 
 const mockUseDeviceList = jest.fn();
 const mockApiFetch = jest.fn();
@@ -176,7 +177,7 @@ describe('OnboardingFlow', () => {
 
     const command = await screen.findByText(/install-linux\.sh/);
     expect(command).toHaveTextContent(
-      '--release "https://github.com/Gamal2036/techfusion-ai/releases/download/v1.0.0-agent-beta.3"',
+      `--release "${DEFAULT_AGENT_RELEASE_BASE_URL}"`,
     );
     expect(command).not.toHaveTextContent('--url ');
   });

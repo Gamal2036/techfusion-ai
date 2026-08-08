@@ -106,8 +106,19 @@ jobs:
       - name: Verify installer assets
         run: bash scripts/verify-linux-bootstrap.sh
 
+      - name: Verify installer arch resolution
+        run: bash scripts/verify-installer-arch-resolution.sh
+
       - name: Verify systemd unit contract
         run: bash scripts/verify-agent-systemd-unit.sh
+
+      # V1-STAGE-00B-R1 gate: on main pushes, the installer must download the
+      # CURRENT certified release artifact (which exposes reset-identity +
+      # identity-status). Fails closed when the release is stale or not yet
+      # published, so a stale artifact can never be presented as current.
+      - name: Installer artifact regression test — published release is current
+        if: github.event_name == 'push'
+        run: bash scripts/test-installer-artifact-regression.sh
 
   docker-build:
     needs: lint-build-test

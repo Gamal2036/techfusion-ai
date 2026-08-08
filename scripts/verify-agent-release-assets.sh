@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# TechFusion AI — Published Linux Agent Release Asset Verification (V1-AGENT-E2E-01)
+# TechFusion AI — Published Linux Agent Release Asset Verification (V1-AGENT-E2E-01,
+# V1-STAGE-00B-R1)
 #
 # Downloads the published techfusion-agent-linux-{x86_64,aarch64} assets from a
 # release base URL and verifies the full artifact contract the installer relies on:
@@ -8,16 +9,26 @@
 #   - sibling <name>.sha256 obtainable and matches the binary
 #   - binary is an ELF of the expected architecture
 #   - native binary executes (--version) when the host arch matches
+#   - native binary reports the certified version (AGENT_RELEASE_VERSION)
+#   - native binary exposes the required lifecycle capabilities
+#     (reset-identity / identity-status) — this is the V1-STAGE-00B-R1 gate that
+#     catches a stale published artifact that predates those commands
+#
+# The default release base URL comes from scripts/agent-release-config.sh
+# (the single source of truth).
 #
 # Non-destructive: writes only to a temp dir. No root, no system changes,
 # no enrollment token, no API calls.
 #
 # Run:  bash scripts/verify-agent-release-assets.sh [release-base-url]
-# Default base: https://github.com/Gamal2036/techfusion-ai/releases/download/v1.0.0-agent-beta.2
 # ═══════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
-RELEASE_BASE="${1:-https://github.com/Gamal2036/techfusion-ai/releases/download/v1.0.0-agent-beta.2}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=agent-release-config.sh
+source "$ROOT/scripts/agent-release-config.sh"
+
+RELEASE_BASE="${1:-$AGENT_RELEASE_BASE_URL}"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -35,6 +46,8 @@ esac
 echo "V1-AGENT-E2E-01 Published Release Asset Verification"
 echo "────────────────────────────────────────────────────"
 echo "  Release base: ${RELEASE_BASE}"
+echo "  Expected version: ${AGENT_RELEASE_VERSION}"
+echo "  Required capabilities: ${AGENT_REQUIRED_CAPABILITIES}"
 echo "  Host arch:    ${LOCAL_ARCH}"
 echo ""
 
@@ -76,6 +89,19 @@ for ARCH in x86_64 aarch64; do
     else
       fail "$NAME executes (--version) on native host"
     fi
+    VER_OUT="$("$TMP/$NAME" --version 2>/dev/null || true)"
+    if printf '%s\n' "$VER_OUT" | grep -q "techfusion-agent ${AGENT_RELEASE_VERSION}$"; then
+      ok "$NAME reports certified version techfusion-agent ${AGENT_RELEASE_VERSION}"
+    else
+      fail "$NAME certified version (got '$VER_OUT', want techfusion-agent ${AGENT_RELEASE_VERSION})"
+    fi
+    for cap in $AGENT_REQUIRED_CAPABILITIES; do
+      if "$TMP/$NAME" --help 2>/dev/null | grep -qw "$cap"; then
+        ok "$NAME exposes lifecycle command: ${cap}"
+      else
+        fail "$NAME lifecycle command: ${cap} (stale artifact detected)"
+      fi
+    done
   fi
   echo ""
 done

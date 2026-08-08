@@ -7,10 +7,11 @@ mod inventory;
 mod network_discovery;
 mod registration;
 mod remote;
+mod reset;
 mod security;
 
 use agent::Agent;
-use config::AgentConfig;
+use config::{AgentCommand, AgentConfig};
 use registration::RegistrationSource;
 
 #[tokio::main]
@@ -23,6 +24,15 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = AgentConfig::from_env()?;
+
+    if let Some(command) = &config.command {
+        match command {
+            AgentCommand::ResetIdentity { yes, .. } => {
+                return reset::run_reset(&config, *yes).await
+            }
+            AgentCommand::IdentityStatus { .. } => return reset::run_status(&config).await,
+        }
+    }
 
     if config.enroll {
         return enroll_once(&config).await;

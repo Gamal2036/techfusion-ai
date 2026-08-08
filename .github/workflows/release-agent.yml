@@ -46,6 +46,32 @@ jobs:
         working-directory: apps/agent
         run: cross build --release --target aarch64-unknown-linux-gnu
 
+      # V1-STAGE-00B-R1: never publish an artifact that predates the certified
+      # lifecycle commands or reports the wrong version. The checksum is always
+      # regenerated from the exact packaged binary below, so an artifact change
+      # without a checksum change is impossible here; this gate instead stops a
+      # stale/incorrect build from being published at all.
+      - name: Verify certified version + capabilities (x86_64 native)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        working-directory: apps/agent
+        run: |
+          set -euo pipefail
+          BIN="target/x86_64-unknown-linux-gnu/release/agent"
+          CARGO_VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          VER_OUT="$("$BIN" --version)"
+          if ! printf '%s\n' "$VER_OUT" | grep -q "techfusion-agent ${CARGO_VERSION}$"; then
+            echo "ERROR: artifact version mismatch: got '$VER_OUT', want techfusion-agent ${CARGO_VERSION}" >&2
+            exit 1
+          fi
+          echo "Version OK: $VER_OUT"
+          for cap in reset-identity identity-status; do
+            if ! "$BIN" --help | grep -qw "$cap"; then
+              echo "ERROR: artifact missing required lifecycle command: ${cap}" >&2
+              exit 1
+            fi
+            echo "Capability OK: ${cap}"
+          done
+
       - name: Package artifact + checksum
         shell: bash
         run: |
@@ -59,6 +85,7 @@ jobs:
           NAME="techfusion-agent-${ABI}"
           mkdir -p dist
           cp "$BIN" "dist/${NAME}"
+          # checksum regenerated from the exact packaged artifact (never reused)
           sha256sum "dist/${NAME}" | awk '{print $1}' > "dist/${NAME}.sha256"
 
       - uses: actions/upload-artifact@v4
