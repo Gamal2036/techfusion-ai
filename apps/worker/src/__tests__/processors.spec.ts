@@ -6,6 +6,8 @@ jest.mock('../metrics', () => ({
   trackJobCompleted: jest.fn(),
   trackJobFailed: jest.fn(),
   trackJobDuration: jest.fn(),
+  trackMonitoringSweep: jest.fn(),
+  trackMonitoringSweepFailure: jest.fn(),
   getMetrics: jest.fn().mockResolvedValue(''),
   getMetricsContentType: jest.fn().mockReturnValue('text/plain'),
 }));

@@ -1,9 +1,9 @@
 import { QUEUE_NAMES, JOB_NAMES, QueueName } from '../queue-names';
 
 describe('Queue Names', () => {
-  it('defines all 7 queue names (default removed)', () => {
+  it('defines all 8 queue names (default removed)', () => {
     const names = Object.values(QUEUE_NAMES);
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(8);
     expect(names).toContain('alert');
     expect(names).toContain('report');
     expect(names).toContain('backup');
@@ -11,6 +11,7 @@ describe('Queue Names', () => {
     expect(names).toContain('security');
     expect(names).toContain('retention');
     expect(names).toContain('kb_embedding');
+    expect(names).toContain('monitoring');
   });
 
   it('has correct values for each queue', () => {
@@ -21,6 +22,7 @@ describe('Queue Names', () => {
     expect(QUEUE_NAMES.SECURITY).toBe('security');
     expect(QUEUE_NAMES.RETENTION).toBe('retention');
     expect(QUEUE_NAMES.KB_EMBEDDING).toBe('kb_embedding');
+    expect(QUEUE_NAMES.MONITORING).toBe('monitoring');
   });
 
   it('has no duplicate values', () => {
@@ -61,5 +63,9 @@ describe('Job Names', () => {
 
   it('defines retention job names', () => {
     expect(JOB_NAMES.RETENTION.ENFORCE).toBe('enforce');
+  });
+
+  it('defines monitoring job names', () => {
+    expect(JOB_NAMES.MONITORING.PRESENCE_SWEEP).toBe('presence_sweep');
   });
 });
