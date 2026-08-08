@@ -366,18 +366,19 @@ jobs:
         # The agent is a standalone Rust crate whose Dockerfile COPYs Cargo.toml
         # and src/ relative to its own directory, so it keeps an app-local
         # context (apps/agent) with its own .dockerignore.
-        - name: api-gateway
-          context: .
-          file: apps/api-gateway/Dockerfile
-        - name: web
-          context: .
-          file: apps/web/Dockerfile
-        - name: worker
-          context: .
-          file: apps/worker/Dockerfile
-        - name: agent
-          context: apps/agent
-          file: Dockerfile
+        service:
+          - name: api-gateway
+            context: .
+            file: apps/api-gateway/Dockerfile
+          - name: web
+            context: .
+            file: apps/web/Dockerfile
+          - name: worker
+            context: .
+            file: apps/worker/Dockerfile
+          - name: agent
+            context: apps/agent
+            file: Dockerfile
 
     env:
       REGISTRY: ghcr.io
