@@ -17,7 +17,11 @@ export type StatusBadgeStatus =
   | 'pending'
   | 'active'
   | 'inactive'
-  | 'unknown';
+  | 'unknown'
+  | 'presence-online'
+  | 'presence-degraded'
+  | 'presence-offline'
+  | 'presence-unknown';
 
 export interface StatusBadgeProps
   extends React.HTMLAttributes<HTMLSpanElement>,
@@ -44,6 +48,10 @@ const statusColors: Record<StatusBadgeStatus, { bg: string; text: string; border
   active: { bg: 'bg-success/10', text: 'text-success', border: 'border-success/20' },
   inactive: { bg: 'bg-surface-muted', text: 'text-text-muted', border: 'border-border' },
   unknown: { bg: 'bg-surface-muted', text: 'text-text-muted', border: 'border-border' },
+  'presence-online': { bg: 'bg-success/10', text: 'text-success', border: 'border-success/20' },
+  'presence-degraded': { bg: 'bg-warning/10', text: 'text-warning', border: 'border-warning/20' },
+  'presence-offline': { bg: 'bg-danger/10', text: 'text-danger', border: 'border-danger/20' },
+  'presence-unknown': { bg: 'bg-surface-muted', text: 'text-text-muted', border: 'border-border' },
 };
 
 const statusLabels: Record<StatusBadgeStatus, string> = {
@@ -61,6 +69,10 @@ const statusLabels: Record<StatusBadgeStatus, string> = {
   active: 'Active',
   inactive: 'Inactive',
   unknown: 'Unknown',
+  'presence-online': 'Online',
+  'presence-degraded': 'Degraded',
+  'presence-offline': 'Offline',
+  'presence-unknown': 'Unknown',
 };
 
 const dotColors: Record<StatusBadgeStatus, string> = {
@@ -78,6 +90,10 @@ const dotColors: Record<StatusBadgeStatus, string> = {
   active: 'bg-success',
   inactive: 'bg-text-muted',
   unknown: 'bg-text-muted',
+  'presence-online': 'bg-success',
+  'presence-degraded': 'bg-warning',
+  'presence-offline': 'bg-danger',
+  'presence-unknown': 'bg-text-muted',
 };
 
 const presenceMap: Record<string, 'online' | 'offline' | 'away' | 'busy' | 'unknown'> = {

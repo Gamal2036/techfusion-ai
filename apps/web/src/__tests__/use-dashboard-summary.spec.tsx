@@ -14,7 +14,9 @@ const summary = {
   fleet: {
     total: 3,
     online: 2,
+    degraded: 0,
     offline: 1,
+    unknown: 0,
     freshness: { live: 1, recent: 1, stale: 1, unavailable: 0 },
     deviceHealth: 85,
     recentDevices: [],

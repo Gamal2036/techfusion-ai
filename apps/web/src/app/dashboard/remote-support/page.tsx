@@ -24,6 +24,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useRemoteSessions, useCreateSession, useEndSession, useRecordings, useAuditLogs, useRemoteWebSocket, useDevices, DeviceInfo } from '@/hooks/useRemoteSupport';
+import { isDeviceOnline } from '@/lib/device-presence';
 
 type Tab = 'sessions' | 'viewer' | 'recordings' | 'audit';
 
@@ -45,12 +46,6 @@ function formatSize(bytes: number | null): string {
   if (bytes >= 1048576) return (bytes / 1048576).toFixed(0) + ' MB';
   if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
   return bytes + ' B';
-}
-
-function isDeviceOnline(lastSeenAt: string): boolean {
-  const lastSeen = new Date(lastSeenAt).getTime();
-  const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
-  return lastSeen > thirtyMinAgo;
 }
 
 const ACTION_COLORS: Record<string, string> = {

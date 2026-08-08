@@ -264,6 +264,38 @@ describe('DeviceDetailPage', () => {
       expect(screen.getByText('Windows 11')).toBeTruthy();
     });
 
+    it('shows Degraded (not Offline) when the device was last seen within the degraded band', () => {
+      mockUseParams.mockReturnValue({ id: 'dev-1' });
+      mockUseDevice.mockReturnValue({
+        device: {
+          id: 'dev-1',
+          orgId: 'org-1',
+          name: 'Quiet Device',
+          hostname: 'quiet-001',
+          os: 'Linux',
+          osVersion: '6.8.0',
+          cpuModel: null,
+          cpuCores: null,
+          cpuLogical: null,
+          ramTotal: null,
+          gpuInfo: null,
+          diskTotal: null,
+          isLaptop: false,
+          registeredAt: '2024-01-01T00:00:00.000Z',
+          lastSeenAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        },
+        metrics: [],
+        scores: null,
+        loading: false,
+        addLiveMetric: jest.fn(),
+      });
+
+      render(<DeviceDetailPage />);
+
+      expect(screen.getByText('Degraded')).toBeTruthy();
+      expect(screen.queryByText('Offline')).toBeNull();
+    });
+
     it('renders score gauges and pills', () => {
       mockUseParams.mockReturnValue({ id: 'dev-1' });
       mockUseDevice.mockReturnValue({

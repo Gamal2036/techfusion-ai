@@ -359,4 +359,37 @@ describe('SignupExperience', () => {
     );
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'));
   });
+
+  describe('SignupExperience — invitation continuation (V1-TEAM-01)', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('redirects to the invitation route after account creation', async () => {
+      window.history.replaceState({}, '', '/signup?next=/invite/abc123');
+      fetchMock.mockResolvedValue(
+        new Response(
+          JSON.stringify({ accessToken: 'a', refreshToken: 'b' }),
+          { status: 200 },
+        ),
+      );
+
+      render(<SignupExperience />);
+      const user = userEvent.setup();
+      await fillValidForm();
+      await user.click(screen.getByRole('button', { name: /create account/i }));
+
+      await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/invite/abc123'));
+    });
+
+    it('keeps the sign-in cross-link pointing back to the invitation', async () => {
+      window.history.replaceState({}, '', '/signup?next=/invite/abc123');
+      render(<SignupExperience />);
+
+      expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute(
+        'href',
+        '/login?next=%2Finvite%2Fabc123',
+      );
+    });
+  });
 });

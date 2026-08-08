@@ -35,7 +35,9 @@ function baseSummary(): DashboardSummary {
     fleet: {
       total: 3,
       online: 3,
+      degraded: 0,
       offline: 0,
+      unknown: 0,
       freshness: { live: 3, recent: 0, stale: 0, unavailable: 0 },
       deviceHealth: 90,
       recentDevices: [],

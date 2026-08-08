@@ -10,9 +10,14 @@ import {
   Network,
   Users,
 } from 'lucide-react';
-import { GlassPanel, Skeleton, StatusBadge } from '@techfusion/ui';
+import { GlassPanel, Skeleton, StatusBadge, type StatusBadgeStatus } from '@techfusion/ui';
 import { useCommandCenterData } from '@/hooks/useCommandCenterData';
-import { isDeviceOnline, formatDeviceLastSeen, metricAge } from '@/lib/device-presence';
+import { formatDeviceLastSeen, metricAge } from '@/lib/device-presence';
+import {
+  derivePresenceState,
+  PRESENCE_BADGE_STATUS,
+  PRESENCE_STATE_LABELS,
+} from '@/lib/device-presence-state';
 import { Atmosphere } from '@/components/command-center/Atmosphere';
 import { InfrastructurePlane } from '@/components/command-center/InfrastructurePlane';
 import { CommandHorizon } from '@/components/command-center/CommandHorizon';
@@ -20,6 +25,7 @@ import { CommandHeader } from '@/components/command-center/CommandHeader';
 import { SignalField } from '@/components/command-center/SignalField';
 import { OperationalState } from '@/components/command-center/OperationalState';
 import { FleetCountCard } from '@/components/command-center/FleetCountCard';
+import { FleetPresenceSummary } from '@/components/command-center/FleetPresenceSummary';
 import { ModuleSlot } from '@/components/command-center/ModuleSlot';
 import { OnboardingFlow } from '@/components/command-center/OnboardingFlow';
 import './command-center.css';
@@ -129,7 +135,17 @@ export function CommandCenterPage() {
           <GlassPanel intensity="light" className="p-5">
             <h2 className="mb-4 text-sm font-medium text-text-primary">Fleet &amp; Security</h2>
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              {summary && (
+                <FleetPresenceSummary
+                  counts={{
+                    ONLINE: summary.fleet.online,
+                    DEGRADED: summary.fleet.degraded,
+                    OFFLINE: summary.fleet.offline,
+                    UNKNOWN: summary.fleet.unknown,
+                  }}
+                />
+              )}
+              <div className="flex items-center justify-between pt-2">
                 <span className="text-xs text-text-secondary">Device Health</span>
                 <div className="flex items-center gap-2">
                   {deviceHealth === null ? (
@@ -249,12 +265,17 @@ export function CommandCenterPage() {
                 </thead>
                 <tbody>
                   {recentDevices.slice(0, 8).map((device) => {
-                    const isOnline = isDeviceOnline(device.lastSeenAt);
+                    const presence = derivePresenceState(device.lastSeenAt);
                     return (
                       <tr key={device.id} className="border-b border-border-subtle">
                         <td className="py-3 font-mono text-xs text-text-secondary">{device.name}</td>
                         <td className="py-3">
-                          <StatusBadge status={isOnline ? 'online' : 'offline'} size="sm" dot />
+                          <StatusBadge
+                            status={PRESENCE_BADGE_STATUS[presence] as StatusBadgeStatus}
+                            size="sm"
+                            dot
+                            label={PRESENCE_STATE_LABELS[presence]}
+                          />
                         </td>
                         <td className="py-3 text-xs text-text-secondary">{device.os || '-'}</td>
                         <td className="py-3 text-xs text-text-muted">{formatDeviceLastSeen(device.lastSeenAt)}</td>

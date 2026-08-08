@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/auth-client';
 import { subscribe } from '@/lib/socket-client';
 
+export type AlertRuleKind = 'metric' | 'presence';
+
 export interface AlertRule {
   id: string;
   orgId: string;
@@ -13,6 +15,7 @@ export interface AlertRule {
   threshold: number;
   operator: string;
   severity: string;
+  kind: AlertRuleKind;
   debounceSeconds: number;
   enabled: boolean;
   deviceSelector: string | null;
@@ -20,6 +23,8 @@ export interface AlertRule {
   createdAt: string;
   updatedAt: string;
 }
+
+export type AlertStatus = 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED';
 
 export interface Alert {
   id: string;
@@ -30,11 +35,14 @@ export interface Alert {
   threshold: number;
   severity: string;
   message: string;
+  status: AlertStatus;
+  source: string | null;
+  lastDetectedAt: string | null;
   acknowledgedAt: string | null;
   resolvedAt: string | null;
   createdAt: string;
   device?: { id: string; name: string; hostname: string | null };
-  alertRule?: { id: string; name: string; metricName: string };
+  alertRule?: { id: string; name: string; metricName: string; kind: AlertRuleKind };
 }
 
 export function useAlertRules() {
@@ -96,37 +104,67 @@ export function useAlertRules() {
   return { rules, loading, refetch: fetchRules, createRule, updateRule, deleteRule };
 }
 
-export function useAlerts() {
+export function useAlerts(options?: { status?: AlertStatus }) {
+  const status = options?.status;
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAlerts = useCallback(async () => {
     try {
-      const res = await apiFetch('/alerts/latest');
+      const url = status ? `/alerts?status=${status}&limit=100` : '/alerts/latest';
+      const res = await apiFetch(url);
       if (res.ok) {
-        setAlerts(await res.json());
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : data?.data ?? [];
+        setAlerts(list);
+        setTotal(Array.isArray(data) ? list.length : data?.total ?? list.length);
+        setError(null);
+      } else {
+        setError(`Failed to fetch alerts: ${res.status}`);
       }
     } catch (e) {
       console.error('Failed to fetch alerts:', e);
+      setError('Network error while fetching alerts');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [status]);
 
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts]);
 
-  const acknowledgeAlert = useCallback(async (id: string) => {
-    const res = await apiFetch(`/alerts/${id}/acknowledge`, {
+  const acknowledgeAlert = useCallback(
+    async (id: string) => {
+      const res = await apiFetch(`/alerts/${id}/acknowledge`, {
+        method: 'PATCH',
+      });
+      if (!res.ok) throw new Error('Failed to acknowledge alert');
+      const updated = (await res.json()) as Alert;
+      // Keep the server response authoritative; an item whose status no longer
+      // matches the feed scope is pruned so counts never go stale.
+      const scope = status ?? 'OPEN';
+      setAlerts((prev) =>
+        prev.map((a) => (a.id === id ? updated : a)).filter((a) => a.id !== id || a.status === scope),
+      );
+      return updated;
+    },
+    [status],
+  );
+
+  const resolveAlert = useCallback(async (id: string) => {
+    const res = await apiFetch(`/alerts/${id}/resolve`, {
       method: 'PATCH',
     });
-    if (res.ok) {
-      setAlerts((prev) => prev.filter((a) => a.id !== id));
-    }
+    if (!res.ok) throw new Error('Failed to resolve alert');
+    const updated = (await res.json()) as Alert;
+    setAlerts((prev) => prev.filter((a) => a.id !== id));
+    return updated;
   }, []);
 
-  return { alerts, loading, refetch: fetchAlerts, acknowledgeAlert };
+  return { alerts, total, loading, error, refetch: fetchAlerts, acknowledgeAlert, resolveAlert };
 }
 
 export function useAlertWebSocket(onAlert: (alert: Alert) => void) {

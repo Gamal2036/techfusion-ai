@@ -37,7 +37,12 @@ import {
 import { ScoreGauge } from '@/components/ScoreGauge';
 import { useDevice } from '@/hooks/useDevices';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { isDeviceOnline, formatDeviceLastSeen, formatMetricTimestamp, safeParseDate, DEVICE_ONLINE_THRESHOLD_MS } from '@/lib/device-presence';
+import { formatDeviceLastSeen, formatMetricTimestamp, safeParseDate } from '@/lib/device-presence';
+import {
+  derivePresenceState,
+  PRESENCE_BADGE_VARIANT,
+  PRESENCE_STATE_LABELS,
+} from '@/lib/device-presence-state';
 
 export default function DeviceDetailPage() {
   const params = useParams<{ id: string }>();
@@ -75,7 +80,7 @@ export default function DeviceDetailPage() {
   useWebSocket(onMetrics);
 
   const effectiveLastSeen = lastSeenAt || device?.lastSeenAt;
-  const isOnline = isDeviceOnline(effectiveLastSeen);
+  const presence = derivePresenceState(effectiveLastSeen);
 
   if (loading && !device) {
     return (
@@ -133,8 +138,8 @@ export default function DeviceDetailPage() {
         <div className="flex-1">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold text-text-primary tracking-tight">{device.name}</h1>
-            <Badge variant={isOnline ? 'success' : 'secondary'}>
-              {isOnline ? 'Online' : 'Offline'}
+            <Badge variant={PRESENCE_BADGE_VARIANT[presence]}>
+              {PRESENCE_STATE_LABELS[presence]}
             </Badge>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-text-disabled">

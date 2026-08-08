@@ -8,7 +8,9 @@ export interface DashboardSummary {
   fleet: {
     total: number;
     online: number;
+    degraded: number;
     offline: number;
+    unknown: number;
     freshness: { live: number; recent: number; stale: number; unavailable: number };
     deviceHealth: number | null;
     recentDevices: Array<{

@@ -70,7 +70,9 @@ function baseSummary(): DashboardSummary {
     fleet: {
       total: 3,
       online: 2,
+      degraded: 0,
       offline: 1,
+      unknown: 0,
       freshness: { live: 1, recent: 1, stale: 1, unavailable: 0 },
       deviceHealth: 85,
       recentDevices: [],
@@ -139,7 +141,7 @@ describe('DashboardPage truth patch', () => {
 
     expect(screen.getByText('Total Devices')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText('14')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
 
@@ -148,6 +150,13 @@ describe('DashboardPage truth patch', () => {
     expect(screen.getByText('scan 1d ago')).toBeInTheDocument();
     expect(screen.getByText('1 running')).toBeInTheDocument();
     expect(screen.getByText('14 unresolved')).toBeInTheDocument();
+
+    // Fleet presence breakdown exposes online / degraded / offline / unknown.
+    expect(screen.getByText('Degraded')).toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2);
 
     expect(screen.queryByText('No Data Yet')).toBeNull();
     expect(screen.queryByText(/\+/)).toBeNull();
@@ -238,9 +247,9 @@ describe('DashboardPage truth patch', () => {
     expect(screen.getByText('host-c')).toBeInTheDocument();
     const badges = screen.getAllByTestId('status-badge');
     expect(badges.length).toBe(3);
-    expect(badges[0]).toHaveAttribute('data-status', 'online');
-    expect(badges[1]).toHaveAttribute('data-status', 'online');
-    expect(badges[2]).toHaveAttribute('data-status', 'offline');
+    expect(badges[0]).toHaveAttribute('data-status', 'presence-online');
+    expect(badges[1]).toHaveAttribute('data-status', 'presence-online');
+    expect(badges[2]).toHaveAttribute('data-status', 'presence-degraded');
     jest.useRealTimers();
   });
 });

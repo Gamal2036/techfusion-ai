@@ -8,6 +8,7 @@ import { ArrowRight, Building2, CircleAlert } from 'lucide-react';
 import { SignupPasswordField } from './SignupPasswordField';
 import { SignupLogo } from './SignupLogo';
 import { setTokens, getApiUrl } from '@/lib/auth-client';
+import { getSafeNextPath } from '@/components/login/LoginForm';
 
 const API_URL = getApiUrl();
 
@@ -22,6 +23,9 @@ export function SignupForm() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const [nextPath] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : getSafeNextPath(window.location.search),
+  );
 
   const confirmMismatch = useMemo(
     () => confirmPassword.length > 0 && password !== confirmPassword,
@@ -50,7 +54,7 @@ export function SignupForm() {
       }
       const data = await res.json();
       setTokens(data.accessToken, data.refreshToken);
-      router.push('/dashboard');
+      router.push(nextPath ?? '/dashboard');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -181,7 +185,7 @@ export function SignupForm() {
         <p className="text-center text-sm text-text-secondary">
           Already have an account?{' '}
           <Link
-            href="/login"
+            href={nextPath ? `/login?next=${encodeURIComponent(nextPath)}` : '/login'}
             className="rounded-sm font-medium text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             Sign in

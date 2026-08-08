@@ -30,6 +30,21 @@ function validateMfaCode(value: string): string {
   return '';
 }
 
+/**
+ * Reads a safe internal redirect target from the current query string.
+ * Only same-origin paths are honored (`next` values that start with "//" are
+ * rejected) so the sign-in success redirect can never become an open
+ * redirect. The invite flow relies on this to continue to /invite/<token>
+ * after authentication.
+ */
+export function getSafeNextPath(search: string): string | null {
+  const params = new URLSearchParams(search.replace(/^\?/, ''));
+  const next = params.get('next');
+  if (!next) return null;
+  if (!next.startsWith('/') || next.startsWith('//')) return null;
+  return next;
+}
+
 function mapServerError(status: number | null, message: string): string {
   if (status === 401) return message || 'Invalid email or password';
   if (status === 429)
@@ -66,6 +81,9 @@ export function LoginForm() {
   const mfaRef = useRef<HTMLInputElement>(null);
 
   const router = useRouter();
+  const [nextPath] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : getSafeNextPath(window.location.search),
+  );
 
   function handleEmailChange(e: ChangeEvent<HTMLInputElement>) {
     setEmail(e.target.value);
@@ -135,7 +153,7 @@ export function LoginForm() {
         return;
       }
       setTokens(data.accessToken, data.refreshToken);
-      router.push('/dashboard');
+      router.push(nextPath ?? '/dashboard');
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
       setServerError(mapServerError(status, message));
@@ -172,7 +190,7 @@ export function LoginForm() {
       }
       const data = await res.json();
       setTokens(data.accessToken, data.refreshToken);
-      router.push('/dashboard');
+      router.push(nextPath ?? '/dashboard');
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
       setServerError(mapServerError(status, message));
@@ -308,7 +326,7 @@ export function LoginForm() {
           <p className="text-center text-sm text-text-secondary">
             Don&apos;t have an account?{' '}
             <Link
-              href="/signup"
+              href={nextPath ? `/signup?next=${encodeURIComponent(nextPath)}` : '/signup'}
               className="rounded-sm font-medium text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Sign up

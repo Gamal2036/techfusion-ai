@@ -554,6 +554,54 @@ describe('LoginExperience — MFA flow', () => {
   });
 });
 
+describe('LoginExperience — invitation continuation (V1-TEAM-01)', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('redirects to the invitation route after a successful sign-in', async () => {
+    window.history.replaceState({}, '', '/login?next=/invite/abc123');
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1' }),
+        { status: 200 },
+      ),
+    );
+
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/invite/abc123'));
+  });
+
+  it('keeps the sign-up cross-link pointing back to the invitation', async () => {
+    window.history.replaceState({}, '', '/login?next=/invite/abc123');
+    render(<LoginExperience />);
+
+    expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute(
+      'href',
+      '/signup?next=%2Finvite%2Fabc123',
+    );
+  });
+
+  it('ignores an external next value and falls back to the dashboard', async () => {
+    window.history.replaceState({}, '', '/login?next=//evil.example.com');
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1' }),
+        { status: 200 },
+      ),
+    );
+
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'));
+  });
+});
+
 describe('LoginExperience — accessibility and regression', () => {
   it('does not add Forgot Password or Remember Me affordances', () => {
     render(<LoginExperience />);

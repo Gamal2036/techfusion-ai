@@ -2,12 +2,18 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { GlassPanel, Badge, Button, Dialog, DialogContent, DialogTitle, DialogHeader, DialogClose } from '@techfusion/ui';
-import { Monitor, AlertTriangle, Bell, Plus, Settings, X, CheckCircle, Activity, Server } from 'lucide-react';
+import { Monitor, AlertTriangle, Bell, Plus, Settings, X, CheckCircle, Flag, Activity, Server } from 'lucide-react';
 import { useDeviceList, Device, DeviceMetric, DeviceScore } from '@/hooks/useDevices';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { useAlerts, useAlertRules, useAlertWebSocket, Alert, AlertRule } from '@/hooks/useAlerts';
+import { useAlerts, useAlertRules, useAlertWebSocket, Alert, AlertRule, AlertStatus, AlertRuleKind } from '@/hooks/useAlerts';
 import { apiFetch } from '@/lib/auth-client';
-import { isDeviceOnline } from '@/lib/device-presence';
+import {
+  derivePresenceState,
+  PRESENCE_STATE_LABELS,
+  PRESENCE_DOT_CLASS,
+  PRESENCE_TEXT_CLASS,
+  type PresenceState,
+} from '@/lib/device-presence-state';
 
 function severityColor(severity: string): string {
   switch (severity) {
@@ -58,14 +64,16 @@ interface DeviceTileData {
 function DeviceStatusTile({ data }: { data: DeviceTileData }) {
   const { device, metric, score, effectiveLastSeen } = data;
   const health = score?.healthScore ?? null;
-  const isOnline = isDeviceOnline(effectiveLastSeen);
+  const presence: PresenceState = derivePresenceState(effectiveLastSeen);
+  const presenceLabel = PRESENCE_STATE_LABELS[presence];
 
   return (
     <GlassPanel intensity="light" className="p-4">
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isOnline ? 'bg-green-400' : 'bg-red-400'}`} />
+        <div className="flex items-center gap-2 min-w-0" role="status" aria-label={`${device.name}: ${presenceLabel}`}>
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${PRESENCE_DOT_CLASS[presence]}`} aria-hidden="true" />
           <span className="text-sm font-medium text-text-primary truncate">{device.name}</span>
+          <span className={`text-[10px] shrink-0 ${PRESENCE_TEXT_CLASS[presence]}`}>{presenceLabel}</span>
         </div>
         {health !== null && (
           <span className={`text-xs font-mono ${
@@ -110,54 +118,111 @@ function DeviceStatusTile({ data }: { data: DeviceTileData }) {
   );
 }
 
-function AlertFeed({ alerts, onAcknowledge }: { alerts: Alert[]; onAcknowledge: (id: string) => void }) {
+const FEED_TABS: Array<{ value: AlertStatus; label: string }> = [
+  { value: 'OPEN', label: 'Open' },
+  { value: 'ACKNOWLEDGED', label: 'Acknowledged' },
+  { value: 'RESOLVED', label: 'Resolved' },
+];
+
+function AlertFeed({
+  status,
+  alerts,
+  loading,
+  onStatusChange,
+  onAcknowledge,
+  onResolve,
+}: {
+  status: AlertStatus;
+  alerts: Alert[];
+  loading: boolean;
+  onStatusChange: (status: AlertStatus) => void;
+  onAcknowledge: (id: string) => void;
+  onResolve: (id: string) => void;
+}) {
   return (
-    <div className="space-y-2">
-      {alerts.length === 0 ? (
-        <div className="text-center py-8 text-text-disabled text-sm">
-          <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success/50" />
-          No active alerts
-        </div>
-      ) : (
-        alerts.slice(0, 20).map((alert) => (
-          <div
-            key={alert.id}
-            className={`flex items-start gap-3 p-3 rounded-lg border ${severityColor(alert.severity)}`}
+    <div>
+      <div className="flex gap-1 bg-surface-subtle rounded-lg p-1 w-fit" role="tablist" aria-label="Alert status">
+        {FEED_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            role="tab"
+            aria-selected={status === tab.value}
+            onClick={() => onStatusChange(tab.value)}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+              status === tab.value
+                ? 'bg-surface-muted text-text-primary'
+                : 'text-text-muted hover:text-text-secondary'
+            }`}
           >
-            <div className="mt-0.5">
-              {alert.severity === 'critical' ? (
-                <AlertTriangle className="h-4 w-4 text-danger" />
-              ) : alert.severity === 'warning' ? (
-                <AlertTriangle className="h-4 w-4 text-yellow-400" />
-              ) : (
-                <Bell className="h-4 w-4 text-blue-400" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-text-secondary">{alert.alertRule?.name ?? 'Alert'}</span>
-                <Badge variant={severityBadgeVariant(alert.severity)}>
-                  {alert.severity}
-                </Badge>
-              </div>
-              <p className="text-xs text-text-secondary mt-0.5">{alert.message}</p>
-              <div className="flex items-center gap-2 mt-1 text-[10px] text-text-disabled">
-                <span>{alert.device?.name ?? alert.deviceId}</span>
-                <span>{new Date(alert.createdAt).toLocaleString()}</span>
-              </div>
-            </div>
-            {!alert.acknowledgedAt && (
-              <button
-                onClick={() => onAcknowledge(alert.id)}
-                className="text-text-disabled hover:text-text-secondary transition-colors"
-                title="Acknowledge"
-              >
-                <CheckCircle className="h-4 w-4" />
-              </button>
-            )}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2 mt-3">
+        {loading ? (
+          <div className="text-text-muted text-sm py-8 text-center">Loading alerts...</div>
+        ) : alerts.length === 0 ? (
+          <div className="text-center py-8 text-text-disabled text-sm">
+            <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success/50" />
+            {status === 'OPEN'
+              ? 'No active alerts'
+              : `No ${status === 'ACKNOWLEDGED' ? 'acknowledged' : 'resolved'} alerts`}
           </div>
-        ))
-      )}
+        ) : (
+          alerts.slice(0, 50).map((alert) => (
+            <div
+              key={alert.id}
+              className={`flex items-start gap-3 p-3 rounded-lg border ${severityColor(alert.severity)}`}
+            >
+              <div className="mt-0.5">
+                {alert.severity === 'critical' ? (
+                  <AlertTriangle className="h-4 w-4 text-danger" />
+                ) : alert.severity === 'warning' ? (
+                  <AlertTriangle className="h-4 w-4 text-yellow-400" />
+                ) : (
+                  <Bell className="h-4 w-4 text-blue-400" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-text-secondary">{alert.alertRule?.name ?? 'Alert'}</span>
+                  <Badge variant={severityBadgeVariant(alert.severity)}>
+                    {alert.severity}
+                  </Badge>
+                  {alert.alertRule?.kind === 'presence' && (
+                    <span className="text-[10px] font-mono text-text-muted">presence</span>
+                  )}
+                </div>
+                <p className="text-xs text-text-secondary mt-0.5">{alert.message}</p>
+                <div className="flex items-center gap-2 mt-1 text-[10px] text-text-disabled">
+                  <span>{alert.device?.name ?? alert.deviceId}</span>
+                  <span>{new Date(alert.createdAt).toLocaleString()}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {alert.status === 'OPEN' && (
+                  <button
+                    onClick={() => onAcknowledge(alert.id)}
+                    className="text-text-disabled hover:text-success transition-colors"
+                    title="Acknowledge"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                  </button>
+                )}
+                {(alert.status === 'OPEN' || alert.status === 'ACKNOWLEDGED') && (
+                  <button
+                    onClick={() => onResolve(alert.id)}
+                    className="text-text-disabled hover:text-danger transition-colors"
+                    title="Resolve"
+                  >
+                    <Flag className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -172,6 +237,7 @@ function RuleDialog({
 }) {
   const [name, setName] = useState(initial?.name ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
+  const [kind, setKind] = useState<AlertRuleKind>(initial?.kind ?? 'metric');
   const [metricName, setMetricName] = useState(initial?.metricName ?? 'cpuUsage');
   const [threshold, setThreshold] = useState(initial?.threshold?.toString() ?? '90');
   const [operator, setOperator] = useState(initial?.operator ?? 'gt');
@@ -183,6 +249,7 @@ function RuleDialog({
     if (initial) {
       setName(initial.name);
       setDescription(initial.description ?? '');
+      setKind(initial.kind ?? 'metric');
       setMetricName(initial.metricName);
       setThreshold(initial.threshold.toString());
       setOperator(initial.operator);
@@ -195,6 +262,7 @@ function RuleDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit({
+      kind,
       name,
       description: description || undefined,
       metricName,
@@ -233,20 +301,44 @@ function RuleDialog({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-text-secondary mb-1">Metric</label>
+            <label className="block text-xs text-text-secondary mb-1">Rule Type</label>
             <select
-              value={metricName}
-              onChange={(e) => setMetricName(e.target.value)}
+              value={kind}
+              onChange={(e) => setKind(e.target.value as AlertRuleKind)}
               className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-primary"
             >
-              <option value="cpuUsage">CPU Usage</option>
-              <option value="ramPercent">RAM Percent</option>
-              <option value="diskPercent">Disk Percent</option>
-              <option value="tempCpu">CPU Temperature</option>
-              <option value="loadAverage1Min">Load Average (1m)</option>
-              <option value="processes">Process Count</option>
+              <option value="metric">Metric threshold</option>
+              <option value="presence">Device presence</option>
             </select>
           </div>
+          <div>
+            {kind === 'metric' ? (
+              <>
+                <label className="block text-xs text-text-secondary mb-1">Metric</label>
+                <select
+                  value={metricName}
+                  onChange={(e) => setMetricName(e.target.value)}
+                  className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-primary"
+                >
+                  <option value="cpuUsage">CPU Usage</option>
+                  <option value="ramPercent">RAM Percent</option>
+                  <option value="diskPercent">Disk Percent</option>
+                  <option value="tempCpu">CPU Temperature</option>
+                  <option value="loadAverage1Min">Load Average (1m)</option>
+                  <option value="processes">Process Count</option>
+                </select>
+              </>
+            ) : (
+              <>
+                <label className="block text-xs text-text-secondary mb-1">Presence</label>
+                <div className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-muted">
+                  Heartbeat (no metric)
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-text-secondary mb-1">Operator</label>
             <select
@@ -261,8 +353,6 @@ function RuleDialog({
               <option value="eq">= (equals)</option>
             </select>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-text-secondary mb-1">Threshold</label>
             <input
@@ -274,6 +364,8 @@ function RuleDialog({
               required
             />
           </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-text-secondary mb-1">Severity</label>
             <select
@@ -286,8 +378,6 @@ function RuleDialog({
               <option value="critical">Critical</option>
             </select>
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-text-secondary mb-1">Debounce (seconds)</label>
             <input
@@ -297,15 +387,15 @@ function RuleDialog({
               className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-primary"
             />
           </div>
-          <div>
-            <label className="block text-xs text-text-secondary mb-1">Webhook URL</label>
-            <input
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-primary"
-              placeholder="https://hooks.example.com/alert"
-            />
-          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-text-secondary mb-1">Webhook URL</label>
+          <input
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+            className="w-full bg-surface-subtle border border-border rounded px-3 py-2 text-sm text-text-primary"
+            placeholder="https://hooks.example.com/alert"
+          />
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <DialogClose asChild>
@@ -321,7 +411,8 @@ function RuleDialog({
 
 export default function MonitoringPage() {
   const { devices, loading: devicesLoading, refetch: refetchDevices } = useDeviceList();
-  const { alerts, loading: alertsLoading, refetch: refetchAlerts, acknowledgeAlert } = useAlerts();
+  const [feedStatus, setFeedStatus] = useState<AlertStatus>('OPEN');
+  const { alerts, loading: alertsLoading, refetch: refetchAlerts, acknowledgeAlert, resolveAlert } = useAlerts({ status: feedStatus });
   const { rules, loading: rulesLoading, createRule, updateRule, deleteRule, refetch: refetchRules } = useAlertRules();
   const [deviceMetrics, setDeviceMetrics] = useState<Map<string, DeviceMetric>>(new Map());
   const [deviceScores, setDeviceScores] = useState<Map<string, DeviceScore>>(new Map());
@@ -352,7 +443,7 @@ export default function MonitoringPage() {
   }, []);
 
   const onAlert = useCallback((alert: Alert) => {
-    setLiveAlerts((prev) => [alert, ...prev].slice(0, 50));
+    setLiveAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)].slice(0, 50));
   }, []);
 
   useWebSocket(onMetrics);
@@ -381,9 +472,40 @@ export default function MonitoringPage() {
     [deviceLastSeen],
   );
 
-  const filteredAlerts = [...liveAlerts, ...alerts].filter(
+  // Live socket alerts are OPEN incidents; only merge them into the OPEN feed
+  // so counts never go stale in other status tabs.
+  const filteredAlerts = [
+    ...(feedStatus === 'OPEN' ? liveAlerts : []),
+    ...alerts,
+  ].filter(
     (alert, i, arr) => arr.findIndex((a) => a.id === alert.id) === i,
-  ).slice(0, 20);
+  );
+
+  const handleAcknowledge = useCallback(
+    async (id: string) => {
+      setLiveAlerts((prev) => prev.filter((a) => a.id !== id));
+      try {
+        await acknowledgeAlert(id);
+        refetchAlerts();
+      } catch (e) {
+        console.error('Failed to acknowledge alert:', e);
+      }
+    },
+    [acknowledgeAlert, refetchAlerts],
+  );
+
+  const handleResolve = useCallback(
+    async (id: string) => {
+      setLiveAlerts((prev) => prev.filter((a) => a.id !== id));
+      try {
+        await resolveAlert(id);
+        refetchAlerts();
+      } catch (e) {
+        console.error('Failed to resolve alert:', e);
+      }
+    },
+    [resolveAlert, refetchAlerts],
+  );
 
   const handleCreateRule = async (data: Partial<AlertRule>) => {
     try {
@@ -444,7 +566,14 @@ export default function MonitoringPage() {
                 <AlertTriangle className="w-4 h-4 text-yellow-400" />
                 Recent Alerts
               </h2>
-              <AlertFeed alerts={filteredAlerts} onAcknowledge={acknowledgeAlert} />
+              <AlertFeed
+                status={feedStatus}
+                alerts={filteredAlerts}
+                loading={alertsLoading}
+                onStatusChange={setFeedStatus}
+                onAcknowledge={handleAcknowledge}
+                onResolve={handleResolve}
+              />
             </GlassPanel>
           )}
 
@@ -491,7 +620,14 @@ export default function MonitoringPage() {
           {alertsLoading ? (
             <div className="text-text-muted text-sm py-8 text-center">Loading alerts...</div>
           ) : (
-            <AlertFeed alerts={filteredAlerts} onAcknowledge={acknowledgeAlert} />
+            <AlertFeed
+              status={feedStatus}
+              alerts={filteredAlerts}
+              loading={alertsLoading}
+              onStatusChange={setFeedStatus}
+              onAcknowledge={handleAcknowledge}
+              onResolve={handleResolve}
+            />
           )}
         </GlassPanel>
       )}
@@ -527,6 +663,9 @@ export default function MonitoringPage() {
                       </Badge>
                       <span className="text-[10px] font-mono text-text-muted">
                         {rule.metricName} {rule.operator} {rule.threshold}
+                      </span>
+                      <span className="text-[10px] font-mono text-text-muted">
+                        {rule.kind ?? 'metric'}
                       </span>
                     </div>
                     {rule.description && (

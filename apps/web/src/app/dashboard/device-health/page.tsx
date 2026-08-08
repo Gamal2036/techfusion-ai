@@ -7,7 +7,13 @@ import { Activity, Monitor, Cpu, Wifi, Clock } from 'lucide-react';
 import { useDeviceList } from '@/hooks/useDevices';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { apiFetch } from '@/lib/auth-client';
-import { isDeviceOnline, formatDeviceLastSeen } from '@/lib/device-presence';
+import { formatDeviceLastSeen } from '@/lib/device-presence';
+import {
+  derivePresenceState,
+  PRESENCE_BADGE_VARIANT,
+  PRESENCE_STATE_LABELS,
+  type PresenceState,
+} from '@/lib/device-presence-state';
 
 interface ScoreData {
   healthScore: number;
@@ -136,7 +142,7 @@ export default function DeviceHealthPage() {
           {filtered.map((device) => {
             const s = scores[device.id];
             const effectiveLastSeen = getEffectiveLastSeen(device);
-            const isOnline = isDeviceOnline(effectiveLastSeen);
+            const presence: PresenceState = derivePresenceState(effectiveLastSeen);
 
             return (
               <button
@@ -157,10 +163,10 @@ export default function DeviceHealthPage() {
                         <div className="flex items-center gap-2">
                           <h3 className="text-sm font-medium text-text-primary truncate">{device.name}</h3>
                           <Badge
-                            variant={isOnline ? 'success' : 'secondary'}
+                            variant={PRESENCE_BADGE_VARIANT[presence]}
                             className="text-[10px] shrink-0"
                           >
-                            {isOnline ? 'Online' : 'Offline'}
+                            {PRESENCE_STATE_LABELS[presence]}
                           </Badge>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5">

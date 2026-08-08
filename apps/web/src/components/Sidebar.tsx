@@ -20,15 +20,17 @@ import {
   ChevronRight,
   Users,
   Key,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@techfusion/ui';
-import { getCurrentUser, isAdminOrAbove, type JwtPayload } from '@/lib/auth-client';
+import { getCurrentUser, type JwtPayload } from '@/lib/auth-client';
+import { can, Permission, type ClientPermission } from '@/lib/permissions';
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
-  roles?: string[];
+  permissions?: ClientPermission[];
 }
 
 const allNavItems: NavItem[] = [
@@ -43,10 +45,11 @@ const allNavItems: NavItem[] = [
   { label: 'AI Chat', href: '/dashboard/ai-chat', icon: <MessageSquare className="h-5 w-5" /> },
   { label: 'Knowledge Base', href: '/dashboard/knowledge-base', icon: <BookOpen className="h-5 w-5" /> },
   { label: 'Reports', href: '/dashboard/reports', icon: <BarChart3 className="h-5 w-5" /> },
-  { label: 'Billing', href: '/dashboard/billing', icon: <CreditCard className="h-5 w-5" />, roles: ['Owner', 'Admin'] },
-  { label: 'Team', href: '/dashboard/team', icon: <Users className="h-5 w-5" />, roles: ['Owner', 'Admin'] },
-  { label: 'Enrollment', href: '/dashboard/settings/enrollment', icon: <Key className="h-5 w-5" />, roles: ['Owner', 'Admin'] },
+  { label: 'Billing', href: '/dashboard/billing', icon: <CreditCard className="h-5 w-5" />, permissions: [Permission.BILLING_VIEW] },
+  { label: 'Team', href: '/dashboard/team', icon: <Users className="h-5 w-5" />, permissions: [Permission.MEMBERS_VIEW] },
+  { label: 'Enrollment', href: '/dashboard/settings/enrollment', icon: <Key className="h-5 w-5" />, permissions: [Permission.DEVICES_ENROLL] },
   { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="h-5 w-5" /> },
+  { label: 'Account', href: '/dashboard/settings/account', icon: <UserCog className="h-5 w-5" /> },
 ];
 
 export function Sidebar() {
@@ -70,8 +73,8 @@ export function Sidebar() {
   }, []);
 
   const navItems = allNavItems.filter((item) => {
-    if (!item.roles) return true;
-    return user && item.roles.includes(user.role);
+    if (!item.permissions) return true;
+    return can(user, ...item.permissions);
   });
 
   return (
