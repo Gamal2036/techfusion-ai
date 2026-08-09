@@ -1,0 +1,34 @@
+# 10 — Technical Debt Register
+
+Status: 2026-08-09. **Nothing in this register was deleted or fixed during the discovery mission.** Items are reported for controlled remediation only.
+
+| # | Area | Item | Severity | Evidence |
+|---|------|------|----------|----------|
+| T1 | CD/deploy | **Helm chart not deployable as written.** `templates/secrets.yaml` uses `required` on postgresql.password/jwtSecret/jwtRefreshSecret/encryptionKey — none supplied by workflows or values. Deployment image refs `ghcr.io/techfusion-ai/<svc>` ≠ pushed `ghcr.io/Gamal2036/techfusion-ai/<svc>`; `--set image.tag` sets an unused top-level value. | HIGH | `infra/k8s/templates/secrets.yaml:10-13`, `values.yaml`, `cd-*.yml` |
+| T2 | CD/deploy | Prod migration initContainer uses `prisma db push --accept-data-loss` (data-loss flag in prod; CI contract is `migrate deploy`). | HIGH | `infra/k8s/templates/api-gateway/deployment.yaml:39` |
+| T3 | CD/deploy | Agent deployment DATABASE_URL password = username; missing secret ref. | HIGH | `infra/k8s/templates/agent/deployment.yaml:40` |
+| T4 | CD/deploy | CD health checks use `kubectl run -it` (TTY not available on runners). | MEDIUM | `cd-staging.yml:69-71`, `cd-production.yml:69-71` |
+| T5 | Queues | REPORT queue: producer missing + worker delegates to non-existent `POST /reports`. | HIGH | `06`; `queue.service.ts:8,86`; `processors.ts:144` |
+| T6 | Queues | KB_EMBEDDING: `POST /ai/embed` missing; silent deterministic mock vectors written to DB. | HIGH | `06`; `processors.ts:1295-1320` |
+| T7 | Queues | Queue names/thresholds duplicated across gateway/worker/web (`queue.constants.ts`, `queue-names.ts`, presence files) — drift risk; `REINDEX` constant already drifted. | MEDIUM | `06` |
+| T8 | Security | SSO login bypass (S1). | CRITICAL | `07` |
+| T9 | Security | RLS inert (S2); decorative policies. | MEDIUM | `07` |
+| T10 | Security | Plaintext `Device.deviceToken` + fallback lookup (S3). | MEDIUM | `07` |
+| T11 | Security | Metrics token in query string; optional auth (S5). | LOW | `07` |
+| T12 | Data | `backups/` — 60 committed DB/config backup artifacts in VCS (incl. old pg/redis dumps). | HIGH | root `backups/` |
+| T13 | Data | Legacy root reports contradict current state (`TECHFUSION_V1_READINESS_AUDIT.md` predates CI; `infra/k8s/README.md` "Phase 14" claim stale; `launch-checklist.md` references non-existent release `techfusion-api-gateway`). | LOW | `02` |
+| T14 | Code | `demo.controller.ts` dead RBAC demo (SCAFFOLD); `RolesGuard`/`@Roles` dead code (zero usages). | LOW | grep + read |
+| T15 | Code | Legacy `Dockerfile.web` unused (CI/compose use `apps/web/Dockerfile`). | LOW | `02` |
+| T16 | Data model | `Organization.plan` + `Subscription` dual source of truth (mitigated by STAGE-01A integrity work). | MEDIUM | `schema.prisma` |
+| T17 | Agent | Agent has no self-update; version only sent at registration (server unaware of upgrades). | MEDIUM | `05` |
+| T18 | Agent | Temperature/battery/load/service fields hardcoded `None`. | LOW | `collector.rs` |
+| T19 | Frontend/backend contract | `CpuMetricsDto` whitelist strips agent CPU model; duplicated presence constants risk drift (tests mitigate). | LOW | `metrics-payload.dto.ts`, `device-presence.ts` |
+| T20 | Tests | Secret scan only covers `git ls-files` — untracked-but-unignored `.env.test` never scanned (contains test placeholders only today). | LOW | `ci-secret-scan.sh:32` |
+| T21 | Tests | No end-to-end tests for SSO login; `actionlint` claim unverifiable (only YAML parse). | MEDIUM | `07`, `02` |
+| T22 | Misc | Malformed leftover file at repo root: `tablish TechFusion V1 enterprise foundation and command center"` (untracked). | LOW | root listing |
+| T23 | Billing | `maxTeamMembers` / `maxAlertRules` unenforced. | MEDIUM | `09` |
+| T24 | Misc | `engines.node ">=18"` vs Node 22 pin; `forceExit` in test scripts (flakiness masking). | LOW | `package.json`, app manifests |
+
+## 2. High-Risk TODO/FIXME Scan
+
+No TODO/FIXME hotspots with destructive implications were found in critical paths (`INFERRED_FROM_CODE`). The three highest-risk items are all configuration/deploy-time (T1-T3) rather than logic bugs.
