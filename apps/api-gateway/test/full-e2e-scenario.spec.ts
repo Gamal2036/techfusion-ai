@@ -444,7 +444,7 @@ describe('Full E2E Scenario (Phase 15)', () => {
     expect(updatedPlanRes.body.plan).toBe('Enterprise');
   });
 
-  it('Step 11: SSO login configuration and JIT provisioning', async () => {
+  it('Step 11: SSO config is preserved but SSO login fails closed', async () => {
     const ssoRes = await request(app.getHttpServer())
       .post('/admin/sso/config')
       .set('Authorization', `Bearer ${state.ownerToken}`)
@@ -454,6 +454,8 @@ describe('Full E2E Scenario (Phase 15)', () => {
     expect(ssoRes.body.provider).toBe('oidc');
     expect(ssoRes.body.isEnabled).toBe(true);
 
+    // V1-STAGE-01-SUB-01: incomplete SSO login is DISABLED (fail-closed, S1).
+    // A client-supplied identity must never yield a session.
     const ssoLoginRes = await request(app.getHttpServer())
       .post('/auth/sso/login')
       .send({
@@ -462,19 +464,15 @@ describe('Full E2E Scenario (Phase 15)', () => {
         provider: 'oidc',
         attributes: { email: 'sso-user@e2e-test.com', displayName: 'SSO E2E User', ssoId: 'sso-e2e-001' },
       })
-      .expect(201);
+      .expect(501);
 
-    expect(ssoLoginRes.body.user.email).toBe('sso-user@e2e-test.com');
-    expect(ssoLoginRes.body.accessToken).toBeDefined();
-    state.ssoToken = ssoLoginRes.body.accessToken;
+    expect(ssoLoginRes.body.accessToken).toBeUndefined();
+    expect(ssoLoginRes.body.refreshToken).toBeUndefined();
+    expect(ssoLoginRes.body.user).toBeUndefined();
 
-    const devicesRes = await request(app.getHttpServer())
-      .get('/devices')
-      .set('Authorization', `Bearer ${state.ssoToken}`)
-      .expect(200);
-
-    expect(Array.isArray(devicesRes.body)).toBe(true);
-    expect(devicesRes.body.length).toBe(3);
+    // No JIT-created user
+    const dbUser = await prisma.user.findUnique({ where: { email: 'sso-user@e2e-test.com' } });
+    expect(dbUser).toBeNull();
   });
 
   it('Step 12: Audit log export', async () => {

@@ -1,6 +1,6 @@
 # 00 — Current State
 
-Status date: 2026-08-09. Branch `main` at `c4d56bf`. Mission: V1-MASTER-ROADMAP-00 discovery/audit (documentation only — no implementation performed).
+Status date: 2026-08-09. Branch `main` at `1b7ee52`. Latest mission: `V1-STAGE-01-SUB-01` SSO authentication remediation (S1 CRITICAL closed — SSO login DISABLED_SAFE; full report `docs/tech-lead/V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`).
 
 ## 1. Verified Baseline
 
@@ -32,7 +32,7 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 
 ## 4. Headline Findings (detail in referenced docs)
 
-1. **Security CRITICAL**: SSO login accepts client-supplied identity with no IdP assertion validation — `POST /auth/sso/login` can authenticate as any email in an SSO-enabled org. (`07_SECURITY_TENANCY_REVIEW.md`)
+1. **Security CRITICAL — CLOSED**: SSO login accepted client-supplied identity with no IdP assertion validation — `POST /auth/sso/login` could authenticate as any email in an SSO-enabled org. Remediated `V1-STAGE-01-SUB-01` (fail-closed `501`, no tokens/JIT/link, 10 new regression tests, full API suite 923 green). SSO is **DISABLED_SAFE**, not certified. (`07`, `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`)
 2. **RLS is inert**: Row-level security migrations exist but nothing sets `app.current_org_id`; isolation is app-layer `orgId` filtering only. (`07`)
 3. **REPORT queue has no producer and its worker path hits a non-existent route**; **KB embedding silently falls back to deterministic mock vectors**. (`06`)
 4. **CD (staging/production) is not deployable as written**: Helm chart `required` values not supplied, image repo/tag mismatch, `prisma db push --accept-data-loss` in prod init. (`02`, `10`)
@@ -44,12 +44,12 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 
 | App | Files | Count (from cert reports) | Command |
 |-----|-------|---------------------------|---------|
-| api-gateway | 20 specs | 913 | `pnpm test` (`jest --forceExit --runInBand`) |
+| api-gateway | 20 specs (baseline) → 53 suites incl. `test/sso-login.spec.ts` | 913 (baseline) → 923 (with SSO fail-closed tests) | `pnpm test` (`jest --forceExit --runInBand`) |
 | web | 35 specs | 790 | `pnpm test` (`jest --forceExit`) |
 | worker | 8 specs | 79 | `pnpm test` |
 | agent | 78 tests in-source | 78 | `cargo test` |
 
-`VERIFIED_BY_CURRENT_CI` via the local gate; not re-run during this documentation-only mission to avoid unnecessary load.
+`VERIFIED_THIS_RUN` for api-gateway (53 suites / 923 tests green on `V1-STAGE-01-SUB-01`). Web/worker/agent counts from STAGE-01C cert reports; not re-run during this substage (no web/worker/agent code touched).
 
 ## 6. Device Presence Finding (summary)
 
@@ -61,4 +61,4 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 
 ## 7. Working-Tree Hygiene
 
-Only `apps/api-gateway/.env.test` is untracked (intended). No secrets staged. This mission stages documentation only (`docs/tech-lead/`).
+`apps/api-gateway/.env.test` remains untracked (intended). This mission stages explicit mission files only (`apps/api-gateway/src/sso/sso.service.ts`, `apps/api-gateway/test/sso-login.spec.ts`, updated legacy SSO tests in `enterprise.integration.spec.ts` / `full-e2e-scenario.spec.ts`, and `docs/tech-lead/` updates). No secrets staged.

@@ -7,14 +7,14 @@ Legend — S: S/M/L/XL complexity. "GATE" = the exit criterion for each stage.
 ## V1-STAGE-01 — Security, Tenancy & Credential Remediation (P0 hard gate)
 
 - **Objective**: close the security findings that make paid V1 impossible (S1 SSO, S2 RLS, S3 device-token fallback).
-- **Why now**: every later stage builds on a trust boundary; S1 is an active auth bypass.
+- **Why now**: every later stage builds on a trust boundary; S1 was an active auth bypass.
 - **Dependencies**: none (foundation).
-- **Scope**: SSO login fix or route removal; RLS decision (implement or remove) + cross-tenant isolation regression suite; plaintext token fallback removal with backfill + rotation sweep; metrics token auth cleanup; secrets hygiene review.
+- **Scope**: ~~SSO login fix or route removal~~ — **S1 DONE `V1-STAGE-01-SUB-01` (SSO login DISABLED_SAFE, fail-closed 501, regression tests green; real SAML/OIDC verification deferred to a dedicated future substage — see report §7 contract).** Remaining: RLS decision (implement or remove) + cross-tenant isolation regression suite (`SUB-02`); plaintext token fallback removal with backfill + rotation sweep; metrics token auth cleanup; secrets hygiene review.
 - **Out of scope**: feature work, UI, Windows.
-- **Acceptance criteria**: SSO requires verified IdP assertions (or route disabled); isolation suite green; no plaintext-token auth path for devices lacking hash.
-- **Required tests**: new SSO auth tests; cross-tenant isolation suite (every controller); credential-rotation backfill tests.
-- **Security gate**: CRITICAL/HIGH from `07` closed.
-- **Rollback/risk**: RLS enablement risk = app-layer misses cause data invisibility; run with non-owner role in staging first. Token fallback removal risks lock-out of legacy devices — backfill before removing.
+- **Acceptance criteria**: SSO login requires verified IdP assertions OR is disabled (✅ achieved via fail-closed disablement); isolation suite green; no plaintext-token auth path for devices lacking hash.
+- **Required tests**: ✅ new SSO fail-closed auth tests (`test/sso-login.spec.ts`, 10); ⏳ cross-tenant isolation suite (every controller); ⏳ credential-rotation backfill tests.
+- **Security gate**: CRITICAL/HIGH from `07` closed (S1 ✅ closed; S2/S3 open).
+- **Rollback/risk**: SSO change is code-only, no migration; do NOT re-enable by reverting (pre-change code is the vulnerability). RLS enablement risk = app-layer misses cause data invisibility; run with non-owner role in staging first. Token fallback removal risks lock-out of legacy devices — backfill before removing.
 - **Complexity**: M.
 
 ## V1-STAGE-02 — Deployment Reliability & CD Repairs
@@ -181,10 +181,14 @@ V1-STAGE-09 ──> V1-STAGE-11 (UX/perf/a11y) ──> V1-STAGE-12 (cert/beta)
 
 ## NEXT EXACT SUBSTAGE
 
-**V1-STAGE-01-SUB-01 — SSO authentication remediation.**
+**V1-STAGE-01-SUB-02 — RLS decision & cross-tenant isolation regression suite (S2).**
 
-Exact steps (implementation mission, not this one):
-1. Decide with founder: (a) disable `POST /auth/sso/login` until a real IdP integration exists, or (b) implement SAML/OIDC assertion verification.
-2. Add tests proving spoofed IdP tokens/attributes are rejected (no bypass via fake `idpToken >= 10`).
-3. Update `07_SECURITY_TENANCY_REVIEW.md` S1 status + `14_DECISION_LOG.md`.
-4. Green gate must pass with the new SSO tests.
+Exact steps (implementation mission):
+1. Decide with founder: (a) implement transactional `set_config` + non-owner role + `FORCE ROW LEVEL SECURITY`, or (b) remove decorative RLS policies and rely on tested app-layer isolation.
+2. Add a cross-tenant isolation regression suite covering every controller's orgId scoping (per `07` §4-5).
+3. Update `07`, `08`, `14`.
+
+**Completed: V1-STAGE-01-SUB-01 — SSO authentication remediation** (2026-08-09):
+- `POST /auth/sso/login` is DISABLED_SAFE (fail-closed `501 Not Implemented`; no tokens, no JIT provisioning, no SSO identity writes, no config reads). Insecure implementation removed; route + `SsoConfig` architecture preserved for a future verified SAML/OIDC substage (contract in `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md` §7).
+- Regression tests: `test/sso-login.spec.ts` (10) + updated `enterprise.integration.spec.ts` / `full-e2e-scenario.spec.ts`. Full api-gateway suite 53 suites / 923 tests green; `pnpm lint` + `pnpm build` green.
+- Decisions: `14` D11-D13.

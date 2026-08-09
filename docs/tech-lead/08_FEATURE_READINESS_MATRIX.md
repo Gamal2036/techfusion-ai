@@ -1,6 +1,6 @@
 # 08 — Feature Readiness Matrix
 
-Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / BROKEN / MISSING / NOT_APPLICABLE / UNKNOWN. `CERTIFIED` only where tests + certification reports support it. Commercial plan = intended tier per `09` (FREE / PRO / PREMIUM_TIER_PLACEHOLDER).
+Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / BROKEN / MISSING / NOT_APPLICABLE / UNKNOWN / DISABLED_SAFE. `CERTIFIED` only where tests + certification reports support it. `DISABLED_SAFE` = shipped but intentionally disabled (fail-closed) pending a required security verification — NOT customer-ready. Commercial plan = intended tier per `09` (FREE / PRO / PREMIUM_TIER_PLACEHOLDER).
 
 ## 1. Matrix
 
@@ -8,7 +8,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 |---------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
 | Authentication (JWT+refresh) | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | MFA (TOTP) | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | enrollment UI polish |
-| SSO | ❌ UI | ⚠️ login | ✅ | — | — | ⚠️ | ✅ | ❌ | — | — | PREMIUM | **BROKEN** | S1 CRITICAL fix (`07`) |
+| SSO | ❌ UI | ⚠️ login | ✅ | — | — | ⚠️ | ✅ | ✅ | — | — | PREMIUM | **DISABLED_SAFE** | fail-closed (501) until real IdP verification (`V1-STAGE-01-SUB-01`) |
 | Organizations | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Membership + roles | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Invitations | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
@@ -46,7 +46,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Agent updates | — | — | — | — | ❌ | — | — | ⚠️ | ⚠️ | ❌ | — | **MISSING** | self-update mechanism (`05`) |
 | Windows agent | — | — | — | — | ❌ | — | — | ❌ | — | ❌ | — | **MISSING** | full gap list (`05`) |
 | RLS tenancy | — | — | ⚠️ | — | — | — | — | ⚠️ | — | — | — | **BROKEN (inert)** | S2 (`07`) |
-| SSO tenant authz | ❌ | ⚠️ | ✅ | — | — | ⚠️ | ✅ | ❌ | — | — | PREMIUM | **BROKEN** | S1 (`07`) |
+| SSO tenant authz | ❌ | ⚠️ | ✅ | — | — | ⚠️ | ✅ | ✅ | — | — | PREMIUM | **DISABLED_SAFE** | fail-closed (501) until real IdP verification (`V1-STAGE-01-SUB-01`) |
 | WebSocket live alerts | ✅ | ✅ | — | ✅ | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 
 Legend: ✅ present/working · ⚠️ partial/flawed · ❌ missing/blocked · — not applicable.
@@ -54,6 +54,6 @@ Legend: ✅ present/working · ⚠️ partial/flawed · ❌ missing/blocked · �
 ## 2. Key Takeaways
 
 1. **CERTIFIED core**: auth, orgs/membership/RBAC/invitations, account deletion, device enrollment (Linux), device list/health, presence + presence alerts, monitoring dashboard, WS live alerts, reports (sync path).
-2. **BROKEN before V1**: SSO (S1), KB embeddings (mock vectors), REPORT async queue, RLS (inert), Windows support (absent), agent self-update (absent).
+2. **BROKEN before V1**: KB embeddings (mock vectors), REPORT async queue, RLS (inert), Windows support (absent), agent self-update (absent). **SSO is no longer BROKEN — it is DISABLED_SAFE** (S1 closed by `V1-STAGE-01-SUB-01`: fail-closed 501, tests green) and remains unimplemented for customers until a real IdP verification substage lands.
 3. **PARTIAL**: remote support (agent stub), recordings viewer, retention UI, audit UI, admin UI, entitlement enforcement, AI provider config, report schedules.
 4. Every Windows column is ❌ — Windows is a single hard dependency for "Linux AND Windows production support" (`11`, `12`).

@@ -80,10 +80,15 @@ describe('Enterprise Phase 13 Integration', () => {
     return res.body.accessToken;
   }
 
-  // ─── 1. SSO Login & JIT Provisioning ──────────────────────────
+  // ─── 1. SSO Login Fail-Closed (V1-STAGE-01-SUB-01) ────────────
+  //
+  // `POST /auth/sso/login` is DISABLED until a real IdP verification
+  // mechanism exists (S1, CRITICAL auth bypass). Every request must fail
+  // closed with 501 and must not issue tokens, JIT-provision users, or link
+  // SSO identities. Admin config management remains available (dormant).
 
-  describe('SSO login with JIT provisioning', () => {
-    it('rejects SSO login when org has no SSO config', async () => {
+  describe('SSO login fail-closed', () => {
+    it('rejects SSO login with 501 when org has no SSO config', async () => {
       await seedOrg('sso-no-config', 'No SSO', 'owner@sso.com', 'Owner');
       const res = await request(app.getHttpServer())
         .post('/auth/sso/login')
@@ -93,10 +98,14 @@ describe('Enterprise Phase 13 Integration', () => {
           provider: 'oidc',
           attributes: { email: 'newuser@test.com', displayName: 'New SSO User' },
         })
-        .expect(401);
+        .expect(501);
+
+      expect(res.body.accessToken).toBeUndefined();
+      expect(res.body.refreshToken).toBeUndefined();
+      expect(await prisma.user.findUnique({ where: { email: 'newuser@test.com' } })).toBeNull();
     });
 
-    it('JIT provisions a new user on first SSO login', async () => {
+    it('fails closed on first SSO login: no JIT provisioning, no tokens', async () => {
       const { org } = await seedOrg('sso-jit', 'SSO JIT', 'owner@sso-jit.com', 'Owner', 'Enterprise');
       const token = await loginAs('owner@sso-jit.com');
 
@@ -112,7 +121,8 @@ describe('Enterprise Phase 13 Integration', () => {
         })
         .expect(201);
 
-      // SSO login with new user (JIT provisioning)
+      // SSO login with a client-supplied identity (previously JIT-provisioned)
+      const refreshTokensBefore = await prisma.refreshToken.count();
       const ssoRes = await request(app.getHttpServer())
         .post('/auth/sso/login')
         .send({
@@ -121,23 +131,20 @@ describe('Enterprise Phase 13 Integration', () => {
           provider: 'oidc',
           attributes: { email: 'jit-user@test.com', displayName: 'JIT User', ssoId: 'sso-abc-123' },
         })
-        .expect(201);
+        .expect(501);
 
-      expect(ssoRes.body.user).toBeDefined();
-      expect(ssoRes.body.user.email).toBe('jit-user@test.com');
-      expect(ssoRes.body.user.displayName).toBe('JIT User');
-      expect(ssoRes.body.user.role).toBe('Viewer');
-      expect(ssoRes.body.accessToken).toBeDefined();
-      expect(ssoRes.body.refreshToken).toBeDefined();
+      expect(ssoRes.body.user).toBeUndefined();
+      expect(ssoRes.body.accessToken).toBeUndefined();
+      expect(ssoRes.body.refreshToken).toBeUndefined();
 
-      // Verify user was created in DB with SSO fields
+      // Verify no user / membership was created and no refresh token was issued
       const dbUser = await prisma.user.findUnique({ where: { email: 'jit-user@test.com' } });
-      expect(dbUser).toBeDefined();
-      expect(dbUser!.ssoId).toBe('sso-abc-123');
-      expect(dbUser!.ssoProvider).toBe('oidc');
+      expect(dbUser).toBeNull();
+      expect(await prisma.organizationMember.count({ where: { orgId: org.id } })).toBe(1);
+      expect(await prisma.refreshToken.count()).toBe(refreshTokensBefore);
     });
 
-    it('links existing user to SSO on subsequent login', async () => {
+    it('fails closed on subsequent SSO login: existing user SSO identity is not linked', async () => {
       const { org } = await seedOrg('sso-link', 'SSO Link', 'owner@sso-link.com', 'Owner', 'Enterprise');
       const token = await loginAs('owner@sso-link.com');
 
@@ -148,7 +155,8 @@ describe('Enterprise Phase 13 Integration', () => {
         .send({ provider: 'saml', issuer: 'https://saml.idp.com' })
         .expect(201);
 
-      // Create a user via normal signup first, then SSO login with same email
+      // SSO login with the same email as an existing user must not link ssoId
+      const refreshTokensBefore = await prisma.refreshToken.count();
       const ssoRes = await request(app.getHttpServer())
         .post('/auth/sso/login')
         .send({
@@ -157,12 +165,16 @@ describe('Enterprise Phase 13 Integration', () => {
           provider: 'saml',
           attributes: { email: 'owner@sso-link.com', displayName: 'Linked SSO User', ssoId: 'sso-link-456' },
         })
-        .expect(201);
+        .expect(501);
 
-      // Should link SSO fields to existing user
+      expect(ssoRes.body.accessToken).toBeUndefined();
+      expect(ssoRes.body.refreshToken).toBeUndefined();
+
+      // Existing user must remain untouched
       const dbUser = await prisma.user.findUnique({ where: { email: 'owner@sso-link.com' } });
-      expect(dbUser!.ssoId).toBe('sso-link-456');
-      expect(dbUser!.ssoProvider).toBe('saml');
+      expect(dbUser!.ssoId).toBeNull();
+      expect(dbUser!.ssoProvider).toBeNull();
+      expect(await prisma.refreshToken.count()).toBe(refreshTokensBefore);
     });
 
     it('configures SSO settings for an org', async () => {
