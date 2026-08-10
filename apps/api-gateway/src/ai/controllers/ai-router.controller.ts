@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Body } from '@nestjs/common';
+import { Controller, Get, Put, Body, Req } from '@nestjs/common';
 import { RequirePermissions } from '../../common/permissions.decorator';
 import { Permission } from '../../common/permissions';
 import { AiRouterService } from '../router/ai-router.service';
@@ -16,14 +16,14 @@ export class AiRouterController {
 
   @RequirePermissions(Permission.ORGANIZATION_SETTINGS)
   @Get('router/stats')
-  async getRouterStats(): Promise<RouterStats> {
-    return this.aiRouter.getStats()
+  async getRouterStats(@Req() req: any): Promise<RouterStats> {
+    return this.aiRouter.getStats(req.user?.orgId)
   }
 
   @RequirePermissions(Permission.ORGANIZATION_SETTINGS)
   @Put('router/strategy')
-  async updateStrategy(@Body('strategy') strategy: RouterStrategy): Promise<{ strategy: RouterStrategy }> {
-    this.aiRouter.setStrategy(strategy)
+  async updateStrategy(@Req() req: any, @Body('strategy') strategy: RouterStrategy): Promise<{ strategy: RouterStrategy }> {
+    this.aiRouter.setStrategy(req.user?.orgId, strategy)
     return { strategy }
   }
 }

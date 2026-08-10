@@ -59,6 +59,7 @@ const mockPrisma = {
     create: jest.fn().mockResolvedValue({}),
   },
   backupRun: {
+    findFirst: jest.fn().mockResolvedValue(null),
     findUnique: jest.fn().mockResolvedValue(null),
     update: jest.fn().mockResolvedValue({}),
     deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -121,6 +122,7 @@ beforeEach(() => {
   mockPrisma.securityScan.findFirst.mockResolvedValue({
     id: 'scan-001',
     orgId: 'org-1',
+    deviceId: 'device-1',
     findings: [
       { id: 'f-1', severity: 'critical', finding: 'Critical issue', category: 'updates', remediation: 'Update' },
       { id: 'f-2', severity: 'high', finding: 'High issue', category: 'firewall', remediation: 'Fix' },
@@ -130,6 +132,7 @@ beforeEach(() => {
   mockPrisma.alertRule.findFirst.mockResolvedValue({ id: 'rule-1', name: 'Security Critical Finding', enabled: true, webhookUrl: null });
   mockPrisma.alert.findFirst.mockResolvedValue(null);
   mockPrisma.backupRun.findUnique.mockResolvedValue(null);
+  mockPrisma.backupRun.findFirst.mockResolvedValue(null);
   (runBackupScript as jest.Mock).mockResolvedValue({
     success: true,
     exitCode: 0,
@@ -262,6 +265,8 @@ describe('Report Processor', () => {
 
 describe('Backup Processor', () => {
   it('processes a backup job with real script execution', async () => {
+    mockPrisma.backupRun.findFirst.mockResolvedValueOnce({ id: 'run-001', orgId: 'org-1', status: 'pending' });
+
     const job = mockJob('20', 'execute', {
       runId: 'run-001',
       jobId: 'job-001',
@@ -284,7 +289,7 @@ describe('Backup Processor', () => {
   });
 
   it('skips already completed runs (idempotent)', async () => {
-    mockPrisma.backupRun.findUnique.mockResolvedValueOnce({ id: 'run-002', status: 'completed' });
+    mockPrisma.backupRun.findFirst.mockResolvedValueOnce({ id: 'run-002', status: 'completed', orgId: 'org-1' });
 
     const job = mockJob('21', 'execute', {
       runId: 'run-002',
@@ -301,6 +306,7 @@ describe('Backup Processor', () => {
   });
 
   it('handles backup script failure', async () => {
+    mockPrisma.backupRun.findFirst.mockResolvedValueOnce({ id: 'run-003', orgId: 'org-1', status: 'pending' });
     (runBackupScript as jest.Mock).mockResolvedValueOnce({
       success: false,
       exitCode: 1,
@@ -325,6 +331,7 @@ describe('Backup Processor', () => {
   });
 
   it('handles verification failure', async () => {
+    mockPrisma.backupRun.findFirst.mockResolvedValueOnce({ id: 'run-004', orgId: 'org-1', status: 'pending' });
     (parseVerificationOutput as jest.Mock).mockReturnValueOnce({
       passed: false,
       passCount: 2,
@@ -344,6 +351,21 @@ describe('Backup Processor', () => {
     expect(mockPrisma.backupRun.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'failed' }) }),
     );
+  });
+
+  it('rejects a backup run that does not belong to the org', async () => {
+    mockPrisma.backupRun.findFirst.mockResolvedValueOnce(null);
+
+    const job = mockJob('24', 'execute', {
+      runId: 'run-other-org',
+      jobId: 'job-005',
+      orgId: 'org-1',
+      deviceId: 'device-1',
+      type: 'database',
+    });
+
+    await expect(processBackupJob(job)).rejects.toThrow('not found in org org-1');
+    expect(runBackupScript).not.toHaveBeenCalled();
   });
 });
 

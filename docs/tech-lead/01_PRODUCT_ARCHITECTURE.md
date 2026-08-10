@@ -47,7 +47,7 @@ Observability: OpenTelemetry SDK in gateway and worker; Prometheus metrics
 
 - **Auth**: JWT access (15 m) + opaque refresh (7 d, DB-stored, CAS rotation on refresh, revocation on logout/membership loss). `src/auth/auth.service.ts`.
 - **Authorization**: global `CombinedAuthGuard` resolves JWT → `OrganizationMember` (membership-authoritative). `PermissionsGuard` enforces ~40 `domain:action` permissions via decorators. `PlanGuard` + `RequireFeature` gate feature flags. Guard order: Throttler → CombinedAuth → Permissions → Plan.
-- **Tenant isolation**: app-layer `orgId` filtering everywhere (org resolved from token → membership). RLS migrations exist but are inert (see `07`).
+- **Tenant isolation**: app-layer `orgId` filtering everywhere (org resolved from token → membership). RLS migrations exist but are **non-authoritative defense-in-depth** (app role is SUPERUSER+BYPASSRLS; empirically inert — `V1-STAGE-01-SUB-02` chose Option B: app-layer authoritative).
 - **Device auth**: `DeviceTokenGuard` (SHA-256 of bearer vs `deviceTokenHash`, legacy plaintext fallback) → resolves org + device. Ingest endpoints additionally validate `X-Org-Id`/body org against token org.
 - **Queues**: `apps/api-gateway/src/queue/queue.service.ts` produces; worker consumes. Queue names duplicated across gateway and worker (sync risk — see `06`).
 - **Presence**: derived from `lastSeenAt` (see `00` §6).
@@ -68,7 +68,7 @@ Observability: OpenTelemetry SDK in gateway and worker; Prometheus metrics
 ## 6. Architecture Gaps (evidence-based)
 
 1. **No single source of truth for queue constants and presence thresholds** — duplicated across gateway/worker/web with drift risk.
-2. **RLS decorative** — isolation relies on disciplined app-layer filtering (`07`).
+2. **RLS non-authoritative** — app-layer filtering is authoritative and regression-tested (`test/cross-tenant-isolation.spec.ts`); RLS kept as inert defense-in-depth (`07`, SUB-02 report).
 3. **SSO login unauthenticated against IdP** (`07`, CRITICAL).
 4. **CD chart undeployable as written** (`02`, `10`).
 5. **Agent remote support = auto-consent stub; no real remote control** (`05`).

@@ -1,6 +1,6 @@
 # 07 — Security & Tenancy Review
 
-Status: 2026-08-09. Read-only review; no destructive testing performed. Findings verified from source (`VERIFIED_THIS_RUN` for SSO; others `INFERRED_FROM_CODE` with file refs). SSO remediation substage `V1-STAGE-01-SUB-01` (2026-08-09) resolved S1 (see `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`).
+Status: 2026-08-09. Read-only review; no destructive testing performed. Findings verified from source (`VERIFIED_THIS_RUN` for SSO; others `INFERRED_FROM_CODE` with file refs). SSO remediation substage `V1-STAGE-01-SUB-01` (2026-08-09) resolved S1 (see `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`). RLS/isolation substage `V1-STAGE-01-SUB-02` (2026-08-10) resolved S2 with empirical RLS proof + 4 cross-tenant write-path fixes + a 20-test isolation regression suite (see `V1-STAGE-01-SUB-02_RLS_TENANT_ISOLATION_REPORT.md`).
 
 ## 1. Verified Boundaries (positive)
 
@@ -16,7 +16,7 @@ Status: 2026-08-09. Read-only review; no destructive testing performed. Findings
 | # | Severity | Finding | Evidence |
 |---|----------|---------|----------|
 | S1 | **CRITICAL** | ~~**SSO login = authentication bypass.** `POST /auth/sso/login` is `@Public()`, trusts client-supplied `attributes { email, ssoId, displayName }`, and validates the IdP token only by `length >= 10`. No SAML assertion or OIDC id_token verification/signature check. Anyone knowing an org slug with SSO enabled can authenticate as any email (JIT-provisioned Viewer, or hijack of an existing email by overwriting `ssoId` at `sso.service.ts:142-145`), obtaining a valid JWT + refresh token.~~ **RESOLVED `V1-STAGE-01-SUB-01`: the incomplete SSO login path is DISABLED_SAFE (fail-closed). `POST /auth/sso/login` returns a deterministic `501 Not Implemented` before touching any data — no tokens, no JIT provisioning, no SSO identity writes, no config reads. Insecure implementation removed; route/contract preserved for a future verified SAML/OIDC implementation. Regression tests: `test/sso-login.spec.ts` (10 tests) + updated `enterprise.integration.spec.ts` / `full-e2e-scenario.spec.ts`.** | `sso.controller.ts:12-21`, `sso.service.ts:72-99`, `test/sso-login.spec.ts` |
-| S2 | MEDIUM | **RLS is inert — isolation is app-layer only.** 29+ tables have RLS policies keyed on `current_org_id()` reading `app.current_org_id`, but nothing ever sets it (no `set_config` anywhere; `OrgContextInterceptor` deleted). The Prisma role owns the tables and bypasses RLS (no `FORCE ROW LEVEL SECURITY`). A single missed `orgId` filter = real cross-tenant leak; app-layer discipline is the only boundary. | migrations `*_rls*`; `docs/v1/ORG-01B:194-195,407`; `V1-ORG-AUDIT-00:406-417` |
+| S2 | MEDIUM | **RLS is inert — isolation is app-layer only (RESOLVED `V1-STAGE-01-SUB-02` — Option B chosen).** Empirically proven: the app role is `SUPERUSER` + `BYPASSRLS` (32 tables RLS-enabled, 0 FORCE), no `set_config`/`OrgContextInterceptor` exists, and Prisma pooling cannot carry session settings safely (set_config is per-connection/transaction-only). RLS is **kept** as non-authoritative defense-in-depth (no migration, no FORCE). Isolation is enforced and regression-tested at the app layer: membership/device-authoritative `orgId` scoping + `test/cross-tenant-isolation.spec.ts` (20 tests). Confirmed cross-tenant defects found during the SUB-02 audit were fixed: `backups.service` update/delete TOCTOU, `remote-support.updateRecording` unscoped update, `network.updateDiscoveryStatus`/`cleanupStaleScans` unscoped, AI router global strategy/stats (now per-org), worker backup/KB processors trusting payload resource IDs (now org-verified). | migrations `*_rls*`; `docs/v1/ORG-01B:194-195,407`; `V1-ORG-AUDIT-00:406-417`; SUB-02 empirical RLS probes (superuser+ctx sees all rows; FORCE no-op; restricted role filtered) |
 | S3 | MEDIUM | **Plaintext `Device.deviceToken` retained + fallback lookup.** Guard hashes bearer → `deviceTokenHash`, then falls back to equality vs the plaintext unique column (`device-token.guard.ts:38-47`; `devices.service.ts:249-260`). A DB leak exposes live device credentials. | `schema.prisma` (`Device.deviceToken`), guard + service |
 | S4 | MEDIUM | **Public device-creation endpoint.** `POST /devices/register-public` (Public, throttled 10/60 s) gated only by a single-use hashed enrollment token; duplicate registration auto-rotates credentials. Brute-force/replay of a token allows registering devices under an org (Free cap 3 mitigates). | `devices.controller.ts`, `devices.service.ts:88-141` |
 | S5 | LOW | **Metrics token in query string + optional auth.** `GET /metrics?token=` (log/proxy leakage); unauthenticated when `METRICS_AUTH_TOKEN` unset. | `metrics.controller.ts:6,15-20` |
@@ -26,13 +26,17 @@ Status: 2026-08-09. Read-only review; no destructive testing performed. Findings
 ## 3. Theoretically Reachable Cross-Org Paths
 
 None found among reviewed controllers. S1 (org takeover via SSO) is closed
-(`V1-STAGE-01-SUB-01`). The remaining realistic risk is S2 (single missed
-`orgId` filter = leak), which must be closed before paid V1.
+(`V1-STAGE-01-SUB-01`). S2 (single missed `orgId` filter) is **closed by
+`V1-STAGE-01-SUB-02`**: Option B (app-layer authoritative) is decided; the 4
+confirmed cross-tenant write paths (backups TOCTOU, remote-support recording
+update, network discovery status, AI router global state) plus worker
+backup/KB payload-org trust were fixed, and a 20-test cross-tenant isolation
+regression suite now guards every high-risk domain.
 
 ## 4. What Security Work Remains Before Paid V1 (non-exhaustive)
 
 1. ~~Replace/verify SSO~~ — **DONE `V1-STAGE-01-SUB-01`: SSO login is DISABLED_SAFE (fail-closed, 501).** Re-enablement requires a future substage implementing real server-side SAML/OIDC verification per the contract in `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md` §7 (OIDC issuer/audience/JWKS/exp/nonce+PKCE; SAML signature/issuer/audience/destination/validity/replay; JIT + account-linking only after verified identity). — P0 blocker closed; SSO must not be re-enabled without it.
-2. Decide RLS: implement transactional `set_config` + non-owner role + `FORCE ROW LEVEL SECURITY`, or remove the decorative migrations and rely on tested app-layer isolation with an orgId-audit test. — P0/P1 (next substage `V1-STAGE-01-SUB-02`).
+2. ~~Decide RLS~~ — **DONE `V1-STAGE-01-SUB-02`: Option B — app-layer authoritative. RLS kept non-destructively as inert defense-in-depth; no FORCE, no set_config, no migration. Isolation is membership/device-authoritative app-layer scoping + `test/cross-tenant-isolation.spec.ts`.** Residual (documented, LOW): `remote-support.cleanupStaleSessions`, `network.cleanupStaleScans`, and retention `allOrgs` are global-maintenance utilities invoked via permissioned API routes / Owner-gated admin routes — they accept an explicit org scope where available and are authorized by design; worker `allOrgs` retains a payload-trust weakness noted in the SUB-02 report (no queue payload signing — architectural, deferred).
 3. Remove plaintext `deviceToken` fallback once all devices carry hashes (backfill + rotation sweep) — P1.
 4. Move metrics auth out of query string — P2.
-5. Add a cross-tenant isolation regression test suite covering every controller's orgId scoping — P0 test.
+5. ~~Add a cross-tenant isolation regression test suite covering every controller's orgId scoping~~ — **DONE `V1-STAGE-01-SUB-02`: `test/cross-tenant-isolation.spec.ts` (20 tests) covers READ/WRITE/DELETE isolation, device-token ingestion substitution, JWT-claim vs membership authority, X-Org-Id forgery, AI router per-org state, and org-switch context across backups, remote-support recordings, alerts, security findings, KB, reports, network scans.**

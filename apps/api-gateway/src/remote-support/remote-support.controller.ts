@@ -128,7 +128,7 @@ export class RemoteSupportController {
   async cleanupStaleSessions(@Req() req: any) {
     const orgId = req.user?.orgId;
     if (!orgId) throw new UnauthorizedException('Authentication required');
-    return this.remoteService.cleanupStaleSessions();
+    return this.remoteService.cleanupStaleSessions(orgId);
   }
 
   @Public()

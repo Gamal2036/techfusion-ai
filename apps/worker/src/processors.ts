@@ -200,9 +200,9 @@ export async function processBackupVerify(job: Job): Promise<any> {
       throw new Error('No archive path provided for verification');
     }
 
-    const run = await prisma.backupRun.findUnique({ where: { id: runId } });
+    const run = await prisma.backupRun.findFirst({ where: { id: runId, orgId } });
     if (!run) {
-      throw new Error(`Backup run ${runId} not found`);
+      throw new Error(`Backup run ${runId} not found in org ${orgId}`);
     }
 
     const storedChecksum = (run.metadata as any)?.checksum;
@@ -299,6 +299,11 @@ export async function processBackupJob(job: Job): Promise<any> {
     const prisma = getPrismaClient();
     log.log(`Restore job for run ${runId} (type: ${type})`, { queueName: QUEUE_NAMES.BACKUP, jobId: job.id?.toString(), orgId });
 
+    const run = await prisma.backupRun.findFirst({ where: { id: runId, orgId } });
+    if (!run) {
+      throw new Error(`Backup run ${runId} not found in org ${orgId}`);
+    }
+
     await prisma.backupRun.update({
       where: { id: runId },
       data: { status: 'running', startedAt: new Date() },
@@ -311,7 +316,6 @@ export async function processBackupJob(job: Job): Promise<any> {
     if (type === 'restore-postgres') {
       result = await runBackupScript('restore-postgres', [], 300000);
     } else if (type === 'file') {
-      const run = await prisma.backupRun.findUnique({ where: { id: runId }, select: { metadata: true } });
       const metadata = (run?.metadata as any) || {};
       const archivePath = metadata?.backupPath || '';
       const restoreDest = destPath || '/tmp/techfusion-recovery';
@@ -355,8 +359,11 @@ export async function processBackupJob(job: Job): Promise<any> {
 
     const prisma = getPrismaClient();
 
-    const existingRun = await prisma.backupRun.findUnique({ where: { id: runId } });
-    if (existingRun && existingRun.status === 'completed') {
+    const existingRun = await prisma.backupRun.findFirst({ where: { id: runId, orgId } });
+    if (!existingRun) {
+      throw new Error(`Backup run ${runId} not found in org ${orgId}`);
+    }
+    if (existingRun.status === 'completed') {
       log.log(`Run ${runId} already completed (idempotent skip)`, {
         queueName: QUEUE_NAMES.BACKUP,
         jobId: job.id?.toString(),
@@ -547,7 +554,7 @@ export async function processBackupJob(job: Job): Promise<any> {
     }).catch(() => {});
 
     await prisma.backupJob.update({
-      where: { id: backupJobId },
+      where: { id: backupJobId, orgId },
       data: { lastRunAt: completedAt },
     }).catch(() => {});
 
@@ -746,7 +753,7 @@ export async function processSecurityJob(job: Job): Promise<any> {
     const prisma = getPrismaClient();
 
     if (job.name === JOB_NAMES.SECURITY.SCAN_COMPLETE) {
-      const { scanId, orgId, deviceId, score, findingCount } = job.data;
+      const { scanId, orgId, score, findingCount } = job.data;
 
       const scan = await prisma.securityScan.findFirst({
         where: { id: scanId, orgId },
@@ -760,6 +767,8 @@ export async function processSecurityJob(job: Job): Promise<any> {
         });
         return { success: true, skipped: true };
       }
+
+      const deviceId = scan.deviceId;
 
       log.log(`Scan ${scanId} completed: score=${score?.securityScore}, findings=${findingCount}`, {
         queueName: QUEUE_NAMES.SECURITY,
@@ -850,7 +859,7 @@ export async function processSecurityJob(job: Job): Promise<any> {
         highFindings: highFindings.length,
       };
     } else if (job.name === JOB_NAMES.SECURITY.FINDING_ALERT) {
-      const { findingId, orgId, deviceId, severity, finding } = job.data;
+      const { findingId, orgId, severity, finding } = job.data;
 
       const existingFinding = await prisma.securityFinding.findFirst({
         where: { id: findingId, orgId },
@@ -863,6 +872,8 @@ export async function processSecurityJob(job: Job): Promise<any> {
         });
         return { success: true, skipped: true };
       }
+
+      const deviceId = existingFinding.deviceId;
 
       log.log(`Processing finding alert: [${severity}] ${finding}`, {
         queueName: QUEUE_NAMES.SECURITY,
@@ -1232,10 +1243,10 @@ export async function processKbEmbeddingJob(job: Job): Promise<any> {
     const { orgId, articleId } = job.data;
     const prisma = getPrismaClient();
 
-    const article = await prisma.kbArticle.findUnique({ where: { id: articleId } });
+    const article = await prisma.kbArticle.findFirst({ where: { id: articleId, orgId } });
     if (!article) {
-      log.warn(`Article ${articleId} not found`, { queueName: QUEUE_NAMES.KB_EMBEDDING });
-      return { success: false, reason: 'article_not_found' };
+      log.warn(`Article ${articleId} not found in org ${orgId}`, { queueName: QUEUE_NAMES.KB_EMBEDDING });
+      return { success: false, reason: 'article_not_found_in_org' };
     }
 
     // Delete old embeddings for idempotency

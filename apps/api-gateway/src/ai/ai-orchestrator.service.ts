@@ -261,7 +261,7 @@ export class AiOrchestratorService implements AiOrchestrator {
 
       if (this.aiRouter) {
         console.log(`[AI_ORCHestrator_ROUTER] orgId=${orgId} using AiRouter`);
-        const response = await this.aiRouter.complete(prompt, systemPrompt);
+        const response = await this.aiRouter.complete(orgId, prompt, systemPrompt);
         const latencyMs = Date.now() - startTime;
 
         console.log(`[AI_ORCHestrator_ROUTER_DONE] provider=${response.provider} model=${response.model} totalMs=${latencyMs} tokens=${response.tokensUsed}`);
@@ -352,7 +352,7 @@ export class AiOrchestratorService implements AiOrchestrator {
     if (this.aiRouter) {
       try {
         const text = opts.input.join(' ');
-        const response = await this.aiRouter.embed(text);
+        const response = await this.aiRouter.embed(orgId, text);
         return {
           embeddings: [response.embedding],
           model: response.model,

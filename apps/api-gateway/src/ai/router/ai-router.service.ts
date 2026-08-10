@@ -8,18 +8,30 @@ import { GroqRouterProvider } from '../providers/router/groq-router.provider';
 import { OpenRouterRouterProvider } from '../providers/router/openrouter-router.provider';
 import { OllamaRouterProvider } from '../providers/router/ollama-router.provider';
 
-@Injectable()
-export class AiRouterService {
-  private providers: AiProviderInterface[]
-  private circuitBreaker: CircuitBreaker
-  private runtimeStrategy: RouterStrategy | null = null
-  private stats = {
+interface OrgRouterStats {
+  totalRequests: number;
+  successes: number;
+  totalLatency: number;
+  totalCost: number;
+  providerUsage: Record<string, number>;
+}
+
+function emptyStats(): OrgRouterStats {
+  return {
     totalRequests: 0,
     successes: 0,
     totalLatency: 0,
     totalCost: 0,
-    providerUsage: {} as Record<string, number>,
-  }
+    providerUsage: {},
+  };
+}
+
+@Injectable()
+export class AiRouterService {
+  private providers: AiProviderInterface[]
+  private circuitBreaker: CircuitBreaker
+  private runtimeStrategies = new Map<string, RouterStrategy>()
+  private stats = new Map<string, OrgRouterStats>()
 
   constructor() {
     const threshold = parseInt(process.env.AI_CIRCUIT_BREAKER_THRESHOLD || '3', 10)
@@ -35,11 +47,18 @@ export class AiRouterService {
     ]
   }
 
-  private getActiveStrategy(): string {
-    return this.runtimeStrategy || process.env.AI_ROUTER_STRATEGY || 'smart'
+  private getActiveStrategy(orgId: string): string {
+    return this.runtimeStrategies.get(orgId) || process.env.AI_ROUTER_STRATEGY || 'smart'
   }
 
-  private async selectProviders(strategy: string): Promise<AiProviderInterface[]> {
+  private getOrgStats(orgId: string): OrgRouterStats {
+    if (!this.stats.has(orgId)) {
+      this.stats.set(orgId, emptyStats())
+    }
+    return this.stats.get(orgId)!
+  }
+
+  private async selectProviders(orgId: string, strategy: string): Promise<AiProviderInterface[]> {
     const configured = this.providers.filter(p => p.isConfigured())
     const notBlocked = configured.filter(p => !this.circuitBreaker.isOpen(p.name))
 
@@ -65,7 +84,7 @@ export class AiRouterService {
         })
       case 'round-robin': {
         if (notBlocked.length === 0) return []
-        const idx = this.stats.totalRequests % notBlocked.length
+        const idx = this.getOrgStats(orgId).totalRequests % notBlocked.length
         return [...notBlocked.slice(idx), ...notBlocked.slice(0, idx)]
       }
       case 'smart':
@@ -74,13 +93,13 @@ export class AiRouterService {
     }
   }
 
-  async complete(prompt: string, systemPrompt?: string): Promise<AiResponse> {
-    const strategy = this.getActiveStrategy()
+  async complete(orgId: string, prompt: string, systemPrompt?: string): Promise<AiResponse> {
+    const strategy = this.getActiveStrategy(orgId)
     const timeout = parseInt(process.env.AI_ROUTER_TIMEOUT_MS || '30000', 10)
     const fallbackEnabled = (process.env.AI_FALLBACK_ENABLED || 'true') === 'true'
 
-    const orderedProviders = await this.selectProviders(strategy)
-    console.log(`[AI_ROUTE_START] strategy=${strategy} providers=${orderedProviders.map(p => p.name).join(',')} timeout=${timeout}ms`)
+    const orderedProviders = await this.selectProviders(orgId, strategy)
+    console.log(`[AI_ROUTE_START] orgId=${orgId} strategy=${strategy} providers=${orderedProviders.map(p => p.name).join(',')} timeout=${timeout}ms`)
 
     if (orderedProviders.length === 0) {
       throw new Error('No AI providers configured. Please add at least one API key.')
@@ -93,7 +112,7 @@ export class AiRouterService {
     for (const provider of orderedProviders) {
       attemptCount++
       const providerStart = Date.now()
-      console.log(`[AI_PROVIDER_ATTEMPT] provider=${provider.name} priority=${provider.priority} attempt=${attemptCount}/${orderedProviders.length}`)
+      console.log(`[AI_PROVIDER_ATTEMPT] orgId=${orgId} provider=${provider.name} priority=${provider.priority} attempt=${attemptCount}/${orderedProviders.length}`)
 
       try {
         const result = await Promise.race([
@@ -106,31 +125,31 @@ export class AiRouterService {
         const providerMs = Date.now() - providerStart
         const totalMs = Date.now() - routeStart
         this.circuitBreaker.recordSuccess(provider.name)
-        this.updateStats(provider.name, result.latencyMs, result.costEstimateUsd, true)
+        this.updateStats(orgId, provider.name, result.latencyMs, result.costEstimateUsd, true)
 
-        console.log(`[AI_PROVIDER_SUCCESS] provider=${provider.name} model=${result.model} providerMs=${providerMs} totalMs=${totalMs} tokens=${result.tokensUsed} fallbackUsed=${attemptCount > 1}`)
+        console.log(`[AI_PROVIDER_SUCCESS] orgId=${orgId} provider=${provider.name} model=${result.model} providerMs=${providerMs} totalMs=${totalMs} tokens=${result.tokensUsed} fallbackUsed=${attemptCount > 1}`)
 
         return { ...result, fallbackUsed: attemptCount > 1, attemptCount }
       } catch (error) {
         const providerMs = Date.now() - providerStart
         lastError = error as Error
         this.circuitBreaker.recordFailure(provider.name)
-        this.updateStats(provider.name, 0, 0, false)
-        console.log(`[AI_PROVIDER_FAIL] provider=${provider.name} reason=${(error as Error).message} providerMs=${providerMs}`)
+        this.updateStats(orgId, provider.name, 0, 0, false)
+        console.log(`[AI_PROVIDER_FAIL] orgId=${orgId} provider=${provider.name} reason=${(error as Error).message} providerMs=${providerMs}`)
 
         if (!fallbackEnabled) break
       }
     }
 
     const totalMs = Date.now() - routeStart
-    console.log(`[AI_ROUTE_COMPLETE] status=ALL_FAILED totalMs=${totalMs} attempts=${attemptCount} lastError=${lastError?.message}`)
+    console.log(`[AI_ROUTE_COMPLETE] orgId=${orgId} status=ALL_FAILED totalMs=${totalMs} attempts=${attemptCount} lastError=${lastError?.message}`)
     throw new Error(`All AI providers failed after ${attemptCount} attempts. Last error: ${lastError?.message}`)
   }
 
-  async embed(text: string): Promise<EmbedResponse> {
-    const strategy = this.getActiveStrategy()
+  async embed(orgId: string, text: string): Promise<EmbedResponse> {
+    const strategy = this.getActiveStrategy(orgId)
     const timeout = parseInt(process.env.AI_ROUTER_TIMEOUT_MS || '30000', 10)
-    const embeddingProviders = (await this.selectProviders(strategy))
+    const embeddingProviders = (await this.selectProviders(orgId, strategy))
       .filter(p => p.supportsEmbedding)
 
     if (embeddingProviders.length === 0) {
@@ -186,32 +205,34 @@ export class AiRouterService {
     )
   }
 
-  getStats(): RouterStats {
+  getStats(orgId: string): RouterStats {
+    const stats = this.getOrgStats(orgId)
     const primary = this.providers.find(p => p.isConfigured())
     return {
-      totalRequests: this.stats.totalRequests,
-      successRate: this.stats.totalRequests > 0
-        ? (this.stats.successes / this.stats.totalRequests) * 100 : 0,
-      averageLatencyMs: this.stats.successes > 0
-        ? this.stats.totalLatency / this.stats.successes : 0,
-      providerUsage: this.stats.providerUsage,
-      totalCostUsd: this.stats.totalCost,
-      activeStrategy: this.getActiveStrategy() as RouterStrategy,
+      totalRequests: stats.totalRequests,
+      successRate: stats.totalRequests > 0
+        ? (stats.successes / stats.totalRequests) * 100 : 0,
+      averageLatencyMs: stats.successes > 0
+        ? stats.totalLatency / stats.successes : 0,
+      providerUsage: stats.providerUsage,
+      totalCostUsd: stats.totalCost,
+      activeStrategy: this.getActiveStrategy(orgId) as RouterStrategy,
       primaryProvider: primary?.name || 'none',
     }
   }
 
-  setStrategy(strategy: RouterStrategy): void {
-    this.runtimeStrategy = strategy
+  setStrategy(orgId: string, strategy: RouterStrategy): void {
+    this.runtimeStrategies.set(orgId, strategy)
   }
 
-  private updateStats(provider: string, latency: number, cost: number, success: boolean) {
-    this.stats.totalRequests++
+  private updateStats(orgId: string, provider: string, latency: number, cost: number, success: boolean) {
+    const stats = this.getOrgStats(orgId)
+    stats.totalRequests++
     if (success) {
-      this.stats.successes++
-      this.stats.totalLatency += latency
-      this.stats.totalCost += cost
-      this.stats.providerUsage[provider] = (this.stats.providerUsage[provider] || 0) + 1
+      stats.successes++
+      stats.totalLatency += latency
+      stats.totalCost += cost
+      stats.providerUsage[provider] = (stats.providerUsage[provider] || 0) + 1
     }
   }
 }

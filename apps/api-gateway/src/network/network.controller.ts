@@ -40,7 +40,7 @@ export class NetworkController {
   @Get('discovery/pending')
   async getPendingDiscoveryCommands(@Req() req: any) {
     const device = req.device;
-    await this.networkService.cleanupStaleScans();
+    await this.networkService.cleanupStaleScans(device.orgId);
     return this.networkService.getPendingDiscoveryCommands(device.orgId, device.id);
   }
 
@@ -67,7 +67,7 @@ export class NetworkController {
       });
       throw new ForbiddenException('Scan not found or not owned by this device');
     }
-    const scan = await this.networkService.updateDiscoveryStatus(body.scanId, body.status);
+    const scan = await this.networkService.updateDiscoveryStatus(device.orgId, body.scanId, body.status);
     return { scanId: scan.id, status: scan.status };
   }
 
@@ -95,7 +95,7 @@ export class NetworkController {
     const orgId = owned.orgId;
 
     if (body.error) {
-      const scan = await this.networkService.updateDiscoveryStatus(body.scanId, 'failed', body.error);
+      const scan = await this.networkService.updateDiscoveryStatus(orgId, body.scanId, 'failed', body.error);
       const topology = await this.networkService.getTopology(orgId);
       this.networkGateway.broadcastTopology(orgId, topology);
       this.networkGateway.broadcastScanStatus(orgId, scan);
@@ -107,7 +107,7 @@ export class NetworkController {
       orgId,
     });
 
-    await this.networkService.updateDiscoveryStatus(body.scanId, 'completed');
+    await this.networkService.updateDiscoveryStatus(orgId, body.scanId, 'completed');
 
     const topology = await this.networkService.getTopology(orgId);
     this.networkGateway.broadcastTopology(orgId, topology);

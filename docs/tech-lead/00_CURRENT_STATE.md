@@ -33,7 +33,7 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 ## 4. Headline Findings (detail in referenced docs)
 
 1. **Security CRITICAL — CLOSED**: SSO login accepted client-supplied identity with no IdP assertion validation — `POST /auth/sso/login` could authenticate as any email in an SSO-enabled org. Remediated `V1-STAGE-01-SUB-01` (fail-closed `501`, no tokens/JIT/link, 10 new regression tests, full API suite 923 green). SSO is **DISABLED_SAFE**, not certified. (`07`, `V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`)
-2. **RLS is inert**: Row-level security migrations exist but nothing sets `app.current_org_id`; isolation is app-layer `orgId` filtering only. (`07`)
+2. **RLS DECIDED (Option B — app-layer authoritative, `V1-STAGE-01-SUB-02`)**: Empirically proven inert — the app DB role is `SUPERUSER` + `BYPASSRLS` (32 tables RLS-enabled, 0 FORCE, policies never consulted), no `set_config`/`OrgContextInterceptor` exists, and Prisma pooling cannot carry session settings safely. RLS stays as non-authoritative defense-in-depth (no migration, no FORCE added). Isolation is enforced by membership/device-authoritative app-layer `orgId` scoping + the `test/cross-tenant-isolation.spec.ts` regression suite (20 tests) + worker org re-verification. (`07`, `V1-STAGE-01-SUB-02_RLS_TENANT_ISOLATION_REPORT.md`)
 3. **REPORT queue has no producer and its worker path hits a non-existent route**; **KB embedding silently falls back to deterministic mock vectors**. (`06`)
 4. **CD (staging/production) is not deployable as written**: Helm chart `required` values not supplied, image repo/tag mismatch, `prisma db push --accept-data-loss` in prod init. (`02`, `10`)
 5. **Presence/15-minute issue**: OFFLINE classification and offline alerts are, by design, only raised 15 minutes after the last heartbeat; presence sweeps run every minute. Fast UI classification (60s/5min bands) exists. (See `00` §6 and `06`)
@@ -44,12 +44,12 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 
 | App | Files | Count (from cert reports) | Command |
 |-----|-------|---------------------------|---------|
-| api-gateway | 20 specs (baseline) → 53 suites incl. `test/sso-login.spec.ts` | 913 (baseline) → 923 (with SSO fail-closed tests) | `pnpm test` (`jest --forceExit --runInBand`) |
+| api-gateway | 20 specs (baseline) → 54 suites incl. `test/sso-login.spec.ts` + `test/cross-tenant-isolation.spec.ts` | 913 (baseline) → 923 (SUB-01) → 943 (SUB-02) | `pnpm test` (`jest --forceExit --runInBand`) |
 | web | 35 specs | 790 | `pnpm test` (`jest --forceExit`) |
-| worker | 8 specs | 79 | `pnpm test` |
+| worker | 8 specs | 79 (baseline) → 80 (SUB-02) | `pnpm test` |
 | agent | 78 tests in-source | 78 | `cargo test` |
 
-`VERIFIED_THIS_RUN` for api-gateway (53 suites / 923 tests green on `V1-STAGE-01-SUB-01`). Web/worker/agent counts from STAGE-01C cert reports; not re-run during this substage (no web/worker/agent code touched).
+`VERIFIED_THIS_RUN` for api-gateway (54 suites / 943 tests green) and worker (8 suites / 80 tests green) on `V1-STAGE-01-SUB-02`; `pnpm lint` + `pnpm build` green; `scripts/ci-v1-gate.sh` 19/19 PASS. Web/agent counts from STAGE-01C cert reports; not re-run during this substage (no web/agent code touched).
 
 ## 6. Device Presence Finding (summary)
 

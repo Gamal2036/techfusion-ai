@@ -45,7 +45,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Agent enrollment/identity | — | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows (`05`) |
 | Agent updates | — | — | — | — | ❌ | — | — | ⚠️ | ⚠️ | ❌ | — | **MISSING** | self-update mechanism (`05`) |
 | Windows agent | — | — | — | — | ❌ | — | — | ❌ | — | ❌ | — | **MISSING** | full gap list (`05`) |
-| RLS tenancy | — | — | ⚠️ | — | — | — | — | ⚠️ | — | — | — | **BROKEN (inert)** | S2 (`07`) |
+| RLS tenancy | — | — | ⚠️ | — | — | — | — | ⚠️ | — | — | — | **INERT / app-layer** | Option B decided: app-layer authoritative + regression-tested isolation (`V1-STAGE-01-SUB-02`, S2 `07`) |
 | SSO tenant authz | ❌ | ⚠️ | ✅ | — | — | ⚠️ | ✅ | ✅ | — | — | PREMIUM | **DISABLED_SAFE** | fail-closed (501) until real IdP verification (`V1-STAGE-01-SUB-01`) |
 | WebSocket live alerts | ✅ | ✅ | — | ✅ | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 
@@ -54,6 +54,6 @@ Legend: ✅ present/working · ⚠️ partial/flawed · ❌ missing/blocked · �
 ## 2. Key Takeaways
 
 1. **CERTIFIED core**: auth, orgs/membership/RBAC/invitations, account deletion, device enrollment (Linux), device list/health, presence + presence alerts, monitoring dashboard, WS live alerts, reports (sync path).
-2. **BROKEN before V1**: KB embeddings (mock vectors), REPORT async queue, RLS (inert), Windows support (absent), agent self-update (absent). **SSO is no longer BROKEN — it is DISABLED_SAFE** (S1 closed by `V1-STAGE-01-SUB-01`: fail-closed 501, tests green) and remains unimplemented for customers until a real IdP verification substage lands.
+2. **BROKEN before V1**: KB embeddings (mock vectors), REPORT async queue, Windows support (absent), agent self-update (absent). **RLS is no longer BROKEN — it is INERT and non-authoritative by decision (Option B, `V1-STAGE-01-SUB-02`): isolation is app-layer authoritative and regression-tested** (`test/cross-tenant-isolation.spec.ts`, 20 tests). **SSO is no longer BROKEN — it is DISABLED_SAFE** (S1 closed by `V1-STAGE-01-SUB-01`: fail-closed 501, tests green) and remains unimplemented for customers until a real IdP verification substage lands.
 3. **PARTIAL**: remote support (agent stub), recordings viewer, retention UI, audit UI, admin UI, entitlement enforcement, AI provider config, report schedules.
 4. Every Windows column is ❌ — Windows is a single hard dependency for "Linux AND Windows production support" (`11`, `12`).

@@ -298,21 +298,24 @@ export class RemoteSupportService {
     frames.push({ data: body.frameData.substring(0, 1000), timestamp: body.timestamp });
     const trimmed = frames.slice(-600);
 
-    await this.prisma.remoteSession.update({
-      where: { id: sessionId },
+    const updated = await this.prisma.remoteSession.updateMany({
+      where: { id: sessionId, orgId },
       data: { metadata: { ...existing, recordingFrames: trimmed } },
     });
+    if (updated.count === 0) throw new NotFoundException('Session not found');
 
     return { status: 'ok', frameCount: trimmed.length };
   }
 
-  async cleanupStaleSessions() {
+  async cleanupStaleSessions(orgId?: string) {
     const staleThreshold = new Date(Date.now() - 5 * 60 * 1000);
+    const staleScope = {
+      status: { in: ['pending'] },
+      createdAt: { lt: staleThreshold },
+      ...(orgId ? { orgId } : {}),
+    };
     const stale = await this.prisma.remoteSession.updateMany({
-      where: {
-        status: { in: ['pending'] },
-        createdAt: { lt: staleThreshold },
-      },
+      where: staleScope,
       data: { status: 'expired', errorMessage: 'Session expired: no response from device' },
     });
 
@@ -321,6 +324,7 @@ export class RemoteSupportService {
         status: 'active',
         startedAt: null,
         createdAt: { lt: staleThreshold },
+        ...(orgId ? { orgId } : {}),
       },
       data: { status: 'failed', errorMessage: 'Session failed: stuck in connecting state', endedAt: new Date() },
     });

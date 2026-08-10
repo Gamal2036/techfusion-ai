@@ -86,39 +86,41 @@ export class BackupsService {
   }
 
   async updateJob(orgId: string, jobId: string, data: any) {
-    const job = await this.prisma.backupJob.findFirst({ where: { id: jobId, orgId } });
-    if (!job) throw new NotFoundException('Backup job not found');
-    const updated = await this.prisma.backupJob.update({
-      where: { id: jobId },
+    const changes = { ...data };
+    delete changes.orgId;
+    delete changes.deviceId;
+    const updated = await this.prisma.backupJob.updateMany({
+      where: { id: jobId, orgId },
       data: {
-        ...data,
-        sourcePaths: data.sourcePaths ? JSON.stringify(data.sourcePaths) : undefined,
+        ...changes,
+        sourcePaths: changes.sourcePaths ? JSON.stringify(changes.sourcePaths) : undefined,
       },
     });
+    if (updated.count === 0) throw new NotFoundException('Backup job not found');
+    const job = await this.prisma.backupJob.findFirst({ where: { id: jobId, orgId } });
 
     await this.prisma.auditLog.create({
       data: {
         orgId,
         action: 'backup_job_updated',
         actorId: 'system',
-        details: { jobId, changes: Object.keys(data) },
+        details: { jobId, changes: Object.keys(changes) },
       },
     }).catch((e) => this.logger.warn('Failed to create audit log:', e));
 
-    return updated;
+    return job;
   }
 
   async deleteJob(orgId: string, jobId: string) {
-    const job = await this.prisma.backupJob.findFirst({ where: { id: jobId, orgId } });
-    if (!job) throw new NotFoundException('Backup job not found');
-    await this.prisma.backupJob.delete({ where: { id: jobId } });
+    const deleted = await this.prisma.backupJob.deleteMany({ where: { id: jobId, orgId } });
+    if (deleted.count === 0) throw new NotFoundException('Backup job not found');
 
     await this.prisma.auditLog.create({
       data: {
         orgId,
         action: 'backup_job_deleted',
         actorId: 'system',
-        details: { jobId, jobName: job.name },
+        details: { jobId },
       },
     }).catch((e) => this.logger.warn('Failed to create audit log:', e));
 

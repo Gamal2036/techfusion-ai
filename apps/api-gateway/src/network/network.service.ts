@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NetworkDevice } from '@prisma/client';
 import { execFileSync } from 'child_process';
@@ -122,12 +122,13 @@ export class NetworkService {
     });
   }
 
-  async cleanupStaleScans() {
+  async cleanupStaleScans(orgId: string) {
     const staleThreshold = new Date(Date.now() - 3 * 60 * 1000);
     const staleScans = await this.prisma.networkScan.findMany({
       where: {
         status: { in: ['pending', 'running'] },
         startedAt: { lt: staleThreshold },
+        orgId,
       },
     });
 
@@ -137,6 +138,7 @@ export class NetworkService {
         where: {
           status: { in: ['pending', 'running'] },
           startedAt: { lt: staleThreshold },
+          orgId,
         },
         data: {
           status: 'failed',
@@ -147,15 +149,19 @@ export class NetworkService {
     }
   }
 
-  async updateDiscoveryStatus(scanId: string, status: string, error?: string) {
-    return this.prisma.networkScan.update({
-      where: { id: scanId },
+  async updateDiscoveryStatus(orgId: string, scanId: string, status: string, error?: string) {
+    const updated = await this.prisma.networkScan.updateMany({
+      where: { id: scanId, orgId },
       data: {
         status,
         ...(error && { error }),
         ...(status === 'completed' || status === 'failed' ? { completedAt: new Date() } : {}),
       },
     });
+    if (updated.count === 0) {
+      throw new ForbiddenException('Scan not found or not owned by this device');
+    }
+    return (await this.prisma.networkScan.findFirst({ where: { id: scanId, orgId } }))!;
   }
 
   async getScanById(scanId: string) {
