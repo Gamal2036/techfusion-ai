@@ -15,7 +15,7 @@ export class DeviceTokenGuard implements CanActivate {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       if (process.env.NODE_ENV !== 'production') {
         this.logger.warn(
-          `[DEV_DEVICE_AUTH] Rejected: authHeader present=${!!authHeader} scheme=${authHeader?.slice(0, 12) ?? 'none'}`
+          `[DEV_DEVICE_AUTH] Rejected: authHeader present=${!!authHeader}`
         );
       }
       throw new UnauthorizedException('Missing or invalid device token');
@@ -25,7 +25,7 @@ export class DeviceTokenGuard implements CanActivate {
 
     if (process.env.NODE_ENV !== 'production') {
       this.logger.log(
-        `[DEV_DEVICE_AUTH] Token received: length=${token.length} prefix=${token.slice(0, 4)}...`
+        `[DEV_DEVICE_AUTH] Token received: length=${token.length}`
       );
     }
 
@@ -43,7 +43,7 @@ export class DeviceTokenGuard implements CanActivate {
       if (process.env.NODE_ENV !== 'production') {
         const deviceCount = await this.prisma.device.count();
         this.logger.warn(
-          `[DEV_DEVICE_AUTH] Rejected: no device found for hash prefix=${tokenHash.slice(0, 8)}... totalDevices=${deviceCount}`
+          `[DEV_DEVICE_AUTH] Rejected: no device found for presented hash totalDevices=${deviceCount}`
         );
       }
       throw new UnauthorizedException('Invalid device token');

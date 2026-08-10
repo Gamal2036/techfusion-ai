@@ -38,10 +38,10 @@ export class DiskMetricsDto {
   @IsOptional() @IsNumber() @Min(0)
   used?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   readBytes?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   writeBytes?: number;
 
   @IsString()
@@ -63,7 +63,7 @@ export class GpuMetricsDto {
   @IsOptional() @IsNumber()
   temp?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   memoryUsed?: number;
 }
 
@@ -87,18 +87,19 @@ export class TemperaturesDto {
 }
 
 export class NetworkMetricsDto {
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   rxBytes?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   txBytes?: number;
 }
 
-export class MetricsPayloadDto {
-  @IsString()
-  @IsOptional()
-  deviceToken?: string;
+export class FansDto {
+  @IsOptional() @IsNumber() @Min(0)
+  rpm?: number;
+}
 
+export class MetricsPayloadDto {
   @IsOptional()
   @IsString()
   @IsISO8601()
@@ -133,7 +134,9 @@ export class MetricsPayloadDto {
   temperatures?: TemperaturesDto;
 
   @IsOptional()
-  fans?: { rpm?: number };
+  @ValidateNested()
+  @Type(() => FansDto)
+  fans?: FansDto;
 
   @IsOptional()
   @ValidateNested()
@@ -143,7 +146,7 @@ export class MetricsPayloadDto {
   @IsInt() @IsOptional() @Min(0)
   processes?: number;
 
-  @IsOptional() @IsNumber() @Min(0)
+  @IsOptional() @IsNumber() @IsInt() @Min(0)
   uptime?: number;
 
   @IsOptional()
