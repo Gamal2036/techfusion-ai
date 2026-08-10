@@ -6,6 +6,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { QueueService } from '../src/queue/queue.service';
 import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
 import { Role, Prisma } from '@prisma/client';
 
 describe('Account Deletion (V1-STAGE-00A)', () => {
@@ -100,7 +101,11 @@ describe('Account Deletion (V1-STAGE-00A)', () => {
 
   async function createDevice(orgId: string, name: string, tokenSuffix: string) {
     return prisma.device.create({
-      data: { orgId, name, deviceToken: `dev-token-${tokenSuffix}` },
+      data: {
+        orgId,
+        name,
+        deviceTokenHash: crypto.createHash('sha256').update(`dev-token-${tokenSuffix}`).digest('hex'),
+      },
     });
   }
 

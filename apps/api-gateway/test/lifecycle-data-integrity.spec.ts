@@ -130,8 +130,10 @@ describe('V1-STAGE-01A Lifecycle Data Integrity', () => {
   }
 
   async function createDevice(orgId: string, name: string, tokenSuffix: string) {
+    const deviceToken = `dev-token-${tokenSuffix}`;
+    const deviceTokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex');
     return prisma.device.create({
-      data: { orgId, name, deviceToken: `dev-token-${tokenSuffix}` },
+      data: { orgId, name, deviceTokenHash },
     });
   }
 

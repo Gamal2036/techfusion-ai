@@ -396,7 +396,7 @@ describe('Enterprise Phase 13 Integration', () => {
       // Create old data (backdated)
       // DeviceMetric with old recordedAt
       const device = await prisma.device.create({
-        data: { orgId: org.id, name: 'Old Device', deviceToken: 'old-device-token' },
+        data: { orgId: org.id, name: 'Old Device', deviceTokenHash: 'old-device-token-hash' },
       });
 
       const oldDate = new Date('2020-01-01');

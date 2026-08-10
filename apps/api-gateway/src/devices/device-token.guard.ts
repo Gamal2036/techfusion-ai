@@ -31,20 +31,13 @@ export class DeviceTokenGuard implements CanActivate {
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    let device = await this.prisma.device.findFirst({
+    // Hash-only credential verification (S3). The plaintext Device.deviceToken
+    // column no longer exists; a device authenticates ONLY when the SHA-256 of
+    // the presented bearer matches the stored deviceTokenHash. Devices without a
+    // verifier (or an unknown/malformed token) fail closed.
+    const device = await this.prisma.device.findFirst({
       where: { deviceTokenHash: tokenHash },
     });
-
-    if (!device) {
-      device = await this.prisma.device.findUnique({
-        where: { deviceToken: token },
-      });
-      if (device && process.env.NODE_ENV !== 'production') {
-        this.logger.log(
-          `[DEV_DEVICE_AUTH] Found via fallback direct token lookup (device has no deviceTokenHash)`
-        );
-      }
-    }
 
     if (!device) {
       if (process.env.NODE_ENV !== 'production') {

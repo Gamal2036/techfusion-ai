@@ -30,8 +30,8 @@ export class DevicesController {
   @Post('register')
   @UseGuards(DeviceTokenGuard)
   async register(@Req() req: any, @Body() dto: RegisterDeviceDto) {
-    const device = await this.devicesService.register(req.orgId, dto);
-    return { device, deviceToken: device.deviceToken };
+    const result = await this.devicesService.register(req.orgId, dto);
+    return { device: result.device, deviceToken: result.deviceToken };
   }
 
   @Public()
@@ -233,7 +233,7 @@ export class DevicesController {
 
   private sanitizeDevice(device: any) {
     if (!device) return device;
-    const { deviceToken, deviceTokenHash, metadata, ...safe } = device;
+    const { deviceTokenHash, metadata, ...safe } = device;
     return safe;
   }
 }

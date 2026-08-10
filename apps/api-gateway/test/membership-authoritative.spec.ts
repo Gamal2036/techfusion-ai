@@ -372,7 +372,6 @@ describe('ORG-01A3 Membership-Authoritative Authorization', () => {
         data: {
           name: 'Machine-A',
           orgId: org.id,
-          deviceToken,
           deviceTokenHash: crypto.createHash('sha256').update(deviceToken).digest('hex'),
         },
       });

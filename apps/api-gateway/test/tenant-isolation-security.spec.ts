@@ -85,12 +85,14 @@ describe('ORG-01B Tenant Isolation & Ingestion Security', () => {
       ],
     });
 
+    const rawTokenA = 'dev-token-a-' + crypto.randomBytes(6).toString('hex');
+    const rawTokenB = 'dev-token-b-' + crypto.randomBytes(6).toString('hex');
     deviceA = await prisma.device.create({
       data: {
         name: 'Device A',
         hostname: 'device-a.iso.test',
         orgId: orgA.id,
-        deviceToken: 'dev-token-a-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawTokenA),
       },
     });
     deviceB = await prisma.device.create({
@@ -98,12 +100,12 @@ describe('ORG-01B Tenant Isolation & Ingestion Security', () => {
         name: 'Device B',
         hostname: 'device-b.iso.test',
         orgId: orgB.id,
-        deviceToken: 'dev-token-b-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawTokenB),
       },
     });
 
-    tokenA = deviceA.deviceToken;
-    tokenB = deviceB.deviceToken;
+    tokenA = rawTokenA;
+    tokenB = rawTokenB;
   });
 
   async function loginAs(email: string) {

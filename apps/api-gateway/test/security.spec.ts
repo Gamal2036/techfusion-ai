@@ -225,7 +225,7 @@ describe('Security Hardening (AH-2D.1)', () => {
       const tokenB = await loginAs('isob@test.com');
 
       const device = await prisma.device.create({
-        data: { orgId: orgA.id, name: 'OrgA Device', deviceToken: 'orga-token' },
+        data: { orgId: orgA.id, name: 'OrgA Device', deviceTokenHash: 'orga-token-hash' },
       });
 
       const res = await request(app.getHttpServer())
@@ -256,7 +256,7 @@ describe('Security Hardening (AH-2D.1)', () => {
       const tokenB = await loginAs('rmtb@test.com');
 
       const deviceA = await prisma.device.create({
-        data: { orgId: orgA.id, name: 'RmtDeviceA', deviceToken: 'rmt-device-a-token' },
+        data: { orgId: orgA.id, name: 'RmtDeviceA', deviceTokenHash: 'rmt-device-a-token-hash' },
       });
 
       const createRes = await request(app.getHttpServer())

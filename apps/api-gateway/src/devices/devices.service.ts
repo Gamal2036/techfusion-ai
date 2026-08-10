@@ -13,6 +13,11 @@ import { getPlanConfig } from '../billing/plan-features';
 
 const IDENTITY_VERSION = 1;
 const DEVICE_TOKEN_BYTES = 32;
+// Rotating a device whose stored verifier is null means the previous credential
+// hash is unknowable (plaintext was never retained). This sentinel records that
+// state in CredentialRotationEvent.oldTokenHash (NOT NULL). It is not a hash
+// format (real verifiers are 64 hex chars), so it cannot collide with a token.
+const ROTATION_LEGACY_SENTINEL = 'legacy-no-verifier';
 
 @Injectable()
 export class DevicesService {
@@ -31,7 +36,7 @@ export class DevicesService {
       where: { orgId, hostname: dto.hostname ?? dto.name },
     });
     if (existing) {
-      return existing;
+      return { device: existing, deviceToken: null as string | null };
     }
 
     const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
@@ -62,13 +67,12 @@ export class DevicesService {
         gpuInfo: dto.gpuInfo ?? null,
         diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
         isLaptop: dto.isLaptop ?? false,
-        deviceToken,
         deviceTokenHash,
         metadata: (dto.metadata as any) ?? undefined,
       },
     });
 
-    return device;
+    return { device, deviceToken };
   }
 
   async registerPublic(orgId: string, dto: RegisterPublicDto) {
@@ -127,7 +131,6 @@ export class DevicesService {
         gpuInfo: dto.gpuInfo ?? null,
         diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
         isLaptop: dto.isLaptop ?? false,
-        deviceToken,
         deviceTokenHash,
         identityFingerprint: dto.identityFingerprint,
         installationId: dto.installationId ?? null,
@@ -218,14 +221,13 @@ export class DevicesService {
       throw new NotFoundException('Device not found');
     }
 
-    const oldTokenHash = this.hashToken(device.deviceToken);
+    const oldTokenHash = device.deviceTokenHash ?? ROTATION_LEGACY_SENTINEL;
     const newToken = this.generateSecureToken();
     const newTokenHash = this.hashToken(newToken);
 
     const updated = await this.prisma.device.update({
       where: { id: deviceId },
       data: {
-        deviceToken: newToken,
         deviceTokenHash: newTokenHash,
         credentialVersion: { increment: 1 },
         lastRegisteredAt: new Date(),
@@ -248,15 +250,9 @@ export class DevicesService {
 
   async findByToken(token: string) {
     const tokenHash = this.hashToken(token);
-    let device = await this.prisma.device.findFirst({
+    return this.prisma.device.findFirst({
       where: { deviceTokenHash: tokenHash },
     });
-    if (!device) {
-      device = await this.prisma.device.findUnique({
-        where: { deviceToken: token },
-      });
-    }
-    return device;
   }
 
   async findByOrg(orgId: string) {

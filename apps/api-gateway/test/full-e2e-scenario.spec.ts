@@ -8,6 +8,7 @@ import { MockQueueService } from '../src/queue/queue.service.mock';
 import { AiOrchestratorService } from '../src/ai/ai-orchestrator.service';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
+import * as crypto from 'crypto';
 
 // Full-stack E2E scenario (real HTTP server, DB, SSE streaming, PDF generation).
 // Steps routinely run 0.5-2s each, but under CI memory pressure (52 suites in
@@ -88,6 +89,7 @@ describe('Full E2E Scenario (Phase 15)', () => {
     await prisma.refreshToken.deleteMany();
     await prisma.dataRetentionPolicy.deleteMany();
     await prisma.ssoConfig.deleteMany();
+    await prisma.enrollmentToken.deleteMany();
     await prisma.user.deleteMany();
     await prisma.aiProviderConfig.deleteMany();
     await prisma.aiUsageLog.deleteMany();
@@ -188,16 +190,17 @@ describe('Full E2E Scenario (Phase 15)', () => {
 
     state.devices = [];
     for (const dd of deviceData) {
+      const deviceTokenHash = crypto.createHash('sha256').update(dd.deviceToken).digest('hex');
       const device = await prisma.device.create({
         data: {
           name: dd.name,
           hostname: dd.hostname,
           os: dd.os,
-          deviceToken: dd.deviceToken,
+          deviceTokenHash,
           org: { connect: { id: state.orgId } },
         },
       });
-      state.devices.push(device);
+      state.devices.push({ ...device, deviceToken: dd.deviceToken });
     }
 
     expect(state.devices.length).toBe(3);

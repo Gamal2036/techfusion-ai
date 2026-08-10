@@ -9,6 +9,7 @@ import { QueueService } from '../src/queue/queue.service';
 import { MockQueueService } from '../src/queue/queue.service.mock';
 import { DEVICE_PRESENCE_OFFLINE_THRESHOLD_MS } from '../src/devices/device-presence-state';
 
+const hashToken = (plain: string) => crypto.createHash('sha256').update(plain).digest('hex');
 const MIN = 60 * 1000;
 
 describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
@@ -91,12 +92,15 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
       ],
     });
 
+    const rawA1 = 'pres-token-a1-' + crypto.randomBytes(6).toString('hex');
+    const rawA2 = 'pres-token-a2-' + crypto.randomBytes(6).toString('hex');
+    const rawB1 = 'pres-token-b1-' + crypto.randomBytes(6).toString('hex');
     deviceA1 = await prisma.device.create({
       data: {
         name: 'Device A1',
         hostname: 'a1.pres.test',
         orgId: orgA.id,
-        deviceToken: 'pres-token-a1-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawA1),
       },
     });
     deviceA2 = await prisma.device.create({
@@ -104,7 +108,7 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
         name: 'Device A2',
         hostname: 'a2.pres.test',
         orgId: orgA.id,
-        deviceToken: 'pres-token-a2-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawA2),
       },
     });
     deviceB1 = await prisma.device.create({
@@ -112,9 +116,12 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
         name: 'Device B1',
         hostname: 'b1.pres.test',
         orgId: orgB.id,
-        deviceToken: 'pres-token-b1-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawB1),
       },
     });
+    deviceA1 = { ...deviceA1, deviceToken: rawA1 };
+    deviceA2 = { ...deviceA2, deviceToken: rawA2 };
+    deviceB1 = { ...deviceB1, deviceToken: rawB1 };
 
     const loginA = await request(app.getHttpServer())
       .post('/auth/login')

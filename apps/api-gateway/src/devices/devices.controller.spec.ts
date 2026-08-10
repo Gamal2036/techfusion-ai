@@ -30,7 +30,7 @@ describe('DevicesController', () => {
     ramTotal: BigInt(17179869184),
     diskTotal: BigInt(512000000000),
     isLaptop: false,
-    deviceToken: 'tok-test-123',
+    deviceTokenHash: 'sha256-verifier-of-tok-test-123',
     inactive: false,
     lastSeenAt: null,
     createdAt: new Date(),
@@ -172,7 +172,7 @@ describe('DevicesController', () => {
 
     it('returns existing device when duplicate identity detected', async () => {
       mockPrisma.device.findFirst.mockResolvedValue(mockDevice);
-      mockPrisma.device.update.mockResolvedValue({ ...mockDevice, deviceToken: 'new-rotated-token', credentialVersion: 2 });
+      mockPrisma.device.update.mockResolvedValue({ ...mockDevice, deviceTokenHash: 'sha256-verifier-of-new-token', credentialVersion: 2 });
       mockPrisma.credentialRotationEvent.create.mockResolvedValue({});
       mockPrisma.device.count.mockResolvedValue(0);
       mockPrisma.organization.findUnique.mockResolvedValue({ plan: 'Free' });

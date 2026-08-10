@@ -7,7 +7,6 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { QueueService } from '../src/queue/queue.service';
 import { MockQueueService } from '../src/queue/queue.service.mock';
-
 const hashToken = (plain: string) => crypto.createHash('sha256').update(plain).digest('hex');
 
 describe('ORG-01C Cross-Tenant Isolation Boundary Enforcement', () => {
@@ -112,12 +111,14 @@ describe('ORG-01C Cross-Tenant Isolation Boundary Enforcement', () => {
       ],
     });
 
+    const rawTokenA = 'xtok-a-' + crypto.randomBytes(6).toString('hex');
+    const rawTokenB = 'xtok-b-' + crypto.randomBytes(6).toString('hex');
     deviceA = await prisma.device.create({
       data: {
         name: 'X-Device A',
         hostname: 'xdev-a.cross-tenant.test',
         orgId: orgA.id,
-        deviceToken: 'xtok-a-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawTokenA),
       },
     });
     deviceB = await prisma.device.create({
@@ -125,12 +126,12 @@ describe('ORG-01C Cross-Tenant Isolation Boundary Enforcement', () => {
         name: 'X-Device B',
         hostname: 'xdev-b.cross-tenant.test',
         orgId: orgB.id,
-        deviceToken: 'xtok-b-' + crypto.randomBytes(6).toString('hex'),
+        deviceTokenHash: hashToken(rawTokenB),
       },
     });
 
-    tokenA = deviceA.deviceToken;
-    tokenB = deviceB.deviceToken;
+    tokenA = rawTokenA;
+    tokenB = rawTokenB;
   });
 
   async function loginAs(email: string): Promise<string> {

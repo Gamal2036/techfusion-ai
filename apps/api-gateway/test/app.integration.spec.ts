@@ -78,7 +78,7 @@ describe('TechFusion API (integration)', () => {
     const deviceToken = `device-token-${deviceId}-${Math.random().toString(36).slice(2)}`;
     const deviceTokenHash = crypto.createHash('sha256').update(deviceToken).digest('hex');
     await prisma.device.create({
-      data: { id: deviceId, orgId, name: deviceId, deviceToken, deviceTokenHash },
+      data: { id: deviceId, orgId, name: deviceId, deviceTokenHash },
     });
   }
 
@@ -513,7 +513,6 @@ describe('TechFusion API (integration)', () => {
         data: {
           orgId,
           name,
-          deviceToken,
           deviceTokenHash,
         },
       });

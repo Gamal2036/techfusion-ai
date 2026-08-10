@@ -215,7 +215,7 @@ describe('Organizations API (ORG-01A2)', () => {
         data: {
           orgId: orgA.id,
           name: 'A1',
-          deviceToken: 'dev-' + Math.random().toString(36),
+          deviceTokenHash: 'dev-hash-' + Math.random().toString(36),
         },
       });
       const token = await accessToken(user.email);
@@ -667,14 +667,14 @@ describe('Organizations API (ORG-01A2)', () => {
         data: {
           orgId: orgA.id,
           name: 'A1',
-          deviceToken: 'dev-a-' + Math.random().toString(36),
+          deviceTokenHash: 'dev-a-hash-' + Math.random().toString(36),
         },
       });
       await prisma.device.create({
         data: {
           orgId: orgA.id,
           name: 'A2',
-          deviceToken: 'dev-a2-' + Math.random().toString(36),
+          deviceTokenHash: 'dev-a2-hash-' + Math.random().toString(36),
         },
       });
 

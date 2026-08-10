@@ -175,7 +175,6 @@ model Device {
   inactive            Boolean  @default(false)
   registeredAt        DateTime @default(now())
   lastSeenAt          DateTime @default(now())
-  deviceToken         String   @unique
   metadata            Json?
   identityFingerprint String?
   installationId      String?
