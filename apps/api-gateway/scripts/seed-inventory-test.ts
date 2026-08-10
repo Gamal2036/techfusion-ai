@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || '7a6175276d82f472db5da214018d70da88aaa869fe5ab0ee411428737425f6c5';
+const JWT_SECRET = process.env.JWT_SECRET || 'tfenr_ci-secret-replace-before-deploy';
 const ENROLLMENT_TOKEN_BYTES = 32;
 const ENROLLMENT_TOKEN_PREFIX = 'tfenr_';
 

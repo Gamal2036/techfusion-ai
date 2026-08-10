@@ -1,6 +1,6 @@
 # 10 — Technical Debt Register
 
-Status: 2026-08-09. **Nothing in this register was deleted or fixed during the discovery mission.** Items are reported for controlled remediation only.
+Status: 2026-08-09. **Nothing in this register was deleted or fixed during the discovery mission.** Items are reported for controlled remediation only. Subsequent security substages fixed T8 (`SUB-01`), T9/T14 (`SUB-02`), T10 (`SUB-03`); `SUB-05` (2026-08-10) fixed T11 and audited T12/T20 (see annotations).
 
 | # | Area | Item | Severity | Evidence |
 |---|------|------|----------|----------|
@@ -14,8 +14,8 @@ Status: 2026-08-09. **Nothing in this register was deleted or fixed during the d
 | T8 | Security | SSO login bypass (S1). | CRITICAL | `07` |
 | T9 | Security | RLS inert (S2); decorative policies. | MEDIUM | `07` |
 | T10 | Security | Plaintext `Device.deviceToken` + fallback lookup (S3). | MEDIUM | `07` |
-| T11 | Security | Metrics token in query string; optional auth (S5). | LOW | `07` |
-| T12 | Data | `backups/` — 60 committed DB/config backup artifacts in VCS (incl. old pg/redis dumps). | HIGH | root `backups/` |
+| T11 | Security | ~~Metrics token in query string; optional auth (S5).~~ **FIXED `V1-STAGE-01-SUB-05`: metrics auth is header-only (`Authorization: Bearer`) and fail-closed (403 in production when `METRICS_AUTH_TOKEN` unset); 8-test suite.** | `07`; `test/metrics-auth-security.spec.ts` |
+| T12 | Data | `backups/` — 60 committed DB/config backup artifacts in VCS (incl. old pg/redis dumps). **`SUB-05` audited: no real credentials in any artifact (Device tables empty; test bcrypt hashes only); kept intentionally — history rewrite not justified; retention is a founder decision (P3 residual).** | root `backups/`; `V1-STAGE-01-SUB-05` §1/§7 |
 | T13 | Data | Legacy root reports contradict current state (`TECHFUSION_V1_READINESS_AUDIT.md` predates CI; `infra/k8s/README.md` "Phase 14" claim stale; `launch-checklist.md` references non-existent release `techfusion-api-gateway`). | LOW | `02` |
 | T14 | Code | `demo.controller.ts` dead RBAC demo (SCAFFOLD); `RolesGuard`/`@Roles` dead code (zero usages). | LOW | grep + read |
 | T15 | Code | Legacy `Dockerfile.web` unused (CI/compose use `apps/web/Dockerfile`). | LOW | `02` |
@@ -23,7 +23,7 @@ Status: 2026-08-09. **Nothing in this register was deleted or fixed during the d
 | T17 | Agent | Agent has no self-update; version only sent at registration (server unaware of upgrades). | MEDIUM | `05` |
 | T18 | Agent | Temperature/battery/load/service fields hardcoded `None`. | LOW | `collector.rs` |
 | T19 | Frontend/backend contract | `CpuMetricsDto` whitelist strips agent CPU model; duplicated presence constants risk drift (tests mitigate). | LOW | `metrics-payload.dto.ts`, `device-presence.ts` |
-| T20 | Tests | Secret scan only covers `git ls-files` — untracked-but-unignored `.env.test` never scanned (contains test placeholders only today). | LOW | `ci-secret-scan.sh:32` |
+| T20 | Tests | Secret scan only covers `git ls-files` — untracked-but-unignored `.env.test` never scanned (contains test placeholders only today). **`SUB-05` assessed and kept (accepted residual): CI checks out a clean tree (no untracked files), and `.env.test` is intentionally untracked (D9); extending the scanner to untracked files would add local false-positive risk with no CI value.** | `ci-secret-scan.sh:32`; `V1-STAGE-01-SUB-05` §7 |
 | T21 | Tests | No end-to-end tests for SSO login; `actionlint` claim unverifiable (only YAML parse). | MEDIUM | `07`, `02` |
 | T22 | Misc | Malformed leftover file at repo root: `tablish TechFusion V1 enterprise foundation and command center"` (untracked). | LOW | root listing |
 | T23 | Billing | `maxTeamMembers` / `maxAlertRules` unenforced. | MEDIUM | `09` |
