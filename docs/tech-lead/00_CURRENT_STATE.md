@@ -1,6 +1,6 @@
 # 00 — Current State
 
-Status date: 2026-08-11. Branch `main` at `5ca0b21`. Latest mission: `V1-STAGE-02-SUB-01` Enrollment, Token & Device-Link Reliability (presence truthfulness: `Device.lastSeenAt` nullable, UNKNOWN for never-heartbeat rows; E1-E8 enrollment/link certification; full report `docs/tech-lead/V1-STAGE-02-SUB-01_ENROLLMENT_DEVICE_LINK_RELIABILITY_REPORT.md`). V1-STAGE-01 (security/tenancy/credentials) remains CLOSED.
+Status date: 2026-08-11. Branch `main` at `8785dba`. Latest mission: `V1-STAGE-02-SUB-01A` Real Device Product Integration Certification — real-device integration boundary (Agent→Device Identity→Presence/Telemetry→Dashboard→Cybersecurity→Network) traced, truthfulness-certified, and three integration defects fixed (SEC-1 security push path fail-open 200→401; NET-1 dead `/api/network/scans` endpoint fetch; NET-2 unknown-MAC sentinel rendered as real). V1 gate 19/19 PASS; **manual real-device certification still required** to close the stage (report `docs/tech-lead/V1-STAGE-02-SUB-01A_REAL_DEVICE_PRODUCT_INTEGRATION_REPORT.md`). SUB-01 (enrollment/device-link reliability) remains the certified baseline; V1-STAGE-01 remains CLOSED.
 
 ## 1. Verified Baseline
 
@@ -18,7 +18,8 @@ Status date: 2026-08-11. Branch `main` at `5ca0b21`. Latest mission: `V1-STAGE-0
 ## 2. Git State
 
 - `git status --short`: single untracked file `apps/api-gateway/.env.test` (test placeholders, explicitly unignored via `!.env.test`). Never modified, never staged.
-- Latest commit: `fix(device): certify enrollment and device-link reliability` (V1-STAGE-02-SUB-01) — schema/migration, devices/enrollment service hardening, E1-E8 suite, presence truthfulness, docs.
+- Latest commit: `fix(integration): align device-backed product data flows` (V1-STAGE-02-SUB-01A) — security push-path fail-closed 401, network page dead-endpoint removal + unknown-MAC truthfulness, focused test updates, integration certification report + living-doc updates.
+- Previous: `fix(device): certify enrollment and device-link reliability` (V1-STAGE-02-SUB-01) — schema/migration, devices/enrollment service hardening, E1-E8 suite, presence truthfulness, docs.
 - Recent history: GOV-01 governance foundation, then V1-STAGE-01 security closure (S1-S5, `V1-STAGE-01-SUB-01..05`), CI/release-gate hardening, billing/RBAC/monitoring/account work, command-center UI hardening.
 
 ## 3. What This Repository Actually Is
@@ -41,6 +42,7 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 6. **Windows agent: not implemented** — 15-gap analysis in `05_AGENT_PLATFORM_MATRIX.md`.
 7. **Entitlement enforcement is partial**: devices/reports/AI-quota/feature-gates enforced server-side; `maxTeamMembers` and `maxAlertRules` defined but never enforced. (`09`)
 8. **Presence truthfulness CERTIFIED (`V1-STAGE-02-SUB-01`)**: `Device.lastSeenAt` nullable; registration never implies ONLINE (UNKNOWN until a verified heartbeat); enrollment/device-link lifecycle certified by `test/enrollment-device-link.spec.ts` (E1-E8, 16 tests) — single-use/expiry/revocation tokens, reconnect→same Device, registration race collapse, strong-identity credential recovery, no hostname-only relink.
+9. **Real-device integration boundaries certified, 3 defects fixed (`V1-STAGE-02-SUB-01A`)**: telemetry→Dashboard, Cybersecurity, and Network paths are REAL_AGENT_DATA end-to-end (no demo/mock/fabricated values; zero hardcoded device data in web production pages; org/device always server-derived). Fixed: **SEC-1** `POST /devices/security-report` was fail-open (HTTP 200 + error body for an invalid/revoked credential, which the agent treated as success) → now 401 fail-closed, consistent with `DeviceTokenGuard`; **NET-1** Network page polled a non-existent `/api/network/scans` endpoint (dead scan-completion logic) → now uses real `GET /network/scans`; **NET-2** unknown-MAC sentinel `00:00:00:00:00:00` was rendered as a real MAC → now `-`. `GET /security/scans/detail/:scanId` verified NOT shadowed by `:deviceId` (single-segment matching). Remaining product gaps (security push-path body-token transport, Network org-pool merge/unassigned-scan semantics, server-host diagnostics) documented, not fixed. **Manual real-device gate pending** (operator evidence required to mark the stage COMPLETE).
 
 ## 5. Test Evidence
 
@@ -51,7 +53,7 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 | worker | 8 specs | 80 | `pnpm test` |
 | agent | 78 tests in-source | 78 | `cargo test` |
 
-`VERIFIED_THIS_RUN` for api-gateway (58 suites / 994 tests green — incl. E1-E8 enrollment/device-link suite and all five Stage-01 security suites), web (35 suites / 791 tests green — incl. onboarding baseline detection), and worker (8 suites / 80 tests green) on `V1-STAGE-02-SUB-01`; `pnpm lint` + `pnpm build` green (api/web/worker); `scripts/ci-v1-gate.sh` 19/19 PASS (incl. migration validation + worker schema sync + secret scan — NO SECRETS DETECTED).
+`VERIFIED_THIS_RUN` for api-gateway (58 suites / 994 tests green — incl. E1-E8 enrollment/device-link suite and all five Stage-01 security suites), web (35 suites / 791 tests green — incl. onboarding baseline detection), worker (8 suites / 80 tests green), and agent (78 in-source tests) on `V1-STAGE-02-SUB-01A`; `pnpm lint` + `pnpm build` green (api/web/worker); `scripts/ci-v1-gate.sh` 19/19 PASS (incl. migration validation + worker schema sync + secret scan — NO SECRETS DETECTED). Security suite re-verified green after the SEC-1 fail-closed change (48 tests in the three touched specs; full suite 994 clean on re-run).
 
 ## 6. Device Presence Finding (summary)
 
@@ -64,4 +66,4 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 
 ## 7. Working-Tree Hygiene
 
-`apps/api-gateway/.env.test` remains untracked (intended, D9). This mission staged explicit SUB-01 files only: schema + migration (gateway + worker copy), `src/devices/*`, `src/dashboard/dashboard.service.ts`, `src/reporting/report-types/device-health.report.ts`, web presence/onboarding surfaces, the E1-E8 suite, and `docs/tech-lead/` updates. No secrets staged; no `.env*` staged.
+`apps/api-gateway/.env.test` remains untracked (intended, D9). SUB-01A staged explicit integration files only: `src/security/security.controller.ts` (+ its integration spec), `test/device-credential-hardening.spec.ts`, `test/security.spec.ts`, `apps/web/src/app/dashboard/network/page.tsx`, `apps/web/src/components/NetworkMap.tsx`, and `docs/tech-lead/` updates (00, 08, 12 + the SUB-01A report). No secrets staged; no `.env*` staged.

@@ -62,42 +62,41 @@ export default function NetworkPage() {
 
   const [discoveryPolling, setDiscoveryPolling] = useState(false);
   const discoveryPollRef = useRef<NodeJS.Timeout | null>(null);
+  const activeScanIdRef = useRef<string | null>(null);
+  const scansRef = useRef<any[]>([]);
+
+  useEffect(() => {
+    scansRef.current = scans;
+  }, [scans]);
 
   const stopDiscoveryPolling = useCallback(() => {
     if (discoveryPollRef.current) {
       clearInterval(discoveryPollRef.current);
       discoveryPollRef.current = null;
-      setDiscoveryPolling(false);
     }
+    activeScanIdRef.current = null;
+    setDiscoveryPolling(false);
   }, []);
 
   const handleStartDiscovery = useCallback(async () => {
     const result = await startDiscovery();
     if (result && result.scanId) {
+      activeScanIdRef.current = result.scanId;
       setDiscoveryPolling(true);
-      const scanId = result.scanId;
       discoveryPollRef.current = setInterval(() => {
         refetchTopology();
         refetchDevices();
         refetchScans();
       }, 5000);
 
-      const pollCheck = setInterval(async () => {
-        try {
-          const resp = await fetch('/api/network/scans');
-          const data = await resp.json();
-          if (Array.isArray(data) && data.length > 0) {
-            const latest = data.find((s: any) => s.id === scanId);
-            if (latest && (latest.status === 'completed' || latest.status === 'failed')) {
-              clearInterval(pollCheck);
-              stopDiscoveryPolling();
-              refetchTopology();
-              refetchDevices();
-              refetchScans();
-            }
-          }
-        } catch {
-          // ignore polling errors
+      const pollCheck = setInterval(() => {
+        const latest = scansRef.current.find((s: any) => s.id === activeScanIdRef.current);
+        if (latest && (latest.status === 'completed' || latest.status === 'failed')) {
+          clearInterval(pollCheck);
+          stopDiscoveryPolling();
+          refetchTopology();
+          refetchDevices();
+          refetchScans();
         }
       }, 3000);
 
@@ -295,7 +294,9 @@ export default function NetworkPage() {
                     </td>
                     <td className="px-4 py-3 text-text-primary font-mono text-xs">{d.ip}</td>
                     <td className="px-4 py-3 text-text-secondary">{d.hostname || '-'}</td>
-                    <td className="px-4 py-3 text-text-secondary font-mono text-xs">{d.mac || '-'}</td>
+                    <td className="px-4 py-3 text-text-secondary font-mono text-xs">
+                      {d.mac && d.mac !== '00:00:00:00:00:00' ? d.mac : '-'}
+                    </td>
                     <td className="px-4 py-3">
                       {d.vendor ? (
                         <Badge variant="primary" className="text-[10px]">{d.vendor}</Badge>

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { UnauthorizedException } from '@nestjs/common';
 import { SecurityController } from './security.controller';
 import { SecurityService } from './security.service';
 import { SecurityScoringService } from './services/security-scoring.service';
@@ -128,12 +129,12 @@ describe('Security Integration', () => {
       mockPrisma.device.findFirst.mockResolvedValue(null);
       mockPrisma.device.findUnique.mockResolvedValue(null);
 
-      const result = await controller.submitFindings({
-        deviceToken: 'bad-token',
-        findings: [],
-      });
-
-      expect(result).toEqual({ error: 'Invalid device token' });
+      await expect(
+        controller.submitFindings({
+          deviceToken: 'bad-token',
+          findings: [],
+        }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 

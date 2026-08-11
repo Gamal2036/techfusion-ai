@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Req, Res, HttpCode, NotFoundException, ForbiddenException, Logger, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, Req, Res, HttpCode, NotFoundException, ForbiddenException, UnauthorizedException, Logger, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response, Request } from 'express';
 import { RequirePermissions } from '../common/permissions.decorator';
@@ -31,7 +31,7 @@ export class SecurityController {
   async submitFindings(@Body() dto: SubmitFindingsDto) {
     const device = await this.securityService.findDeviceByToken(dto.deviceToken);
     if (!device) {
-      return { error: 'Invalid device token' };
+      throw new UnauthorizedException('Invalid device token');
     }
 
     const scoreResult = this.scoringService.compute(

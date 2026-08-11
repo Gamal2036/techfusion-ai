@@ -21,13 +21,13 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Metric alert rules | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | PRO | CERTIFIED | — |
 | Alert webhooks | ❌ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | no webhook management UI |
 | Monitoring dashboard | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
-| Network discovery + view | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows network module (`05`) |
+| Network discovery + view | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows network module (`05`); real-device integration certified `V1-STAGE-02-SUB-01A` (manual gate pending); org-wide `NetworkDevice` pool, unassigned scans claimable by org agents, diagnostics from API host — documented gaps |
 | Network diagnostics | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | — |
 | Remote support sessions | ✅ | ✅ | ✅ | — | ⚠️ | ✅ | ✅ | ✅ | ⚠️ | ❌ | PRO | **PARTIAL** | agent auto-consent stub, no control; Windows (`05`) |
 | Recordings | ⚠️ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | PRO | PARTIAL | no player/Viewer UI (`03`) |
 | Software inventory | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows inventory (`05`) |
 | Drivers | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | — |
-| Security scans + scoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows security module (`05`) |
+| Security scans + scoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows security module (`05`); push-path ingestion made fail-closed 401 (`V1-STAGE-02-SUB-01A` SEC-1); body-token transport on `/devices/security-report` documented for future DeviceTokenGuard alignment |
 | Knowledge Base | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | — | — | FREE | FUNCTIONAL | KB embeddings = mock vectors (`06`) |
 | AI chat | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | FUNCTIONAL | quota enforced |
 | AI troubleshooting (SSE) | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | depends on fresh metrics |
@@ -57,3 +57,4 @@ Legend: ✅ present/working · ⚠️ partial/flawed · ❌ missing/blocked · �
 2. **BROKEN before V1**: KB embeddings (mock vectors), REPORT async queue, Windows support (absent), agent self-update (absent). **RLS is no longer BROKEN — it is INERT and non-authoritative by decision (Option B, `V1-STAGE-01-SUB-02`): isolation is app-layer authoritative and regression-tested** (`test/cross-tenant-isolation.spec.ts`, 20 tests). **SSO is no longer BROKEN — it is DISABLED_SAFE** (S1 closed by `V1-STAGE-01-SUB-01`: fail-closed 501, tests green) and remains unimplemented for customers until a real IdP verification substage lands.
 3. **PARTIAL**: remote support (agent stub), recordings viewer, retention UI, audit UI, admin UI, entitlement enforcement, AI provider config, report schedules.
 4. Every Windows column is ❌ — Windows is a single hard dependency for "Linux AND Windows production support" (`11`, `12`).
+5. **Device-backed data truthfulness certified (`V1-STAGE-02-SUB-01A`)**: Dashboard, Cybersecurity, and Network surfaces render REAL_AGENT_DATA/SERVER_DERIVED values only — no demo/mock/hardcoded device data, org/device identity always server-derived, UNKNOWN preferred over fabricated. Security push-path now fail-closed 401; Network page no longer queries a dead endpoint; unknown MACs render as UNKNOWN. Manual real-device gate pending.

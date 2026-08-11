@@ -260,7 +260,9 @@ export function NetworkMap({
         >
           <p className="text-sm font-medium text-text-primary">{hoveredNode.label}</p>
           <p className="text-xs text-text-secondary mt-0.5">IP: {hoveredNode.ip}</p>
-          {hoveredNode.mac && <p className="text-xs text-text-secondary">MAC: {hoveredNode.mac}</p>}
+          {hoveredNode.mac && hoveredNode.mac !== '00:00:00:00:00:00' && (
+            <p className="text-xs text-text-secondary">MAC: {hoveredNode.mac}</p>
+          )}
           {hoveredNode.vendor && <p className="text-xs text-text-secondary">Vendor: {hoveredNode.vendor}</p>}
           {hoveredNode.latencyMs != null && (
             <p className="text-xs text-text-secondary">Latency: {hoveredNode.latencyMs.toFixed(1)}ms</p>

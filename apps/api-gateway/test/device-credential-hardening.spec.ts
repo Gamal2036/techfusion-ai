@@ -315,8 +315,7 @@ describe('DEV-01B Device Credential Hardening (V1-STAGE-01-SUB-03)', () => {
       const bad = await request(server())
         .post('/devices/security-report')
         .send({ deviceToken: crypto.randomBytes(32).toString('hex'), findings: [] })
-        .expect(200);
-      expect(bad.body.error).toBe('Invalid device token');
+        .expect(401);
       expect(bad.body.scanId).toBeUndefined();
     });
   });

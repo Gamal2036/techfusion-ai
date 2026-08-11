@@ -333,11 +333,11 @@ describe('Security Hardening (AH-2D.1)', () => {
       expect(res.status).toBe(401);
     });
 
-    it('security report handles invalid device token gracefully', async () => {
+    it('security report rejects an invalid device token with 401', async () => {
       const res = await request(app.getHttpServer())
         .post('/devices/security-report')
         .send({ deviceToken: 'invalid', findings: [] });
-      expect([200, 401]).toContain(res.status);
+      expect(res.status).toBe(401);
     });
 
     it('remote support consent handles missing token', async () => {
