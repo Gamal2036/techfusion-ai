@@ -9,11 +9,15 @@
 
 ## 1. Status
 
-**MANUAL CERTIFICATION REQUIRED.** All automated gates pass and five proven
-integration defects/root causes are fixed, but the real Linux-agent ↔ API ↔ Web
-integration (binary on a real host against the real stack) cannot be certified
-by automated tests alone. Manual operator evidence is required before this stage
-may be marked COMPLETE (see §8, §9).
+**MANUAL CERTIFICATION: PASS — CYBER-01 CLOSED.** All automated gates pass (V1
+gate 19/19), five proven integration defects/root causes are fixed, and the real
+Linux-agent ↔ API ↔ Web integration is now certified on a real Ubuntu host
+(operator evidence, §9.1). **CYBER-01 (Cybersecurity real-device reliability)
+is CLOSED for V1**; Cybersecurity is preserved as the V1 stable baseline, and
+future Cybersecurity capabilities remain extensible under the Module
+Extensibility Contract (`15`). The Cybersecurity + device/dashboard portion of
+the SUB-01A manual gate is COMPLETE. Network real-device evidence is deferred to
+the next stage: `NET-00 — Network Evidence & Current-State Audit`.
 
 > **MANUAL CERTIFICATION RESULT — FAILED (annotation, 2026-08-11).** The real
 > Ubuntu-host manual gate (§9) exposed a Cybersecurity runtime failure: opening
@@ -42,6 +46,17 @@ may be marked COMPLETE (see §8, §9).
 > the real host is still stale**. Stage remains **NOT COMPLETE** — the real-device
 > manual gate (§9) must be re-run with a REBUILT/REINSTALLED agent before the
 > stage may be marked COMPLETE.
+
+> **MANUAL CERTIFICATION — PASS (annotation, 2026-08-11).** The real Ubuntu-host
+> manual gate (§9.1) returned **PASS** for Cybersecurity: the agent was REBUILT
+> from current repository source and REINSTALLED (`/usr/local/bin/techfusion-agent`);
+> the persistent device identity/credential was preserved (no re-enrollment); the
+> agent service operates normally; the Dashboard recognizes the real enrolled
+> device; the Cybersecurity page is stable; the real-device Cybersecurity scan
+> flow completes successfully. The previous permanent-loading/timeout behavior is
+> resolved — root cause was the STALE deployed binary (which predated the Bearer
+> header on the pending-security request), now eliminated by the rebuild.
+> **CYBER-01 is CLOSED for V1**; Cybersecurity remains the V1 stable baseline.
 
 ## 2. Integration Map (traced in code, `VERIFIED_THIS_RUN`)
 
@@ -217,6 +232,39 @@ Commands/actions needed for evidence that automation cannot produce. Start backe
 
 Return: agent logs, `GET /devices` + `GET /dashboard/summary` responses, Cybersecurity page state for the exact Device, Network page state, and presence timestamps across stop/restart.
 
+### 9.1 Manual Certification Result — PASS (operator, 2026-08-11)
+
+> `MANUAL_CERTIFICATION: PASS`
+
+Observed real behavior on the Ubuntu host (`VERIFIED_THIS_RUN` by operator):
+
+| # | Evidence |
+|---|----------|
+| 1 | Linux Agent **rebuilt from current repository source** (includes the Bearer header on the pending-security request, `client.rs:484`). |
+| 2 | Current binary installed as `/usr/local/bin/techfusion-agent`. |
+| 3 | Existing persistent device identity/credential **preserved** (same `device_id`/`device_token`; no re-enrollment). |
+| 4 | Agent service operates normally. |
+| 5 | Dashboard recognizes the real enrolled device (device-health list, same Device). |
+| 6 | Cybersecurity page is stable — opens without the previous 401/permanent-loading. |
+| 7 | Real-device Cybersecurity scan flow works successfully — pending → execute → result → truthful terminal state (polling stops). |
+| 8 | Previous permanent-loading / timeout behavior caused by the **stale deployed Agent binary** is resolved by the rebuild. |
+
+**Closure reason:** root cause of the observed real-device failure was the
+**stale deployed agent binary**, which predated the `Authorization: Bearer`
+header on the on-demand pending-security request (added in `942ed1f`, present at
+`apps/agent/src/client.rs:484`); the stale binary's pending-security poll was
+rejected with `401` before reaching the pending-scan state, leaving the UI
+permanently loading. The fix commits (`871b4a3` + `340a15e`) plus the
+REBUILT/REINSTALLED agent satisfy the §9 CYBER-01 retest: the pending-security
+request succeeds, the scan reaches a truthful terminal state, and no
+permanent-loading/timeout is observed.
+
+**Scope of this certification:** Cybersecurity (CYBER-01) and the
+device/dashboard integration path (Dashboard recognizes the enrolled device,
+persistent identity/credential preserved across the rebuild). Network real-device
+evidence (manual §9 step 8) is deferred to the next stage: `NET-00 — Network
+Evidence & Current-State Audit`.
+
 ## 10. Remaining Product Gaps (not defects, out of scope)
 
 - **Cybersecurity push-path token transport inconsistency** (SEC-1 residual): `/devices/security-report` authenticates via body `deviceToken` instead of `Authorization: Bearer`/`DeviceTokenGuard`. Same credential model (hash-only, now fail-closed), but a future stage should align the agent to header auth for all device endpoints (breaking agent/API contract — deferred by design, D16/principle 9).
@@ -231,15 +279,17 @@ Return: agent logs, `GET /devices` + `GET /dashboard/summary` responses, Cyberse
 
 - `00_CURRENT_STATE.md` — git state, headline findings (SEC-1/NET-1/NET-2 + CYB-1/CYB-2), test evidence, working-tree hygiene.
 - `08_FEATURE_READINESS_MATRIX.md` — Cybersecurity/Network/security-ingestion rows annotated with SUB-01A evidence.
-- `12_MASTER_ROADMAP.md` — SUB-01A completed block; NEXT substage unchanged = `V1-STAGE-02-SUB-02` (Deployment/CD) unless this report's manual gate precedes it.
-- This report (§1 annotation, §6/§7 CYB rows, §8 CYBER-01 evidence, §9 CYBER-01 retest) — automated implementation evidence for the CYBER-01 fix.
+- `12_MASTER_ROADMAP.md` — SUB-01A completed block; NEXT stage = `NET-00 — Network Evidence & Current-State Audit` after this manual certification PASS; `V1-STAGE-02-SUB-02` (Deployment/CD) preserved as a later substage.
+- `14_DECISION_LOG.md` — D24: CYBER-01 manual real-device certification PASS / CLOSED for V1; Cybersecurity preserved as the V1 stable baseline; extensibility under `15`.
+- This report (§1 status + PASS annotation, §6/§7 CYB rows, §8 CYBER-01 evidence, §9 CYBER-01 retest, §9.1 manual result) — automated + manual certification evidence for CYBER-01.
 
 ## 12. Commit
 
-One atomic commit: `fix(cybersecurity): close real-device scan polling failures`.
-Not pushed (AGENTS.md policy 13). `apps/api-gateway/.env.test` untouched and untracked.
+- Automated fix: one atomic commit `fix(cybersecurity): close real-device scan polling failures` (`340a15e`). Not pushed (AGENTS.md policy 13).
+- Closure: one atomic documentation commit `docs(cybersecurity): certify real-device V1 flow`. Not pushed.
+- `apps/api-gateway/.env.test` untouched and untracked.
 
 ## 13. Recommended Next Stage
 
-- **First:** **rebuild/reinstall the Linux agent** on the real host (source already sends the Bearer credential) and complete the **manual real-device gate** (§9, incl. CYBER-01 retest) and return evidence to close this stage (COMPLETE).
-- Then, per roadmap: `V1-STAGE-02-SUB-02` (Deployment Reliability & CD Repairs), OR a dedicated **Cybersecurity End-to-End Reliability** stage that aligns the security push path to `DeviceTokenGuard` (header auth) as a backward-compatible agent update, followed by **Network End-to-End Reliability** (per-device attribution, unassigned-scan semantics, diagnostics vantage point).
+- **CYBER-01 is CLOSED** — manual real-device certification **PASS**; Cybersecurity remains the **V1 stable baseline**. Future Cybersecurity capabilities remain extensible under the Module Extensibility Contract (`15`).
+- Next: **`NET-00 — Network Evidence & Current-State Audit`** — real-device Network evidence (manual §9 step 8), then per-device attribution, unassigned-scan semantics, and diagnostics vantage point. `V1-STAGE-02-SUB-02` (Deployment Reliability & CD Repairs) remains preserved as a later substage.
