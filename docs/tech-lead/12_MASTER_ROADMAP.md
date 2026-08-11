@@ -17,18 +17,30 @@ Legend — S: S/M/L/XL complexity. "GATE" = the exit criterion for each stage.
 - **Rollback/risk**: SSO change is code-only, no migration; do NOT re-enable by reverting (pre-change code is the vulnerability). SUB-02 is code+test only (`MIGRATION: NONE`); RLS kept untouched as defense-in-depth — do NOT add FORCE/set_config later without re-running the isolation suite against a non-owner role. Token fallback removal risks lock-out of legacy devices — backfill before removing.
 - **Complexity**: M.
 
-## V1-STAGE-02 — Deployment Reliability & CD Repairs
+## V1-STAGE-02 — Device Identity & Presence Reliability (priority) + Deployment Reliability & CD Repairs
 
-- **Objective**: make staging/production CD actually deployable (T1-T4).
-- **Why now**: commercial V1 cannot ship without a working deployment path; the green gate is currently local-only.
+- **Objective (founder re-scope, 2026-08-11)**: trustworthy device identity and presence FIRST, then make staging/production CD actually deployable. Trustworthy device identity is a prerequisite for Cybersecurity, Network, Monitoring and other device-backed modules, so Enrollment / Token / Device-Link / Presence reliability is promoted ahead of Deployment/CD within this stage.
+- **Why now**: commercial V1 cannot ship without a working deployment path, AND it cannot be trusted without a truthful device-identity/presence foundation; the green gate is currently local-only.
 - **Dependencies**: Stage 01 (deploy on a safe baseline).
-- **Scope**: fix Helm required-values/image refs/tag wiring/agent DB URL; `migrate deploy` not `db push` in prod; replace `kubectl run -it` checks; drive a real GitHub Actions run of the green gate; verify GHCR images pull and boot.
-- **Out of scope**: feature work.
-- **Acceptance criteria**: `cd-staging` deploys all four services and `/health` passes; `cd-production` gated on tag; GitHub-native green gate evidence exists.
-- **Required tests**: pipeline run + post-deploy smoke tests.
-- **Security gate**: secrets supplied via cluster secrets (not repo).
+- **Scope**: 
+  - **`V1-STAGE-02-SUB-01` — Enrollment, Token & Device-Link Reliability: DONE** (see block below).
+  - **`V1-STAGE-02-SUB-02` (later substage, preserved) — Deployment Reliability & CD Repairs**: fix Helm required-values/image refs/tag wiring/agent DB URL; `migrate deploy` not `db push` in prod; replace `kubectl run -it` checks; drive a real GitHub Actions run of the green gate; verify GHCR images pull and boot. Do NOT delete this substage from the roadmap.
+- **Out of scope**: feature work, Cybersecurity/Network page implementation (they build on this identity foundation later).
+- **Acceptance criteria (SUB-01)**: enrollment/link lifecycle certified (E1-E8); a Device row never implies ONLINE without a verified heartbeat; Stage-01 credential/security behavior intact; V1 gate green. (✅ all achieved — see SUB-01 block.)
+- **Acceptance criteria (SUB-02)**: `cd-staging` deploys all four services and `/health` passes; `cd-production` gated on tag; GitHub-native green gate evidence exists.
+- **Required tests**: SUB-01 ✅ `test/enrollment-device-link.spec.ts` (E1-E8, 16 tests) + `test/presence-telemetry.spec.ts` + web `onboarding-flow.spec.tsx`; SUB-02 ⏳ pipeline run + post-deploy smoke tests.
+- **Security gate**: no plaintext device credential persistence; no raw token logging; recovery/rotation preserve Stage-01 hash-only model. (✅ verified SUB-01.)
 - **Rollback/risk**: Helm migration from current chart = destructive; stage on staging first.
 - **Complexity**: M.
+
+**Completed: V1-STAGE-02-SUB-01 — Enrollment, Token & Device-Link Reliability** (2026-08-11):
+- **Presence truthfulness certified**: `Device.lastSeenAt` is now nullable with no default (migration `20260810120000_device_lastseen_nullable_presence_truth`; worker schema copy synced). A Device row never implies ONLINE — registration alone sets no heartbeat. Registered-but-never-seen rows derive **UNKNOWN**; only an authenticated telemetry ingest (`DevicesService.ingestMetrics`) writes `lastSeenAt`. Verified by `test/enrollment-device-link.spec.ts` E1/E6 and `test/presence-telemetry.spec.ts` P1-P4. Existing timestamps preserved.
+- **Enrollment/link lifecycle certified (E1-E8, 16 tests)**: first enrollment with single-use token (hash-only storage, no ONLINE implication); token reuse/expiry/unknown/foreign fail closed (403, atomic `updateMany` consumption); persistent reconnect maps to the SAME Device via strong identity (identityFingerprint/installationId) with safe rotation (old verifier invalidated immediately); concurrent first-time registration race collapses to a single row (P2002 catch → idempotent `reuseExistingDevice`); cross-tenant identity isolation; hostname removed from `findExistingDevice` identity matching (no false-merge — E7); credential recovery requires strong identity — hostname/deviceId alone are rejected (`IDENTITY_REQUIRED`), fingerprint/installationId rotate only the matching device (E8).
+- **Onboarding truthfulness**: `OnboardingFlow` anchors detection to the first fully-loaded fleet snapshot and re-anchors on token issuance, so onboarding completes only when a NEW device appears — never merely because a Device row exists (`onboarding-flow.spec.tsx` baseline test).
+- **Null-safety**: dashboard ordering nulls-last; `findByOrg` nulls-last; report `lastBoot` nullable → "Never"; web presence/last-seen surfaces accept `string | null` (UNKNOWN label); worker presence-state already maps null → UNKNOWN.
+- Verified: api-gateway 58 suites / 994 tests; web 35 suites / 791 tests; worker 8 suites / 80 tests; `pnpm lint` + `pnpm build` green (api/web/worker); `scripts/ci-v1-gate.sh` 19/19 PASS (incl. migration validation + worker schema sync + secret scan — NO SECRETS DETECTED); all five Stage-01 security suites re-verified green (66 tests).
+- Decisions: `14` D21-D22. Report: `V1-STAGE-02-SUB-01_ENROLLMENT_DEVICE_LINK_RELIABILITY_REPORT.md`.
+- **NEXT substage**: `V1-STAGE-02-SUB-02` — Deployment Reliability & CD Repairs (preserved from original Stage-02 scope; T1-T4 + `METRICS_AUTH_TOKEN` Helm wiring).
 
 ## V1-STAGE-03 — Billing & Entitlements Certification
 
@@ -164,7 +176,7 @@ Legend — S: S/M/L/XL complexity. "GATE" = the exit criterion for each stage.
 
 ```
 V1-STAGE-01 (security/tenancy)
-   ├── V1-STAGE-02 (deploy/CD)          (parallel-safe after 01)
+   ├── V1-STAGE-02 (device identity/presence + deploy/CD)  (parallel-safe after 01)
    └── V1-STAGE-03 (billing)            (after 01)
             └── V1-STAGE-04 (fleet reliability) (after 01)
                      ├── V1-STAGE-05 (monitoring/notifications)
@@ -177,11 +189,11 @@ V1-STAGE-09 ──> V1-STAGE-11 (UX/perf/a11y) ──> V1-STAGE-12 (cert/beta)
 
 ## NEXT EXACT STAGE
 
-**V1-STAGE-02 — Deployment Reliability & CD Repairs** (T1-T4; dependant on the now-closed security baseline of V1-STAGE-01).
+**V1-STAGE-02 — Device Identity & Presence Reliability + Deployment Reliability & CD Repairs** (SUB-01 complete; SUB-02 = Deployment/CD T1-T4).
 
 ## NEXT EXACT SUBSTAGE
 
-**V1-STAGE-01 is CLOSED** — all security/tenancy/credential items (S1–S5 + secrets hygiene) are done. **Next stage: `V1-STAGE-02` — Deployment Reliability & CD Repairs** (T1–T4; includes wiring `METRICS_AUTH_TOKEN` into Helm / Prometheus ServiceMonitor per the SUB-05 residual).
+**V1-STAGE-01 is CLOSED** — all security/tenancy/credential items (S1–S5 + secrets hygiene) are done. **`V1-STAGE-02-SUB-01` (Enrollment, Token & Device-Link Reliability) is COMPLETE.** **Next substage: `V1-STAGE-02-SUB-02` — Deployment Reliability & CD Repairs** (T1–T4; includes wiring `METRICS_AUTH_TOKEN` into Helm / Prometheus ServiceMonitor per the SUB-05 residual).
 
 **Completed: V1-STAGE-01-SUB-05 — secrets hygiene review & Stage-01 security closure (S5)** (2026-08-10):
 - **Metrics auth is header-only and fail-closed (S5 closed).** `metrics.controller.ts` authenticates `GET /metrics` by `Authorization: Bearer` only — the query-string `?token=` input is removed (no secret in URLs/logs/proxy caches) — and fails closed: 403 when `METRICS_AUTH_TOKEN` is set without a matching Bearer header, and 403 in `NODE_ENV=production` when the token is not configured (the Helm ingress exposes `/metrics` publicly in the current topology). Dev (`NODE_ENV != production`, token unset) stays open for local scraping. 8-test suite `test/metrics-auth-security.spec.ts` covers open-dev, header accept/reject, query-token rejection, unauthenticated rejection, and both production fail-closed branches.

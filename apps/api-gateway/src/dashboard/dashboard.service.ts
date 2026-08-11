@@ -51,7 +51,7 @@ export class DashboardService {
       this.prisma.device.findMany({
         where: { orgId },
         select: { id: true, name: true, hostname: true, os: true, lastSeenAt: true },
-        orderBy: { lastSeenAt: 'desc' },
+        orderBy: { lastSeenAt: { sort: 'desc', nulls: 'last' } },
       }),
       this.prisma.alert.groupBy({
         by: ['severity'],

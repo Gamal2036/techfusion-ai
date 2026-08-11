@@ -7,7 +7,7 @@ export interface DeviceHealthInput {
   cpuUsage: number;
   memoryUsage: number;
   diskUsage: number;
-  lastBoot: Date;
+  lastBoot: Date | null;
   temperature: number;
   alerts: { severity: string; message: string; timestamp: Date }[];
   metrics: { label: string; value: number; unit: string }[];
@@ -54,7 +54,7 @@ export function buildDeviceHealthReport(input: DeviceHealthInput, companyName: s
     ],
     metadata: {
       'Device ID': input.deviceId,
-      'Last Boot': new Date(input.lastBoot).toLocaleDateString(),
+      'Last Boot': input.lastBoot ? new Date(input.lastBoot).toLocaleDateString() : 'Never',
       'Total Alerts': input.alerts.length.toString(),
     },
   };

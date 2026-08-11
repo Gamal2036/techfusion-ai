@@ -61,6 +61,7 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
 
   beforeEach(async () => {
     mockQueue.clear();
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Organization" CASCADE`);
     await prisma.deviceMetric.deleteMany();
     await prisma.deviceHealthScore.deleteMany();
     await prisma.alert.deleteMany();
@@ -69,7 +70,6 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
     await prisma.enrollmentToken.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
-    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "Organization" CASCADE`);
 
     orgA = await prisma.organization.create({
       data: { name: 'Presence Org A', slug: 'pres-a-' + crypto.randomBytes(3).toString('hex') },
@@ -148,12 +148,13 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
   describe('P — Presence freshness & online/offline derivation', () => {
     it('P1: authenticated telemetry freshens the device and shows ONLINE', async () => {
       const before = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
+      expect(before.lastSeenAt).toBeNull();
 
       const res = await ingest(deviceA1.deviceToken, validMetrics());
       expect(res.status).toBe(201);
 
       const after = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
-      expect(after.lastSeenAt.getTime()).toBeGreaterThanOrEqual(before.lastSeenAt.getTime());
+      expect(after.lastSeenAt).not.toBeNull();
 
       const list = await deviceList(ownerTokenA);
       const entry = list.find((d) => d.id === deviceA1.id);
@@ -163,6 +164,7 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
 
     it('P2: unauthenticated telemetry is rejected and cannot freshen presence', async () => {
       const before = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
+      expect(before.lastSeenAt).toBeNull();
 
       const res = await request(app.getHttpServer())
         .post('/devices/metrics')
@@ -170,30 +172,33 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
       expect(res.status).toBe(401);
 
       const after = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
-      expect(after.lastSeenAt.getTime()).toBe(before.lastSeenAt.getTime());
+      expect(after.lastSeenAt).toBeNull();
     });
 
     it('P3: one device credential cannot affect another device', async () => {
       const beforeA1 = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
       const beforeA2 = await prisma.device.findUniqueOrThrow({ where: { id: deviceA2.id } });
+      expect(beforeA1.lastSeenAt).toBeNull();
+      expect(beforeA2.lastSeenAt).toBeNull();
 
       const res = await ingest(deviceA2.deviceToken, validMetrics());
       expect(res.status).toBe(201);
 
       const afterA1 = await prisma.device.findUniqueOrThrow({ where: { id: deviceA1.id } });
       const afterA2 = await prisma.device.findUniqueOrThrow({ where: { id: deviceA2.id } });
-      expect(afterA1.lastSeenAt.getTime()).toBe(beforeA1.lastSeenAt.getTime());
-      expect(afterA2.lastSeenAt.getTime()).toBeGreaterThan(beforeA2.lastSeenAt.getTime());
+      expect(afterA1.lastSeenAt).toBeNull();
+      expect(afterA2.lastSeenAt).not.toBeNull();
     });
 
     it('P4: activity in Org A cannot affect a device in Org B', async () => {
       const beforeB1 = await prisma.device.findUniqueOrThrow({ where: { id: deviceB1.id } });
+      expect(beforeB1.lastSeenAt).toBeNull();
 
       const res = await ingest(deviceA1.deviceToken, validMetrics());
       expect(res.status).toBe(201);
 
       const afterB1 = await prisma.device.findUniqueOrThrow({ where: { id: deviceB1.id } });
-      expect(afterB1.lastSeenAt.getTime()).toBe(beforeB1.lastSeenAt.getTime());
+      expect(afterB1.lastSeenAt).toBeNull();
     });
 
     it('O1: a device quiet beyond the offline threshold derives OFFLINE', async () => {
@@ -250,7 +255,10 @@ describe('PRES-01 Presence, Telemetry & Online/Offline Reliability', () => {
       const fresh = await deviceList(ownerTokenA);
       const entry = fresh.find((d) => d.id === deviceA1.id);
       expect(entry.presence).toBe('ONLINE');
-      expect(fresh.filter((d) => d.presence === 'ONLINE').length).toBe(2);
+      const online = fresh.filter((d) => d.presence === 'ONLINE').length;
+      expect(online).toBe(1);
+      const neverSeen = fresh.find((d) => d.id === deviceA2.id);
+      expect(neverSeen.presence).toBe('UNKNOWN');
     });
   });
 

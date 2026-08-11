@@ -91,56 +91,79 @@ export class DevicesService {
 
     const existing = await this.findExistingDevice(orgId, dto);
     if (existing) {
-      await this.enrichDeviceFromRegistration(existing.id, dto);
-
-      const rotated = await this.rotateCredential(
-        existing.id,
-        existing.orgId,
-        'duplicate_detected',
-        { reason: 'duplicate_registration' },
-      );
-
-      const enrichedDevice = await this.prisma.device.findUnique({ where: { id: existing.id } });
-
-      if (process.env.NODE_ENV !== 'production') {
-        this.logger.log(
-          `[DEV_REGISTER_ENRICH] deviceId=${existing.id} ` +
-          `cpuModel=${enrichedDevice?.cpuModel ?? 'null'} ` +
-          `cpuCores=${enrichedDevice?.cpuCores ?? 'null'} ` +
-          `cpuLogical=${enrichedDevice?.cpuLogical ?? 'null'} ` +
-          `source=registration`
-        );
-      }
-
-      return { device: enrichedDevice ?? rotated.device, deviceToken: rotated.newToken, duplicate: true };
+      return this.reuseExistingDevice(existing.id, existing.orgId, dto);
     }
 
     const deviceToken = this.generateSecureToken();
     const deviceTokenHash = this.hashToken(deviceToken);
-    const device = await this.prisma.device.create({
-      data: {
-        orgId,
-        name: dto.name,
-        hostname: dto.hostname,
-        os: dto.os ?? null,
-        osVersion: dto.osVersion ?? null,
-        cpuModel: dto.cpuModel?.trim() || null,
-        cpuCores: dto.cpuCores ?? null,
-        cpuLogical: dto.cpuLogical ?? null,
-        ramTotal: dto.ramTotal ? BigInt(dto.ramTotal) : null,
-        gpuInfo: dto.gpuInfo ?? null,
-        diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
-        isLaptop: dto.isLaptop ?? false,
-        deviceTokenHash,
-        identityFingerprint: dto.identityFingerprint,
-        installationId: dto.installationId ?? null,
-        agentVersion: dto.agentVersion ?? null,
-        identityVersion: dto.identityVersion ?? IDENTITY_VERSION,
-        metadata: (dto.metadata as any) ?? undefined,
-      },
-    });
+    let device: any;
+    try {
+      device = await this.prisma.device.create({
+        data: {
+          orgId,
+          name: dto.name,
+          hostname: dto.hostname,
+          os: dto.os ?? null,
+          osVersion: dto.osVersion ?? null,
+          cpuModel: dto.cpuModel?.trim() || null,
+          cpuCores: dto.cpuCores ?? null,
+          cpuLogical: dto.cpuLogical ?? null,
+          ramTotal: dto.ramTotal ? BigInt(dto.ramTotal) : null,
+          gpuInfo: dto.gpuInfo ?? null,
+          diskTotal: dto.diskTotal ? BigInt(dto.diskTotal) : null,
+          isLaptop: dto.isLaptop ?? false,
+          deviceTokenHash,
+          identityFingerprint: dto.identityFingerprint,
+          installationId: dto.installationId ?? null,
+          agentVersion: dto.agentVersion ?? null,
+          identityVersion: dto.identityVersion ?? IDENTITY_VERSION,
+          metadata: (dto.metadata as any) ?? undefined,
+        },
+      });
+    } catch (e) {
+      // Two concurrent first-time registrations with the same new identity can
+      // both pass the lookup above. The org-scoped unique constraints
+      // (unique_identity_per_org / unique_installation_per_org) guarantee at
+      // most one row survives, so the loser adopts the survivor idempotently.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const survived = await this.findExistingDevice(orgId, dto);
+        if (survived) {
+          return this.reuseExistingDevice(survived.id, survived.orgId, dto);
+        }
+      }
+      throw e;
+    }
 
     return { device, deviceToken, duplicate: false };
+  }
+
+  private async reuseExistingDevice(
+    deviceId: string,
+    orgId: string,
+    dto: RegisterPublicDto,
+  ) {
+    await this.enrichDeviceFromRegistration(deviceId, dto);
+
+    const rotated = await this.rotateCredential(
+      deviceId,
+      orgId,
+      'duplicate_detected',
+      { reason: 'duplicate_registration' },
+    );
+
+    const enrichedDevice = await this.prisma.device.findUnique({ where: { id: deviceId } });
+
+    if (process.env.NODE_ENV !== 'production') {
+      this.logger.log(
+        `[DEV_REGISTER_ENRICH] deviceId=${deviceId} ` +
+        `cpuModel=${enrichedDevice?.cpuModel ?? 'null'} ` +
+        `cpuCores=${enrichedDevice?.cpuCores ?? 'null'} ` +
+        `cpuLogical=${enrichedDevice?.cpuLogical ?? 'null'} ` +
+        `source=registration`
+      );
+    }
+
+    return { device: enrichedDevice ?? rotated.device, deviceToken: rotated.newToken, duplicate: true };
   }
 
   private async enrichDeviceFromRegistration(deviceId: string, dto: RegisterPublicDto) {
@@ -193,14 +216,6 @@ export class DevicesService {
     if (dto.installationId) {
       const existing = await this.prisma.device.findFirst({
         where: { orgId, installationId: dto.installationId },
-      });
-      if (existing) return existing;
-    }
-
-    const hostname = dto.hostname ?? dto.name;
-    if (hostname) {
-      const existing = await this.prisma.device.findFirst({
-        where: { orgId, hostname },
       });
       if (existing) return existing;
     }
@@ -258,7 +273,7 @@ export class DevicesService {
   async findByOrg(orgId: string) {
     return this.prisma.device.findMany({
       where: { orgId },
-      orderBy: { lastSeenAt: 'desc' },
+      orderBy: { lastSeenAt: { sort: 'desc', nulls: 'last' } },
     });
   }
 

@@ -58,7 +58,7 @@ interface DeviceTileData {
   device: Device;
   metric: DeviceMetric | null;
   score: DeviceScore | null;
-  effectiveLastSeen: string;
+  effectiveLastSeen: string | null;
 }
 
 function DeviceStatusTile({ data }: { data: DeviceTileData }) {
@@ -466,7 +466,7 @@ export default function MonitoringPage() {
   }, [devices]);
 
   const getEffectiveLastSeen = useCallback(
-    (device: { id: string; lastSeenAt: string }) => {
+    (device: { id: string; lastSeenAt: string | null }) => {
       return deviceLastSeen.get(device.id) || device.lastSeenAt;
     },
     [deviceLastSeen],

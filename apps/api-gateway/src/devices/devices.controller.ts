@@ -61,9 +61,9 @@ export class DevicesController {
   @Throttle(throttle(5, 60000))
   @Post('recover-credential')
   async recoverCredential(@Req() req: any, @Body() body: { identityFingerprint?: string; installationId?: string; hostname?: string; deviceId?: string }) {
-    if (!body.identityFingerprint && !body.installationId && !body.hostname && !body.deviceId) {
+    if (!body.identityFingerprint && !body.installationId) {
       return {
-        error: 'Provide at least one identity attribute: identityFingerprint, installationId, hostname, or deviceId.',
+        error: 'Credential recovery requires a strong device identity (identityFingerprint or installationId). Hostname/deviceId alone cannot authorize a credential rotation.',
         code: 'IDENTITY_REQUIRED',
       };
     }
@@ -88,9 +88,7 @@ export class DevicesController {
 
     const where: any = { orgId };
     if (body.identityFingerprint) where.identityFingerprint = body.identityFingerprint;
-    else if (body.installationId) where.installationId = body.installationId;
-    else if (body.deviceId) where.id = body.deviceId;
-    else where.hostname = body.hostname;
+    else where.installationId = body.installationId;
 
     const device = await this.devicesService['findFirstOrNull'](where);
     if (!device) {

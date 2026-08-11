@@ -19,7 +19,7 @@ export interface Device {
   diskTotal: number | null;
   isLaptop: boolean;
   registeredAt: string;
-  lastSeenAt: string;
+  lastSeenAt: string | null;
 }
 
 export interface DeviceMetric {

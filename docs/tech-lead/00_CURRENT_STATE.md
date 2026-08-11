@@ -1,6 +1,6 @@
 # 00 — Current State
 
-Status date: 2026-08-09. Branch `main` at `1b7ee52`. Latest mission: `V1-STAGE-01-SUB-01` SSO authentication remediation (S1 CRITICAL closed — SSO login DISABLED_SAFE; full report `docs/tech-lead/V1-STAGE-01-SUB-01_SSO_REMEDIATION_REPORT.md`).
+Status date: 2026-08-11. Branch `main` at `5ca0b21`. Latest mission: `V1-STAGE-02-SUB-01` Enrollment, Token & Device-Link Reliability (presence truthfulness: `Device.lastSeenAt` nullable, UNKNOWN for never-heartbeat rows; E1-E8 enrollment/link certification; full report `docs/tech-lead/V1-STAGE-02-SUB-01_ENROLLMENT_DEVICE_LINK_RELIABILITY_REPORT.md`). V1-STAGE-01 (security/tenancy/credentials) remains CLOSED.
 
 ## 1. Verified Baseline
 
@@ -17,8 +17,9 @@ Status date: 2026-08-09. Branch `main` at `1b7ee52`. Latest mission: `V1-STAGE-0
 
 ## 2. Git State
 
-- `git status --short`: single untracked file `apps/api-gateway/.env.test` (test placeholders, explicitly unignored via `!.env.test`). Not modified by this mission.
-- Recent history: 8 commits after the `v1.0.0-agent-beta.4` tag — CI/release-gate hardening (`STAGE-01C`), modular CI, TimescaleDB fix, GHCR auth, billing/RBAC/monitoring/account work (`STAGE-01A/B`), command-center UI hardening.
+- `git status --short`: single untracked file `apps/api-gateway/.env.test` (test placeholders, explicitly unignored via `!.env.test`). Never modified, never staged.
+- Latest commit: `fix(device): certify enrollment and device-link reliability` (V1-STAGE-02-SUB-01) — schema/migration, devices/enrollment service hardening, E1-E8 suite, presence truthfulness, docs.
+- Recent history: GOV-01 governance foundation, then V1-STAGE-01 security closure (S1-S5, `V1-STAGE-01-SUB-01..05`), CI/release-gate hardening, billing/RBAC/monitoring/account work, command-center UI hardening.
 
 ## 3. What This Repository Actually Is
 
@@ -39,26 +40,28 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 5. **Presence/15-minute issue**: OFFLINE classification and offline alerts are, by design, only raised 15 minutes after the last heartbeat; presence sweeps run every minute. Fast UI classification (60s/5min bands) exists. (See `00` §6 and `06`)
 6. **Windows agent: not implemented** — 15-gap analysis in `05_AGENT_PLATFORM_MATRIX.md`.
 7. **Entitlement enforcement is partial**: devices/reports/AI-quota/feature-gates enforced server-side; `maxTeamMembers` and `maxAlertRules` defined but never enforced. (`09`)
+8. **Presence truthfulness CERTIFIED (`V1-STAGE-02-SUB-01`)**: `Device.lastSeenAt` nullable; registration never implies ONLINE (UNKNOWN until a verified heartbeat); enrollment/device-link lifecycle certified by `test/enrollment-device-link.spec.ts` (E1-E8, 16 tests) — single-use/expiry/revocation tokens, reconnect→same Device, registration race collapse, strong-identity credential recovery, no hostname-only relink.
 
 ## 5. Test Evidence
 
 | App | Files | Count (from cert reports) | Command |
 |-----|-------|---------------------------|---------|
-| api-gateway | 20 specs (baseline) → 54 suites incl. `test/sso-login.spec.ts` + `test/cross-tenant-isolation.spec.ts` | 913 (baseline) → 923 (SUB-01) → 943 (SUB-02) | `pnpm test` (`jest --forceExit --runInBand`) |
-| web | 35 specs | 790 | `pnpm test` (`jest --forceExit`) |
-| worker | 8 specs | 79 (baseline) → 80 (SUB-02) | `pnpm test` |
+| api-gateway | 58 suites incl. `test/enrollment-device-link.spec.ts`, `test/presence-telemetry.spec.ts`, `test/sso-login.spec.ts`, `test/cross-tenant-isolation.spec.ts`, `test/device-credential-hardening.spec.ts`, `test/device-metrics-security.spec.ts`, `test/metrics-auth-security.spec.ts` | 994 | `pnpm test` (`jest --forceExit --runInBand`) |
+| web | 35 specs | 791 | `pnpm test` (`jest --forceExit`) |
+| worker | 8 specs | 80 | `pnpm test` |
 | agent | 78 tests in-source | 78 | `cargo test` |
 
-`VERIFIED_THIS_RUN` for api-gateway (54 suites / 943 tests green) and worker (8 suites / 80 tests green) on `V1-STAGE-01-SUB-02`; `pnpm lint` + `pnpm build` green; `scripts/ci-v1-gate.sh` 19/19 PASS. Web/agent counts from STAGE-01C cert reports; not re-run during this substage (no web/agent code touched).
+`VERIFIED_THIS_RUN` for api-gateway (58 suites / 994 tests green — incl. E1-E8 enrollment/device-link suite and all five Stage-01 security suites), web (35 suites / 791 tests green — incl. onboarding baseline detection), and worker (8 suites / 80 tests green) on `V1-STAGE-02-SUB-01`; `pnpm lint` + `pnpm build` green (api/web/worker); `scripts/ci-v1-gate.sh` 19/19 PASS (incl. migration validation + worker schema sync + secret scan — NO SECRETS DETECTED).
 
 ## 6. Device Presence Finding (summary)
 
-- Agent heartbeat = metrics POST every ~30 s (`apps/agent/src/config.rs`); server writes `Device.lastSeenAt` on every ingest (`apps/api-gateway/src/devices/devices.service.ts:314-317`).
-- Classification bands (client & worker, mirrored): ONLINE ≤ 5 min, DEGRADED 5-15 min, OFFLINE > 15 min (`apps/web/src/lib/device-presence-state.ts`, `apps/worker/src/presence-state.ts`).
-- Presence sweep: cron every minute + Redis lock → `MONITORING` queue → worker evaluates rules and creates/reopens OFFLINE alerts only when a device crosses the 15-minute boundary.
+- Agent heartbeat = metrics POST every ~30 s (`apps/agent/src/config.rs`); server writes `Device.lastSeenAt` on every authenticated ingest (`apps/api-gateway/src/devices/devices.service.ts:325-328`).
+- **Presence truthfulness (V1-STAGE-02-SUB-01): `Device.lastSeenAt` is now nullable with no default.** Registration alone no longer writes a lastSeenAt — a Device row never implies ONLINE. A registered-but-never-heartbeat device derives **UNKNOWN** (verified by `test/enrollment-device-link.spec.ts` E1/E6 and `test/presence-telemetry.spec.ts` P1-P4). Migration `20260810120000_device_lastseen_nullable_presence_truth` (DROP NOT NULL + DROP DEFAULT); existing timestamps preserved (they reflect real prior heartbeats). Worker schema copy synced (`scripts/sync-prisma-schema.sh`).
+- Classification bands (client & worker, mirrored): ONLINE ≤ 5 min, DEGRADED 5-15 min, OFFLINE > 15 min, UNKNOWN = no verified heartbeat (`apps/web/src/lib/device-presence-state.ts`, `apps/worker/src/presence-state.ts`).
+- Presence sweep: cron every minute + Redis lock → `MONITORING` queue → worker evaluates rules and creates/reopens OFFLINE alerts only when a device crosses the 15-minute boundary; UNKNOWN devices are never flagged OFFLINE.
 - **Root cause of the observed "~15 minutes"**: the OFFLINE threshold is 15 minutes by design; an offline device is therefore not flagged (UI stays ONLINE→DEGRADED) until 15 minutes after the last heartbeat, and the offline *alert* is not emitted until the sweep observes the crossing. Web UI poll is 15 s so UI latency itself is not the cause. Secondary contributors: any failure that stops metrics ingestion (401s after 3 consecutive auth failures stop telemetry; gateway/queue downtime) inherits the same 5/15-min detection window.
 - Recommendation path (do not destabilize enrollment): add an optional DEGRADED/warning presence rule tier, make the sweep threshold/step tunable per rule, and document OFFLINE latency as inherent to the 15-min band. See `06_WORKER_QUEUE_MAP.md` §Presence.
 
 ## 7. Working-Tree Hygiene
 
-`apps/api-gateway/.env.test` remains untracked (intended). This mission stages explicit mission files only (`apps/api-gateway/src/sso/sso.service.ts`, `apps/api-gateway/test/sso-login.spec.ts`, updated legacy SSO tests in `enterprise.integration.spec.ts` / `full-e2e-scenario.spec.ts`, and `docs/tech-lead/` updates). No secrets staged.
+`apps/api-gateway/.env.test` remains untracked (intended, D9). This mission staged explicit SUB-01 files only: schema + migration (gateway + worker copy), `src/devices/*`, `src/dashboard/dashboard.service.ts`, `src/reporting/report-types/device-health.report.ts`, web presence/onboarding surfaces, the E1-E8 suite, and `docs/tech-lead/` updates. No secrets staged; no `.env*` staged.

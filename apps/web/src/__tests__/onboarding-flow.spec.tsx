@@ -195,4 +195,47 @@ describe('OnboardingFlow', () => {
     await screen.findByText(/tfenr_mac_test/);
     expect(screen.getByText(/cargo run/)).toBeInTheDocument();
   });
+
+  it('does not complete while existing devices are present unless a NEW device appears', async () => {
+    const user = userEvent.setup();
+    let currentDevices: any[] = [
+      { id: 'd1', name: 'Existing One' },
+      { id: 'd2', name: 'Existing Two' },
+    ];
+    const mockDeviceList = () => ({
+      devices: currentDevices,
+      loading: false,
+      error: null,
+      refetch: jest.fn(),
+      startFastPolling: jest.fn(),
+      fastPolling: false,
+    });
+    mockUseDeviceList.mockReturnValue(mockDeviceList());
+    mockApiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ token: 'tfenr_baseline_test' }),
+    });
+
+    const view = render(<OnboardingFlow onComplete={onComplete} />);
+
+    await user.click(screen.getByRole('button', { name: /linux/i }));
+    await user.click(screen.getByRole('button', { name: /generate enrollment token/i }));
+    await screen.findByText(/tfenr_baseline_test/);
+
+    await user.click(screen.getByRole('button', { name: /i've installed the agent/i }));
+
+    expect(screen.getByText(/waiting for device/i)).toBeInTheDocument();
+    expect(screen.queryByText(/device connected/i)).toBeNull();
+    expect(onComplete).not.toHaveBeenCalled();
+
+    currentDevices = [...currentDevices, { id: 'd3', name: 'Newly Enrolled' }];
+    mockUseDeviceList.mockReturnValue(mockDeviceList());
+    view.rerender(<OnboardingFlow onComplete={onComplete} />);
+
+    await waitFor(
+      () => expect(screen.getByText(/device connected/i)).toBeInTheDocument(),
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(onComplete).toHaveBeenCalled(), { timeout: 5000 });
+  });
 });

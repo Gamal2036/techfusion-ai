@@ -51,6 +51,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [copied, setCopied] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const baselineRef = useRef<number | null>(null);
 
   const devicesRef = useRef(devices);
   const loadingRef = useRef(loading);
@@ -65,11 +66,25 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
+  // Anchor the detection baseline to the first fully-loaded fleet snapshot.
+  // Completion must be tied to the NEW device appearing, never to the mere
+  // existence of a Device row (DASH-02 / D11). For an org that already has
+  // devices, "any device exists" would falsely complete onboarding.
+  useEffect(() => {
+    if (loadingRef.current || baselineRef.current !== null) return;
+    baselineRef.current = devicesRef.current.length;
+  });
+
   useEffect(() => {
     if (!detecting) return;
 
     const checkDevices = () => {
-      if (devicesRef.current.length > 0 && !loadingRef.current) {
+      const baseline = baselineRef.current;
+      if (
+        baseline !== null &&
+        devicesRef.current.length > baseline &&
+        !loadingRef.current
+      ) {
         setDetected(true);
         if (pollRef.current) clearInterval(pollRef.current);
         setTimeout(() => onCompleteRef.current(), 1500);
@@ -98,6 +113,13 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
       if (res.ok) {
         const data = await res.json();
         setEnrollmentToken(data.token);
+        // The device being enrolled cannot register before it holds the
+        // enrollment token, so re-anchor the baseline now: any subsequent
+        // increase in the fleet is the new device, even if it registers before
+        // the user clicks "I've installed the agent".
+        if (!loadingRef.current) {
+          baselineRef.current = devicesRef.current.length;
+        }
         setStep(4);
       } else {
         const err = await res.text();

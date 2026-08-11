@@ -13,10 +13,10 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Membership + roles | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Invitations | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Account deletion | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
-| Device enrollment (Linux) | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows agent (`05`) |
+| Device enrollment (Linux) | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows agent (`05`); E1-E8 lifecycle suite (`V1-STAGE-02-SUB-01`) |
 | Device list/health | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Device metrics + scoring | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ⚠️ temp/batt | ⚠️ | FREE | FUNCTIONAL | collector gaps (`05`) |
-| Presence (5/15 min) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | FREE | CERTIFIED | 15-min latency by design (`00`, `06`) |
+| Presence (5/15 min) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | FREE | CERTIFIED | 15-min latency by design (`00`, `06`); **UNKNOWN for never-heartbeat devices verified (`V1-STAGE-02-SUB-01`)** |
 | Presence alerts | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | FREE | CERTIFIED | — |
 | Metric alert rules | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | PRO | CERTIFIED | — |
 | Alert webhooks | ❌ | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | no webhook management UI |
@@ -42,7 +42,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Admin console | ❌ UI | ✅ | ✅ | — | — | ✅ | ✅ | partial | — | — | PREMIUM | PARTIAL | no web admin page |
 | Encryption (provider keys) | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | FUNCTIONAL | — |
 | Demo/RBAC scaffold | ❌ | ⚠️ | — | — | — | — | — | ❌ | — | — | — | SCAFFOLD / dead | remove (`10`) |
-| Agent enrollment/identity | — | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows (`05`) |
+| Agent enrollment/identity | — | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows (`05`); strong-identity recovery + no-hostname-relink verified (`V1-STAGE-02-SUB-01`) |
 | Agent updates | — | — | — | — | ❌ | — | — | ⚠️ | ⚠️ | ❌ | — | **MISSING** | self-update mechanism (`05`) |
 | Windows agent | — | — | — | — | ❌ | — | — | ❌ | — | ❌ | — | **MISSING** | full gap list (`05`) |
 | RLS tenancy | — | — | ⚠️ | — | — | — | — | ⚠️ | — | — | — | **INERT / app-layer** | Option B decided: app-layer authoritative + regression-tested isolation (`V1-STAGE-01-SUB-02`, S2 `07`) |

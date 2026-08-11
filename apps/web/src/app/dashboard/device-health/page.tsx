@@ -85,7 +85,7 @@ export default function DeviceHealthPage() {
   useWebSocket(onMetrics);
 
   const getEffectiveLastSeen = useCallback(
-    (device: { id: string; lastSeenAt: string }) => {
+    (device: { id: string; lastSeenAt: string | null }) => {
       return lastSeenUpdates[device.id] || device.lastSeenAt;
     },
     [lastSeenUpdates],
