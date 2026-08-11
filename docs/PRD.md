@@ -251,7 +251,7 @@ Secondary revenue: per-seat add-ons, AI usage overage, marketplace KB content pa
 ### 6.4 Agent Architecture
 - Written in Rust with `sysinfo`, `serde`, `reqwest`
 - Runs as a persistent daemon on target devices
-- Collects: system metrics (10s interval), security findings (1h), network sweep (5m), inventory (30m)
+- Collects: system metrics (10s interval), security findings (1h), network discovery (server-commanded), inventory (30m)
 - Communicates with API via HTTP (device-token authenticated)
 
 ### 6.5 AI Architecture
