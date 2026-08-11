@@ -3,6 +3,17 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { apiFetch } from '@/lib/auth-client';
 
+export type SecurityScanState =
+  | 'idle'
+  | 'triggering'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'timeout';
+
+export const SECURITY_POLL_INTERVAL_MS = 3000;
+export const SECURITY_SCAN_TIMEOUT_MS = 120000;
+
 export interface SecurityFinding {
   id: string;
   scanId: string;
@@ -31,6 +42,7 @@ export interface SecurityScan {
   status: string;
   startedAt: string;
   completedAt: string | null;
+  error?: string | null;
   findings: SecurityFinding[];
   score: SecurityScore | null;
 }
@@ -57,8 +69,19 @@ export function useSecurity(deviceId: string | undefined) {
   const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [scansLoading, setScansLoading] = useState(false);
-  const [triggering, setTriggering] = useState(false);
+  const [scanState, setScanState] = useState<SecurityScanState>('idle');
+  const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const baselineScanIdRef = useRef<string | null>(null);
+  const pollDeadlineRef = useRef(0);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    pollDeadlineRef.current = 0;
+  }, []);
 
   const fetchLatest = useCallback(async () => {
     if (!deviceId) return;
@@ -108,48 +131,91 @@ export function useSecurity(deviceId: string | undefined) {
     }
   }, [deviceId]);
 
+  const pollOnce = useCallback(async () => {
+    if (!deviceId) return;
+    try {
+      const res = await apiFetch(`/security/latest/${deviceId}`);
+      if (res.status === 401 || res.status === 403) {
+        stopPolling();
+        setScanState('idle');
+        setError(
+          'Security data access was denied (401/403). Please refresh your session and try again.',
+        );
+        return;
+      }
+      if (!res.ok) {
+        if (res.status === 404) {
+          // No terminal scan yet — the triggered scan is still pending.
+          return;
+        }
+        stopPolling();
+        setScanState('idle');
+        setError(`Could not verify the security scan status (HTTP ${res.status}). Please try again.`);
+        return;
+      }
+      const scan = await res.json();
+      if (scan?.status === 'completed' || scan?.status === 'failed') {
+        const isNewTerminal = baselineScanIdRef.current === null || scan.id !== baselineScanIdRef.current;
+        if (isNewTerminal) {
+          stopPolling();
+          setLatestScan(scan);
+          setScanState(scan.status === 'failed' ? 'failed' : 'completed');
+          fetchScans();
+          fetchSummary();
+        }
+        return;
+      }
+      setScanState('running');
+    } catch {
+      stopPolling();
+      setScanState('idle');
+      setError('Could not reach the security service. Please try again.');
+    }
+  }, [deviceId, stopPolling, fetchScans, fetchSummary]);
+
   const startPolling = useCallback(() => {
     if (pollingRef.current) return;
-    pollingRef.current = setInterval(async () => {
-      const scan = await fetchLatest();
-      if (scan && (scan.status === 'completed' || scan.status === 'failed')) {
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-          pollingRef.current = null;
-        }
-        setTriggering(false);
-        fetchScans();
-        fetchSummary();
+    pollDeadlineRef.current = Date.now() + SECURITY_SCAN_TIMEOUT_MS;
+    pollingRef.current = setInterval(() => {
+      if (Date.now() >= pollDeadlineRef.current) {
+        stopPolling();
+        setScanState('timeout');
+        return;
       }
-    }, 3000);
-  }, [fetchLatest, fetchScans, fetchSummary]);
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
+      pollOnce();
+    }, SECURITY_POLL_INTERVAL_MS);
+  }, [pollOnce, stopPolling]);
 
   const triggerScan = useCallback(async () => {
-    if (!deviceId || triggering) return;
-    setTriggering(true);
+    if (!deviceId) return;
+    if (scanState === 'triggering' || scanState === 'running') return;
+    setError(null);
+    setScanState('triggering');
     try {
       const res = await apiFetch(`/security/scans/${deviceId}/trigger`, {
         method: 'POST',
       });
       if (res.ok) {
+        baselineScanIdRef.current = latestScan?.id ?? null;
+        setScanState('running');
         startPolling();
         setTimeout(() => {
           fetchScans();
         }, 2000);
+      } else if (res.status === 401 || res.status === 403) {
+        setScanState('idle');
+        setError(
+          'Access to security scanning was denied (401/403). Please refresh your session and try again.',
+        );
       } else {
-        setTriggering(false);
+        setScanState('idle');
+        setError(`Could not start the security scan (HTTP ${res.status}). Please try again.`);
       }
     } catch {
-      setTriggering(false);
+      setScanState('idle');
+      setError('Network error starting the security scan. Please try again.');
     }
-  }, [deviceId, triggering, fetchLatest, fetchScans, startPolling]);
+  }, [deviceId, scanState, latestScan?.id, startPolling, fetchScans]);
 
   const remediateFinding = useCallback(async (findingId: string) => {
     try {
@@ -166,10 +232,18 @@ export function useSecurity(deviceId: string | undefined) {
   }, [fetchLatest, fetchSummary]);
 
   useEffect(() => {
+    stopPolling();
+    baselineScanIdRef.current = null;
+    setError(null);
+    setScanState('idle');
     if (deviceId) {
       fetchLatest();
       fetchScans();
       fetchSummary();
+    } else {
+      setLatestScan(null);
+      setScans([]);
+      setSummary(null);
     }
     return () => stopPolling();
   }, [deviceId, fetchLatest, fetchScans, fetchSummary, stopPolling]);
@@ -180,7 +254,9 @@ export function useSecurity(deviceId: string | undefined) {
     summary,
     loading,
     scansLoading,
-    triggering,
+    scanState,
+    triggering: scanState === 'triggering' || scanState === 'running',
+    error,
     triggerScan,
     remediateFinding,
     refetch: fetchLatest,

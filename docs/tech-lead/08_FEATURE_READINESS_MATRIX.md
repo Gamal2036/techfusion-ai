@@ -27,7 +27,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Recordings | ⚠️ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | PRO | PARTIAL | no player/Viewer UI (`03`) |
 | Software inventory | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows inventory (`05`) |
 | Drivers | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | — |
-| Security scans + scoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows security module (`05`); push-path ingestion made fail-closed 401 (`V1-STAGE-02-SUB-01A` SEC-1); body-token transport on `/devices/security-report` documented for future DeviceTokenGuard alignment |
+| Security scans + scoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | PRO | FUNCTIONAL (Linux) | Windows security module (`05`); push-path ingestion made fail-closed 401 (`V1-STAGE-02-SUB-01A` SEC-1); on-demand path Bearer-authenticated (CYBER-01 — agent regression test; installed binary must be rebuilt); Web flow has complete terminal-state machine (idle/triggering/running/completed/failed/timeout — CYB-1); `GET /security/latest` exposes failed terminal scans (CYB-2); body-token transport on `/devices/security-report` documented for future DeviceTokenGuard alignment |
 | Knowledge Base | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | — | — | FREE | FUNCTIONAL | KB embeddings = mock vectors (`06`) |
 | AI chat | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | FUNCTIONAL | quota enforced |
 | AI troubleshooting (SSE) | ✅ | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | depends on fresh metrics |

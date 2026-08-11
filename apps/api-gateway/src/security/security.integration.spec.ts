@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { SecurityController } from './security.controller';
 import { SecurityService } from './security.service';
 import { SecurityScoringService } from './services/security-scoring.service';
@@ -148,6 +148,64 @@ describe('Security Integration', () => {
       expect(result!.findings).toHaveLength(2);
       expect(result!.score).toBeDefined();
       expect(result!.score!.securityScore).toBe(62);
+    });
+
+    it('exposes a failed terminal scan with its error, backward-compatibly', async () => {
+      mockPrisma.securityScan.findFirst.mockResolvedValue({
+        id: 'scan-fail',
+        status: 'failed',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        error: 'Agent reported scan failure',
+        score: null,
+        findings: [],
+      });
+
+      const result = await controller.getLatestScan('dev-1', { orgId: 'org-1' } as any);
+
+      expect(result).toBeDefined();
+      expect(result!.status).toBe('failed');
+      expect(result!.error).toBe('Agent reported scan failure');
+      expect(result!.findings).toEqual([]);
+    });
+
+    it('queries only terminal scan statuses (completed or failed)', async () => {
+      mockPrisma.securityScan.findFirst.mockResolvedValue(null);
+
+      await expect(
+        controller.getLatestScan('dev-1', { orgId: 'org-1' } as any),
+      ).rejects.toThrow(NotFoundException);
+
+      const where = mockPrisma.securityScan.findFirst.mock.calls[0][0].where;
+      expect(where.status).toEqual({ in: ['completed', 'failed'] });
+    });
+
+    it('represents an empty successful scan truthfully', async () => {
+      mockPrisma.securityScan.findFirst.mockResolvedValue({
+        id: 'scan-clean',
+        status: 'completed',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        error: null,
+        score: {
+          id: 'score-clean',
+          securityScore: 100,
+          riskLevel: 'low',
+          totalFindings: 0,
+          criticalCount: 0,
+          highCount: 0,
+          mediumCount: 0,
+          lowCount: 0,
+        },
+        findings: [],
+      });
+
+      const result = await controller.getLatestScan('dev-1', { orgId: 'org-1' } as any);
+
+      expect(result).toBeDefined();
+      expect(result!.status).toBe('completed');
+      expect(result!.findings).toEqual([]);
+      expect(result!.score!.totalFindings).toBe(0);
     });
   });
 

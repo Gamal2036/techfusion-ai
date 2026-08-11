@@ -9,11 +9,39 @@
 
 ## 1. Status
 
-**MANUAL CERTIFICATION REQUIRED.** All automated gates pass and three proven
-integration defects were fixed, but the real Linux-agent ↔ API ↔ Web integration
-(binary on a real host against the real stack) cannot be certified by automated
-tests alone. Manual operator evidence is required before this stage may be
-marked COMPLETE (see §8).
+**MANUAL CERTIFICATION REQUIRED.** All automated gates pass and five proven
+integration defects/root causes are fixed, but the real Linux-agent ↔ API ↔ Web
+integration (binary on a real host against the real stack) cannot be certified
+by automated tests alone. Manual operator evidence is required before this stage
+may be marked COMPLETE (see §8, §9).
+
+> **MANUAL CERTIFICATION RESULT — FAILED (annotation, 2026-08-11).** The real
+> Ubuntu-host manual gate (§9) exposed a Cybersecurity runtime failure: opening
+> the Cybersecurity page shows `GET /security/pending/:deviceId → 401` with
+> `DeviceTokenGuard rejected: authHeader present=false`, and the Cybersecurity
+> UI remains in a loading/"Scan in progress" state with no truthful terminal
+> transition. The device path itself was operational in the same run
+> (enrollment OK, persistent credential stored, `techfusion-agent.service`
+> running, `POST /devices/metrics → 201`, `GET /devices → 200`). Root cause
+> analysis and minimal fix plan are recorded in the stage diagnosis
+> (`V1-STAGE-02-SUB-01A_MANUAL_CYBER_DIAG`): the deployed agent binary predates
+> the `Authorization: Bearer` header on on-demand agent endpoints (added in
+> `942ed1f`; present at `apps/agent/src/client.rs:484`), so the agent's pending
+> security-scan poll is rejected before reaching the pending-scan state, and
+> `apps/web/src/hooks/useSecurity.ts` polling has no terminal/backstop when a
+> scan never completes or fails. Stage remains **NOT COMPLETE** pending the fix
+> and a successful manual retest.
+
+> **CYBER-01 FIX — IMPLEMENTED, AUTOMATED EVIDENCE GREEN (annotation, 2026-08-11).**
+> The two confirmed root causes are fixed and covered by focused regression tests
+> (see §7 Fixes CYB-1/CYB-2 and §8): the Web Cybersecurity flow now has a
+> complete terminal-state machine (`useSecurity.ts`), and `GET
+> /security/latest/:deviceId` exposes failed terminal scans backward-compatibly.
+> The agent source already carried the Bearer credential on the pending-security
+> request; an agent regression test now proves it, and the **deployed binary on
+> the real host is still stale**. Stage remains **NOT COMPLETE** — the real-device
+> manual gate (§9) must be re-run with a REBUILT/REINSTALLED agent before the
+> stage may be marked COMPLETE.
 
 ## 2. Integration Map (traced in code, `VERIFIED_THIS_RUN`)
 
@@ -107,6 +135,8 @@ device token model.
 | SEC-1 | High (fail-open) | Cybersecurity push | `POST /devices/security-report` returned HTTP **200** with `{error:'Invalid device token'}` for an unknown/revoked/rotated credential. Agent `send_security_report` treats 2xx as success (`client.rs:380-388`), so a device whose credential was rotated silently "succeeded" while persisting nothing — while the on-demand security path (DeviceTokenGuard) correctly returned 401 for the same credential. |
 | NET-1 | Medium (dead endpoint) | Network page | `apps/web/src/app/dashboard/network/page.tsx:87` polled `fetch('/api/network/scans')` — a relative URL with no matching Next.js route. The request 404'd, the catch swallowed it, and scan-completion detection never fired; polling only stopped via the 65s timeout. |
 | NET-2 | Low (truthfulness) | Network surface | Agent emits `00:00:00:00:00:00` as the MAC when ARP lookup fails (unknown), and the web devices table + topology tooltip rendered it as a real MAC. |
+| CYB-1 | High (real-device reliability) | Cybersecurity web | `useSecurity.ts` polling had no terminal-state model: only `completed` stopped polling. A failed or stuck-pending scan left the UI permanently in "Scan in progress"/loading with no truthful terminal transition, and 401/403/unexpected failures never stopped polling (infinite loading). |
+| CYB-2 | High (real-device reliability) | Cybersecurity API | `GET /security/latest/:deviceId` filtered to `status: 'completed'` only, so a failed terminal scan (written by `POST /security/scan-result` with `error`) was invisible to the Web polling loop — a failed scan could never be surfaced. |
 
 Not defects (verified, intentionally not changed): `GET /security/scans/detail/:scanId`
 is **not** shadowed by `GET /security/scans/:deviceId` (single-segment `:deviceId`
@@ -121,47 +151,69 @@ product behavior; server-host diagnostics are an existing design.
 | SEC-1 | Invalid/unknown credential on `POST /devices/security-report` now throws `UnauthorizedException` → 401 (fail-closed, consistent with `DeviceTokenGuard`; agent already handles 401 by re-registering). Valid flow unchanged (200 + scan result). | `src/security/security.controller.ts`; tests updated in `test/device-credential-hardening.spec.ts` (expect 401), `test/security.spec.ts` (tightened to 401), `src/security/security.integration.spec.ts` (expects `UnauthorizedException`) |
 | NET-1 | Removed dead `fetch('/api/network/scans')`; scan-completion detection now uses real `GET /network/scans` data (`useNetworkScans`) via a latest-scans ref, so discovery polling stops when the triggered scan actually completes/fails. | `apps/web/src/app/dashboard/network/page.tsx` |
 | NET-2 | All-zero unknown-MAC sentinel (`00:00:00:00:00:00`) rendered as `-`/omitted instead of a fake MAC. | `apps/web/src/app/dashboard/network/page.tsx`, `apps/web/src/components/NetworkMap.tsx` |
+| CYB-1 | Cybersecurity Web polling given a complete terminal-state machine (`idle` / `triggering` / `running` / `completed` / `failed` / `timeout`) in `useSecurity.ts`: `completed` and `failed` stop polling on a scan that is new since the trigger; a client backstop times out a stuck pending scan after 120 s into an honest timeout/retry state; 401/403 and unexpected API failures stop polling and surface an honest error banner (never infinite loading). Empty successful results render truthfully ("No findings — clean posture"). Polling is reset on device change. | `apps/web/src/hooks/useSecurity.ts`, `apps/web/src/app/dashboard/cybersecurity/page.tsx`, new `apps/web/src/__tests__/use-security.spec.ts` (6 tests) |
+| CYB-2 | `GET /security/latest/:deviceId` now returns the latest **terminal** scan (`status IN (completed, failed)`, ordered by `completedAt` desc) instead of completed-only, and exposes the scan `error` field — additive/backward-compatible (completed path unchanged; pending scans still return 404 while running). | `apps/api-gateway/src/security/security.service.ts`; tests in `src/security/security.integration.spec.ts` (+3) |
+| CYB-3 | Agent regression test proving the pending-security request (`GET /security/pending/:deviceId`) carries `Authorization: Bearer <persistent-device-credential>`. Source was already correct (`apps/agent/src/client.rs:484`); the **deployed binary is stale** and must be rebuilt/reinstalled on the real host for the manual gate. | `apps/agent/src/client.rs` (test) |
 
-`AGENT CHANGE: NONE`. `MIGRATION: NONE` (schema untouched; gate schema-sync + migration validation passed).
+`AGENT SOURCE CHANGE: TEST-ONLY` (source behavior was already correct at
+`client.rs:484`; no token/enrollment model change). `MIGRATION: NONE` (schema
+untouched; gate schema-sync + migration validation passed).
 
 ## 8. Automated Evidence (`VERIFIED_THIS_RUN`, local)
 
 | Item | Result |
 |------|--------|
-| api-gateway full suite | **58 suites / 994 tests PASS** (re-run clean; first run had one flaky AI-timing test, green on re-run) |
-| web full suite | 35 suites / 791 tests PASS |
+| api-gateway full suite | **58 suites / 997 tests PASS** (includes +3 CYB-2 `getLatestScan` regression tests) |
+| web full suite | 36 suites / 797 tests PASS (includes +6 CYB-1 `use-security.spec.ts` tests) |
 | worker suite | 8 suites / 80 tests PASS (via gate) |
-| agent in-source | 78 tests PASS |
+| agent in-source | 79 tests PASS (includes +1 CYB-3 Bearer-header regression test) |
 | `pnpm lint` + `pnpm build` (api/web/worker) | PASS |
 | `scripts/ci-v1-gate.sh` | **19/19 PASS** — incl. migration validation, worker schema sync, secret scan (**NO SECRETS DETECTED**) |
-| Baseline suites re-verified | E1-E8 enrollment/device-link, P1-P4 presence-telemetry, Stage-01 security suites (66), cross-tenant isolation (20), tenant-isolation-security — all PASS |
+| Baseline suites re-verified | E1-E8 enrollment/device-link, P1-P4 presence-telemetry, Stage-01 security suites (66), cross-tenant isolation (20), tenant-isolation-security, `security.spec.ts`, `device-metrics-security.spec.ts`, `metrics-auth-security.spec.ts` — all PASS |
 
-What automated tests **prove**: device authority propagation, Cybersecurity and
-Network org/device scoping, cross-tenant isolation (incl. the shadow-risk
-`scans/detail` route), no fake fallback data, and UNKNOWN/absence behavior
-(presence UNKNOWN, security/network empty states).
+**CYBER-01 focused regression evidence (`VERIFIED_THIS_RUN`):**
+
+| Requirement | Proved by |
+|-------------|-----------|
+| 1. Agent pending-security request carries Bearer credential | `apps/agent/src/client.rs` `test_pending_security_scans_send_bearer_header` (local TCP mock asserts `authorization: bearer <token>` + `GET /security/pending/<deviceId>`) |
+| 2. `completed` terminates Web polling | `use-security.spec.ts` "stops polling when a triggered scan reaches completed" |
+| 3. `failed` terminates Web polling | `use-security.spec.ts` "stops polling and reports failed when the scan fails" (asserts honest `failed` state + scan error) |
+| 4. timeout/stuck pending terminates safely | `use-security.spec.ts` "times out and stops polling when a scan is stuck pending" (120 s backstop → `timeout`) |
+| 5. 401/403 does not cause permanent loading | `use-security.spec.ts` "does not produce permanent loading on 401 during polling" (+ unexpected 500 case) |
+| 6. successful real scan result remains compatible | `security.integration.spec.ts` completed scan with findings+score unchanged; `use-security.spec.ts` load-compat test; empty-successful scan returns `findings: []` + `totalFindings: 0` truthfully |
+| 7. existing Cybersecurity security/isolation tests remain green | `security.spec.ts`, `tenant-isolation-security.spec.ts`, `device-metrics-security.spec.ts`, `metrics-auth-security.spec.ts`, `security.integration.spec.ts` — all PASS |
+
+What automated tests **prove**: the Web flow deterministically reaches a
+truthful terminal state for every required outcome (completed / failed /
+timeout / auth-denied / unexpected failure), failed scans are exposed by the
+API without breaking the completed-scan contract, and the agent's pending-security
+request is authenticated with the persistent device credential.
 
 What automated tests **cannot prove** (requires a real device + operator):
-
-1. Real Linux agent binary (this machine) → real API+DB+Web stack end-to-end telemetry render.
-2. Presence transitions across a real stop/restart cycle (ONLINE → DEGRADED → OFFLINE → restart → ONLINE, same Device).
-3. Reconnect after restart uses the SAME Device with no new enrollment token (real binary).
-4. Real security findings (apt/ufw/ss) from this exact machine appear under the correct Device on the Cybersecurity page.
-5. Real ARP/ICMP discovery data appears on the Network page and belongs to this org/device session.
+a **rebuilt** Linux agent binary on the real host performing the full
+`Run First Scan → pending → execute → result → terminal` loop against the real
+stack (the previously-deployed binary predates the Bearer header). See §9.
 
 ## 9. Manual Certification Required (operator)
 
 Commands/actions needed for evidence that automation cannot produce. Start backend, Web, and agent; do NOT stop any system service:
 
+0. **REBUILD/REINSTALL the agent on the real host first** (the installed binary
+   predates the Bearer header on the pending-security request): rebuild from
+   source (`cargo build --release` in `apps/agent`) or re-run the installer with
+   `--binary`/release, restart `techfusion-agent.service`, and confirm
+   `agent --identity-status` still shows the SAME `device_id` (persistent
+   credential preserved; do NOT re-enroll).
 1. `docker compose up -d postgres redis` (or `scripts/dev-up.sh` if present) then start API (`apps/api-gateway`, `pnpm dev`), worker (`apps/worker`, `pnpm dev`), Web (`apps/web`, `pnpm dev`).
 2. Start the Linux agent: `TF_API_URL=http://localhost:3001 TF_ORG_TOKEN=<enrollment token from Web> ~/.techfusion/...` / `cargo run` in `apps/agent`. Confirm identity: `agent --identity-status` (device_id + token files exist, 0600).
 3. Login to Dashboard, open Settings → Enrollment, issue an enrollment token.
 4. Verify the SAME Device appears in Dashboard device-health list, and presence stays **UNKNOWN** until the first heartbeat.
 5. Watch presence flip to **ONLINE** within ~1 min of agent activity (30s telemetry tick), and telemetry values update (CPU/RAM/disk).
-6. Open **Cybersecurity**, select the device: confirm the displayed security data (updates/firewall/ports/weak config/password policy) is this exact machine's real scan and belongs to this Device. Run a scan from the page and confirm it completes.
-7. Open **Network**: trigger discovery and confirm real subnet devices (with this machine as the "local/This Device" node), and that the data appears in Devices + Scan History.
-8. `systemctl stop techfusion-agent` (or `kill` the agent): verify presence transitions (DEGRADED after 5 min, OFFLINE after 15 min — 15-min band is by design).
-9. Restart the agent with the SAME stored `device_token`/`device_id`: verify reconnect uses the SAME Device with **no** new enrollment token, and presence returns to ONLINE.
+6. Open **Cybersecurity**, select the device: confirm the displayed security data (updates/firewall/ports/weak config/password policy) is this exact machine's real scan and belongs to this Device. Run a scan from the page and confirm it completes — the UI must reach a truthful `completed` state and stop polling.
+7. **CYBER-01 retest:** (a) open the Cybersecurity page and confirm `GET /security/pending/:deviceId` returns **200** (agent Bearer credential accepted — no more 401); (b) trigger a scan and confirm the UI leaves "Scan in progress" and reaches `completed`; (c) with the agent stopped, trigger a scan and confirm the UI reaches the honest `timeout`/retry state (no permanent loading); (d) a revoked/rotated agent credential must produce the agent's documented re-registration path (401 → re-register), never silent success.
+8. Open **Network**: trigger discovery and confirm real subnet devices (with this machine as the "local/This Device" node), and that the data appears in Devices + Scan History.
+9. `systemctl stop techfusion-agent` (or `kill` the agent): verify presence transitions (DEGRADED after 5 min, OFFLINE after 15 min — 15-min band is by design).
+10. Restart the agent with the SAME stored `device_token`/`device_id`: verify reconnect uses the SAME Device with **no** new enrollment token, and presence returns to ONLINE.
 
 Return: agent logs, `GET /devices` + `GET /dashboard/summary` responses, Cybersecurity page state for the exact Device, Network page state, and presence timestamps across stop/restart.
 
@@ -177,16 +229,17 @@ Return: agent logs, `GET /devices` + `GET /dashboard/summary` responses, Cyberse
 
 ## 11. Documentation Updated
 
-- `00_CURRENT_STATE.md` — git state, headline findings (SEC-1/NET-1/NET-2), test evidence, working-tree hygiene.
+- `00_CURRENT_STATE.md` — git state, headline findings (SEC-1/NET-1/NET-2 + CYB-1/CYB-2), test evidence, working-tree hygiene.
 - `08_FEATURE_READINESS_MATRIX.md` — Cybersecurity/Network/security-ingestion rows annotated with SUB-01A evidence.
 - `12_MASTER_ROADMAP.md` — SUB-01A completed block; NEXT substage unchanged = `V1-STAGE-02-SUB-02` (Deployment/CD) unless this report's manual gate precedes it.
+- This report (§1 annotation, §6/§7 CYB rows, §8 CYBER-01 evidence, §9 CYBER-01 retest) — automated implementation evidence for the CYBER-01 fix.
 
 ## 12. Commit
 
-One atomic commit: `fix(integration): align device-backed product data flows`.
+One atomic commit: `fix(cybersecurity): close real-device scan polling failures`.
 Not pushed (AGENTS.md policy 13). `apps/api-gateway/.env.test` untouched and untracked.
 
 ## 13. Recommended Next Stage
 
-- **First:** complete the **manual real-device gate** (§9) and return evidence to close this stage (COMPLETE).
+- **First:** **rebuild/reinstall the Linux agent** on the real host (source already sends the Bearer credential) and complete the **manual real-device gate** (§9, incl. CYBER-01 retest) and return evidence to close this stage (COMPLETE).
 - Then, per roadmap: `V1-STAGE-02-SUB-02` (Deployment Reliability & CD Repairs), OR a dedicated **Cybersecurity End-to-End Reliability** stage that aligns the security push path to `DeviceTokenGuard` (header auth) as a backward-compatible agent update, followed by **Network End-to-End Reliability** (per-device attribution, unassigned-scan semantics, diagnostics vantage point).

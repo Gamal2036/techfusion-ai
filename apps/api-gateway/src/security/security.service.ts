@@ -258,7 +258,7 @@ export class SecurityService {
 
   async getLatestScan(deviceId: string, orgId: string) {
     const scan = await this.prisma.securityScan.findFirst({
-      where: { deviceId, orgId, status: 'completed' },
+      where: { deviceId, orgId, status: { in: ['completed', 'failed'] } },
       orderBy: { completedAt: 'desc' },
       include: {
         findings: { orderBy: { severity: 'asc' } },
@@ -273,6 +273,7 @@ export class SecurityService {
       status: scan.status,
       startedAt: scan.startedAt,
       completedAt: scan.completedAt,
+      error: scan.error,
       findings: scan.findings,
       score: scan.score,
     };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Shield, Download, AlertTriangle, CheckCircle, ChevronDown, Activity } from 'lucide-react';
+import { Shield, Download, AlertTriangle, CheckCircle, ChevronDown, Activity, RotateCcw } from 'lucide-react';
 import { cn, GlassPanel, Badge, Button } from '@techfusion/ui';
 import { useDeviceList } from '@/hooks/useDevices';
 import { useSecurity, SecurityFinding } from '@/hooks/useSecurity';
@@ -154,9 +154,12 @@ export default function CybersecurityPage() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [view, setView] = useState<'findings' | 'executive'>('findings');
 
-  const { latestScan, scans, summary, loading, triggering, triggerScan, remediateFinding } = useSecurity(selectedId);
+  const { latestScan, scans, summary, loading, scanState, error, triggerScan, remediateFinding } = useSecurity(selectedId);
 
   const selectedDevice = devices.find((d) => d.id === selectedId);
+
+  const scanInProgress = scanState === 'triggering' || scanState === 'running';
+  const scanFailed = scanState === 'failed' || latestScan?.status === 'failed';
 
   const openFindings = latestScan?.findings?.filter((f) => f.status === 'open') || [];
   const allFindings = latestScan?.findings || [];
@@ -193,10 +196,10 @@ export default function CybersecurityPage() {
             variant="glass"
             size="sm"
             onClick={triggerScan}
-            disabled={!selectedId || triggering}
+            disabled={!selectedId || scanInProgress}
           >
-            <Activity className={cn('h-3.5 w-3.5 mr-1.5', triggering && 'animate-spin')} />
-            {triggering ? 'Scanning...' : 'Trigger Scan'}
+            <Activity className={cn('h-3.5 w-3.5 mr-1.5', scanInProgress && 'animate-spin')} />
+            {scanInProgress ? 'Scanning...' : 'Trigger Scan'}
           </Button>
           <Button
             variant="glass"
@@ -251,6 +254,18 @@ export default function CybersecurityPage() {
         )}
       </div>
 
+      {error && (
+        <GlassPanel intensity="light" className="p-4 border border-red-500/30 bg-red-500/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Security scan status unavailable</p>
+              <p className="text-xs text-text-muted mt-0.5">{error}</p>
+            </div>
+          </div>
+        </GlassPanel>
+      )}
+
       {!selectedId ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
           <Shield className="h-12 w-12 text-text-disabled mb-4" />
@@ -259,18 +274,50 @@ export default function CybersecurityPage() {
             Choose a device from the dropdown above to view its security posture and scan results.
           </p>
         </GlassPanel>
-      ) : loading ? (
-        <GlassPanel intensity="light" className="p-12 flex items-center justify-center">
-          <Activity className="h-5 w-5 text-text-disabled animate-spin mr-3" />
-          <span className="text-sm text-text-disabled">Loading security data...</span>
-        </GlassPanel>
-      ) : triggering ? (
+      ) : scanInProgress ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
           <Activity className="h-12 w-12 text-primary mb-4 animate-spin" />
           <h3 className="text-lg font-medium text-text-secondary">Scan in progress</h3>
           <p className="text-sm text-text-disabled mt-1 max-w-md">
             Security scan is being performed on this device. Results will appear automatically when complete.
           </p>
+        </GlassPanel>
+      ) : scanFailed ? (
+        <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center border border-red-500/30 bg-red-500/5">
+          <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary">Security scan failed</h3>
+          <p className="text-sm text-text-disabled mt-1 max-w-md">
+            {latestScan?.error || 'The security scan did not complete successfully on this device.'}
+          </p>
+          <button
+            onClick={triggerScan}
+            disabled={scanInProgress}
+            className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {scanInProgress ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            {scanInProgress ? 'Scanning...' : 'Retry Scan'}
+          </button>
+        </GlassPanel>
+      ) : scanState === 'timeout' ? (
+        <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
+          <AlertTriangle className="h-12 w-12 text-text-disabled mb-4" />
+          <h3 className="text-lg font-medium text-text-secondary">Security scan timed out</h3>
+          <p className="text-sm text-text-disabled mt-1 max-w-md">
+            The device did not report a scan result within the expected time. The scan may still be running on the device — check the device status or retry.
+          </p>
+          <button
+            onClick={triggerScan}
+            disabled={scanInProgress}
+            className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {scanInProgress ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            {scanInProgress ? 'Scanning...' : 'Retry Scan'}
+          </button>
+        </GlassPanel>
+      ) : loading ? (
+        <GlassPanel intensity="light" className="p-12 flex items-center justify-center">
+          <Activity className="h-5 w-5 text-text-disabled animate-spin mr-3" />
+          <span className="text-sm text-text-disabled">Loading security data...</span>
         </GlassPanel>
       ) : !latestScan ? (
         <GlassPanel intensity="light" className="p-12 flex flex-col items-center justify-center text-center">
@@ -281,11 +328,11 @@ export default function CybersecurityPage() {
           </p>
           <button
             onClick={triggerScan}
-            disabled={triggering}
+            disabled={scanInProgress}
             className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
           >
-            {triggering ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
-            {triggering ? 'Scanning...' : 'Run First Scan'}
+            {scanInProgress ? <Activity className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+            {scanInProgress ? 'Scanning...' : 'Run First Scan'}
           </button>
         </GlassPanel>
       ) : (
