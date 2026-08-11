@@ -2,7 +2,32 @@
 
 > **Purpose:** The map of the repository's documentation and execution infrastructure.
 > **Owner:** Engineering Execution Governance
-> **Last Updated:** 2026-08-01
+> **Last Updated:** 2026-08-11 (GOV-01 — added canonical tech-lead index)
+
+---
+
+## START HERE (canonical governance)
+
+| Document | Answers | Location |
+|----------|---------|----------|
+| **AGENTS.md** | Engineering constitution for any coding agent | repo root |
+| **PRD.md** | Product requirements, mission, users, scope classes | `docs/PRD.md` |
+| **tech-lead/README.md** | Index + authority + evidence markers for the tech-lead series | `docs/tech-lead/README.md` |
+| **00 — Current State** | What exists and works today (verified baseline) | `docs/tech-lead/00_CURRENT_STATE.md` |
+| **01 — Product Architecture** | Verified current architecture | `docs/tech-lead/01_PRODUCT_ARCHITECTURE.md` |
+| **07 — Security & Tenancy Review** | Verified security boundaries + findings | `docs/tech-lead/07_SECURITY_TENANCY_REVIEW.md` |
+| **08 — Feature Readiness Matrix** | Single master readiness matrix | `docs/tech-lead/08_FEATURE_READINESS_MATRIX.md` |
+| **10 — Technical Debt Register** | Known debt, severity, evidence | `docs/tech-lead/10_TECHNICAL_DEBT_REGISTER.md` |
+| **11 — Production V1 Scope** | P0 / P1 / P2 scope definition | `docs/tech-lead/11_PRODUCTION_V1_SCOPE.md` |
+| **12 — Master Roadmap** | What to build next, in order (authoritative) | `docs/tech-lead/12_MASTER_ROADMAP.md` |
+| **13 — Operating Model** | Who may change what | `docs/tech-lead/13_AI_TECH_LEAD_OPERATING_MODEL.md` |
+| **14 — Decision Log** | Decisions made and why | `docs/tech-lead/14_DECISION_LOG.md` |
+| **15 — Module Extensibility Contract** | How core modules must grow | `docs/tech-lead/15_MODULE_EXTENSIBILITY_CONTRACT.md` |
+| **GOV-01 — Governance Foundation Report** | Inventory, conflicts, interrupted SUB-01 state | `docs/tech-lead/GOV-01_GOVERNANCE_FOUNDATION_REPORT.md` |
+
+The `docs/tech-lead/` series is the **authoritative** technical-lead
+documentation area and supersedes ad-hoc audit reports elsewhere in the
+repository (decision D2).
 
 ---
 
@@ -83,15 +108,18 @@ templates/
 
 | Area | Location |
 |------|----------|
-| Product requirements | `docs/PRD.md`, `docs/01-Master-Specification.md` |
+| Product requirements | `docs/PRD.md`, `docs/01-Master-Specification.md` (original plan) |
 | Project context | `docs/PROJECT_CONTEXT.md` |
 | Discovery series | `docs/AH-1/` |
 | Stabilization and recovery series | `docs/AH-2/` |
 | Feature completion and validation series | `docs/AH-3/` |
 | Frontend readiness series | `docs/AH-3F/` |
 | Runtime stabilization series | `docs/AH-3R/` |
+| Design governance (TG family) | `docs/TG-1A/`, `docs/TG-2A/`, `docs/TG-2X/`, `docs/TG-3/`, `docs/TG-CORE/` |
+| V1 stage + certification reports (historical evidence) | `docs/v1/`, `docs/certifications/`, `docs/enrollment/`, `docs/dashboard/`, `docs/tech-lead/V1-STAGE-01-SUB-*` |
 | Development standards | `CONTRIBUTING.md` |
-| Project roadmap | `roadmap/roadmap.md` |
+| Project roadmap | `roadmap/roadmap.md` — **stale**: superseded by `docs/tech-lead/12_MASTER_ROADMAP.md` |
+| Legacy working reports (historical only) | root `TF_*.md`, `TECHFUSION_V1_READINESS_AUDIT.md` |
 
 ## Reading Order for Contributors
 

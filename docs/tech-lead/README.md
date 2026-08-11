@@ -25,6 +25,7 @@ supersedes ad-hoc audit reports in the repository root.
 | 12 | MASTER_ROADMAP.md | Baseline |
 | 13 | AI_TECH_LEAD_OPERATING_MODEL.md | Ratified |
 | 14 | DECISION_LOG.md | Appended |
+| 15 | MODULE_EXTENSIBILITY_CONTRACT.md | Ratified (GOV-01) |
 
 ## Authority
 

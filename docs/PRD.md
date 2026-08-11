@@ -1,7 +1,12 @@
 # TechFusion AI — Product Requirements Document
 
-> **Status:** v1.0 — MVP Implemented
-> **Last Updated:** 2026-06-20
+> **Status:** v1.0 — MVP implemented; maintained as living documentation per
+> `AGENTS.md`. Status cells in this PRD describe the plan at time of writing;
+> the authoritative, evidence-based readiness view is
+> `docs/tech-lead/08_FEATURE_READINESS_MATRIX.md` (current state) and
+> `docs/tech-lead/00_CURRENT_STATE.md` (verified baseline). Where this PRD
+> contradicts those sources, the tech-lead sources win.
+> **Last Updated:** 2026-08-11 (GOV-01 factual corrections)
 
 ---
 
@@ -28,6 +33,17 @@ A single cross-platform agent + cloud dashboard that provides:
 - RAG-powered knowledge base
 - Automated executive-grade reporting
 - Multi-tenant MSP support with billing
+
+### Scope Classification
+
+| Class | Meaning | Examples today |
+|-------|---------|----------------|
+| **CURRENT** | Verified working now (see `08`/`00` for evidence) | Auth+JWT, orgs/membership/RBAC, Linux device enrollment, device health, presence, monitoring+alerts, reports (sync), billing plumbing, security/network/inventory (Linux) |
+| **V1 REQUIRED** | Required for paid V1; partial or planned (see `11`) | SSO (DISABLED_SAFE until verified), entitlement enforcement, real KB embeddings + REPORT queue, Windows agent, agent self-update, deployable CD |
+| **FUTURE / PLANNED** | Post-V1 (see `11` P2, `12`) | Multi-org per user, real remote control, autonomous remediation, marketplace, S3-backed storage, mobile/web push |
+
+Nothing in FUTURE / PLANNED is presented as implemented. The authoritative
+execution ordering is `docs/tech-lead/12_MASTER_ROADMAP.md`.
 
 ---
 
@@ -219,7 +235,7 @@ Secondary revenue: per-seat add-ons, AI usage overage, marketplace KB content pa
 - **AI:** Multi-provider (Anthropic Claude, OpenAI GPT) with automatic fallback
 
 ### 6.2 Data Layer
-- **PostgreSQL** — System of record, multi-tenant via `org_id` RLS
+- **PostgreSQL** — System of record, multi-tenant via app-layer `orgId` scoping (authoritative; RLS present but inert — decision D14)
 - **TimescaleDB** — Time-series metrics (`DeviceMetric` hypertable)
 - **Redis** — BullMQ queues, WebSocket pub/sub
 - **Embeddings** — JSONB float arrays in PostgreSQL (1536-dim), cosine similarity in application code
@@ -274,21 +290,40 @@ Secondary revenue: per-seat add-ons, AI usage overage, marketplace KB content pa
 
 | Requirement | Implementation | Status |
 |------------|---------------|--------|
-| Multi-tenant isolation | `org_id` RLS + application-level guards | Done |
+| Multi-tenant isolation | App-layer `orgId` scoping is **authoritative** (membership/device-verified); RLS kept as inert defense-in-depth (decision D14) | Done (regression-tested) |
 | Password hashing | bcryptjs | Done |
-| JWT auth | Access + refresh token rotation | Done |
+| JWT auth | Access + refresh token rotation, DB-backed revocation | Done |
 | MFA | TOTP via speakeasy | Done |
-| SSO | SAML/OIDC | Done |
-| Encryption at rest | AES-256-GCM envelope encryption for secrets | Done |
-| Transport security | TLS 1.3 (mTLS for agent) | Planned |
-| Audit logging | Append-only `AuditLog` table with export | Done |
+| SSO | SAML/OIDC architecture preserved; login **DISABLED_SAFE** (fail-closed 501) until real IdP verification (decision D11-D13) | **DISABLED_SAFE** |
+| Encryption at rest | AES-256-GCM envelope encryption for AI/SSO secrets | Done |
+| Transport security | TLS (termination) | Partial (production topology) |
+| Audit logging | Append-only `AuditLog` table with export | Done (no viewer UI) |
 | Rate limiting | @nestjs/throttler per tenant | Done |
+| Device credentials | SHA-256 `deviceTokenHash` only, fail-closed; no plaintext column (decision D16) | Done |
+| Telemetry identity | `POST /devices/metrics` server-authoritative identity (decision D17) | Done |
+| Metrics endpoint | Header-only auth, fail-closed in production (decision D18) | Done |
 
-### Security Gaps (pre-production)
-- JWT secrets are dev placeholders
-- AI encryption key is a dev placeholder
-- CORS is wide open (`origin: '*'`)
-- Stripe secrets are placeholders
+### Trust & Truthfulness Requirements
+
+- Device, network, security, telemetry, and scan data shown in the UI must come
+  from verified server/agent data — never fabricated to make a demo work.
+- When a state cannot be verified (device never heartbeated, provider not
+  configured, embedding not semantic), the surface must say UNKNOWN / PENDING
+  explicitly rather than presenting an assumption as a fact.
+- Client-provided tenant/device identity is never authoritative where an
+  authenticated server context exists.
+- Plan/provider/engine gaps degrade a feature to a documented honest state, not
+  a fake one.
+
+### Security Gaps (pre-production, current)
+
+- SSO cannot be enabled for customers until a future substage implements
+  verified IdP assertion handling (contract in `V1-STAGE-01-SUB-01` §7).
+- Deploy-time secret wiring (Helm required values, `METRICS_AUTH_TOKEN`) is
+  scheduled in V1-STAGE-02 (T1-T3).
+- Startup env validation is fail-closed and a secrets hygiene audit found no
+  real credentials (SUB-05); production secret provisioning remains operator
+  responsibility.
 
 ---
 
@@ -310,6 +345,12 @@ Secondary revenue: per-seat add-ons, AI usage overage, marketplace KB content pa
 ---
 
 ## 10. Scope & Roadmap
+
+> The phase list below reflects the original build plan. The authoritative,
+> evidence-based execution order for reaching Production V1 is
+> `docs/tech-lead/12_MASTER_ROADMAP.md` (stages V1-STAGE-01…12). V1-STAGE-01
+> (security/tenancy/credentials) is CLOSED; the next stage is
+> V1-STAGE-02 (deployment reliability & CD repairs).
 
 ### Phase 1 — Auth & Core (Completed)
 - User registration, login, JWT refresh, logout
@@ -399,7 +440,7 @@ Secondary revenue: per-seat add-ons, AI usage overage, marketplace KB content pa
 | Signup completion rate | Conversion funnel | N/A |
 | Devices registered per org | DB count | N/A |
 | AI response acceptance rate | User feedback / retry rate | N/A |
-| Test suite pass rate | CI pipeline | 201 tests, target 100% |
+| Test suite pass rate | CI pipeline | ~979 api / 790 web / 80 worker / 78 agent tests green (see `00` §5; authoritative) |
 | Build time | Docker build duration | ~3 min cold build |
 
 ---
