@@ -54,61 +54,45 @@ export default function NetworkPage() {
   const { devices, loading: devicesLoading, refetch: refetchDevices } = useNetworkDevices();
   const { topology, loading: topoLoading, refetch: refetchTopology } = useNetworkTopology();
   const { scans, loading: scansLoading, refetch: refetchScans } = useNetworkScans();
-  const { starting: discoveryStarting, startDiscovery } = useStartDiscovery();
+  const {
+    state: discoveryState,
+    error: discoveryError,
+    starting: discoveryStarting,
+    discoveryPolling,
+    startDiscovery,
+  } = useStartDiscovery();
   const latency = useLatencyCheck();
   const dns = useDnsResolution();
   const traceroute = useTraceroute();
   const connectivity = useConnectivityCheck();
 
-  const [discoveryPolling, setDiscoveryPolling] = useState(false);
   const discoveryPollRef = useRef<NodeJS.Timeout | null>(null);
-  const activeScanIdRef = useRef<string | null>(null);
-  const scansRef = useRef<any[]>([]);
-
-  useEffect(() => {
-    scansRef.current = scans;
-  }, [scans]);
 
   const stopDiscoveryPolling = useCallback(() => {
     if (discoveryPollRef.current) {
       clearInterval(discoveryPollRef.current);
       discoveryPollRef.current = null;
     }
-    activeScanIdRef.current = null;
-    setDiscoveryPolling(false);
   }, []);
 
   const handleStartDiscovery = useCallback(async () => {
     const result = await startDiscovery();
     if (result && result.scanId) {
-      activeScanIdRef.current = result.scanId;
-      setDiscoveryPolling(true);
       discoveryPollRef.current = setInterval(() => {
         refetchTopology();
         refetchDevices();
-        refetchScans();
       }, 5000);
-
-      const pollCheck = setInterval(() => {
-        const latest = scansRef.current.find((s: any) => s.id === activeScanIdRef.current);
-        if (latest && (latest.status === 'completed' || latest.status === 'failed')) {
-          clearInterval(pollCheck);
-          stopDiscoveryPolling();
-          refetchTopology();
-          refetchDevices();
-          refetchScans();
-        }
-      }, 3000);
-
-      setTimeout(() => {
-        clearInterval(pollCheck);
-        stopDiscoveryPolling();
-        refetchTopology();
-        refetchDevices();
-        refetchScans();
-      }, 65000);
     }
-  }, [startDiscovery, refetchTopology, refetchDevices, refetchScans, stopDiscoveryPolling]);
+  }, [startDiscovery, refetchTopology, refetchDevices]);
+
+  useEffect(() => {
+    if (discoveryState === 'completed' || discoveryState === 'failed' || discoveryState === 'timeout') {
+      stopDiscoveryPolling();
+      refetchTopology();
+      refetchDevices();
+      refetchScans();
+    }
+  }, [discoveryState, stopDiscoveryPolling, refetchTopology, refetchDevices, refetchScans]);
 
   useNetworkWebSocket({
     onTopology: useCallback(
@@ -228,14 +212,49 @@ export default function NetworkPage() {
           <div className="h-[500px] flex flex-col items-center justify-center text-center">
             <Network className="h-10 w-10 text-text-disabled mb-3" />
             <p className="text-text-disabled text-sm">No topology data available.</p>
+            {discoveryError && (
+              <p className="text-text-muted text-xs mt-2 max-w-md">
+                {discoveryError}
+              </p>
+            )}
             <button
               onClick={handleStartDiscovery}
-              disabled={discoveryStarting || discoveryPolling}
+              disabled={discoveryPolling}
               className="mt-4 h-9 px-4 rounded-xl bg-primary-600 hover:bg-primary-500 text-text-primary text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
-              {(discoveryStarting || discoveryPolling) && <Activity className="h-3.5 w-3.5 animate-spin" />}
-              {discoveryStarting ? 'Starting...' : discoveryPolling ? 'Discovering...' : 'Start Discovery'}
+              {discoveryPolling && <Activity className="h-3.5 w-3.5 animate-spin" />}
+              {discoveryStarting
+                ? 'Starting...'
+                : discoveryPolling
+                  ? 'Discovering...'
+                  : discoveryState === 'completed'
+                    ? 'Start Discovery'
+                    : discoveryState === 'failed'
+                      ? 'Retry Discovery'
+                      : discoveryState === 'timeout'
+                        ? 'Retry Discovery'
+                        : 'Start Discovery'}
             </button>
+            {(discoveryState === 'completed' ||
+              discoveryState === 'failed' ||
+              discoveryState === 'timeout') && (
+              <div
+                className={cn(
+                  'mt-4 px-4 py-2 rounded-xl border text-xs max-w-md',
+                  discoveryState === 'completed'
+                    ? 'bg-green-500/10 border-green-500/30 text-success'
+                    : 'bg-red-500/10 border-red-500/30 text-danger',
+                )}
+              >
+                {discoveryState === 'completed' ? (
+                  <span>Discovery completed — topology is being refreshed.</span>
+                ) : discoveryState === 'failed' ? (
+                  <span>Discovery failed. No network data was recorded.</span>
+                ) : (
+                  <span>Discovery timed out — no agent completed the scan. Verify the agent is online and network discovery is enabled.</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </GlassPanel>

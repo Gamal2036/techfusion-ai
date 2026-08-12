@@ -1022,4 +1022,67 @@ mod tests {
             "authorization: bearer device-token-abc"
         );
     }
+
+    #[tokio::test]
+    async fn test_pending_discovery_commands_send_bearer_header() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind listener");
+        let addr = listener.local_addr().expect("listener address");
+
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept connection");
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 1024];
+            loop {
+                let n = socket.read(&mut chunk).await.expect("read request");
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&buf).to_string();
+            let body = "[]";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+            socket.flush().await.expect("flush response");
+            request
+        });
+
+        let client = ApiClient::new(format!("http://{}", addr));
+        let result = client
+            .get_pending_discovery_commands("device-token-abc", "dev-123")
+            .await;
+        let request = server.await.expect("server task");
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty(), "expected empty discovery list");
+
+        assert!(
+            request.starts_with("GET /network/discovery/pending?deviceId=dev-123 HTTP/1.1"),
+            "unexpected request line: {}",
+            request.lines().next().unwrap_or_default()
+        );
+        let auth_header = request
+            .lines()
+            .find(|l| l.to_ascii_lowercase().starts_with("authorization:"))
+            .expect("pending-discovery request must carry an Authorization header");
+        assert_eq!(
+            auth_header.to_ascii_lowercase(),
+            "authorization: bearer device-token-abc"
+        );
+    }
 }

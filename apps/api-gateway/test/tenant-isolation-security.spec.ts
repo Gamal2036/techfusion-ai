@@ -256,6 +256,31 @@ describe('ORG-01B Tenant Isolation & Ingestion Security', () => {
       expect(res.status).toBe(401);
     });
 
+    it('rejects a user JWT on the agent-only pending route (Web must use the JWT read path)', async () => {
+      const userToken = await loginAs(A.email);
+      const res = await request(app.getHttpServer())
+        .get('/network/discovery/pending')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(res.status).toBe(401);
+    });
+
+    it('allows the user JWT Web read path (/network/scans) org-scoped for status', async () => {
+      const userToken = await loginAs(A.email);
+      await prisma.networkScan.create({
+        data: { orgId: orgA.id, deviceId: deviceA.id, status: 'pending' },
+      });
+      await prisma.networkScan.create({
+        data: { orgId: orgB.id, deviceId: deviceB.id, status: 'completed' },
+      });
+      const res = await request(app.getHttpServer())
+        .get('/network/scans?limit=20')
+        .set('Authorization', `Bearer ${userToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].orgId).toBe(orgA.id);
+      expect(res.body[0].status).toBe('pending');
+    });
+
     it('returns only Org A pending commands for Device A', async () => {
       await prisma.networkScan.create({ data: { orgId: orgA.id, deviceId: deviceA.id, status: 'pending' } });
       await prisma.networkScan.create({ data: { orgId: orgB.id, deviceId: deviceB.id, status: 'pending' } });

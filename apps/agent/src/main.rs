@@ -47,9 +47,14 @@ async fn main() -> anyhow::Result<()> {
     println!("  Interval:    {}s telemetry", config.interval_secs);
     println!("  Security:    {}s scan", config.security_interval_secs);
     println!("  Inventory:   {}s sync", config.inventory_interval_secs);
-    if config.network_discovery_enabled {
-        println!("  Network:     ENABLED");
-    }
+    println!(
+        "  Network:     {}",
+        if config.network_discovery_enabled {
+            "ENABLED"
+        } else {
+            "DISABLED (TF_NETWORK_DISCOVERY=false opt-out)"
+        }
+    );
     println!();
 
     tracing::info!("Pinging API at {}...", config.api_url);

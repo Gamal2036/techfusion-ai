@@ -21,6 +21,9 @@ WEB_COPY="$ROOT/apps/web/public/install-linux.sh"
 WEB_SUM="$ROOT/apps/web/public/install-linux.sh.sha256"
 WEB_DOWNLOAD_TS="$ROOT/apps/web/src/lib/agent-download.ts"
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
 FAILED=0
 check() {
   local desc="$1"; shift
@@ -75,6 +78,15 @@ check "installer bounds enrollment with a watchdog (no indefinite hang)" grep -q
 check "installer watchdog kill-on-timeout returns 124" grep -q 'return 124' "$INSTALLER"
 check "installer validates credential persisted after enroll" grep -q 'did not persist the device credential' "$INSTALLER"
 check "installer stops standalone agents before service start" grep -q 'pkill -x techfusion-agent' "$INSTALLER"
+
+# 4c. network discovery enablement (NET-01A) — default-on for V1, opt-out preserved
+DISC_FUNC_FILE="$TMP/resolve_network_discovery.sh"
+sed -n '/^resolve_network_discovery() {/,/^}/p' "$INSTALLER" > "$DISC_FUNC_FILE"
+check "installer defines resolve_network_discovery" [ -s "$DISC_FUNC_FILE" ]
+check "installer writes TF_NETWORK_DISCOVERY to agent.env" bash -c "sed -n '/cat > \"\$ENV_FILE\" <<EOF/,/^EOF$/p' '$INSTALLER' | grep -q 'TF_NETWORK_DISCOVERY=\${NETWORK_DISCOVERY}'"
+check "fresh install enables network discovery (default true)" bash -c "ENV_FILE='$TMP/fresh.env'; source '$DISC_FUNC_FILE'; [ \"\$(resolve_network_discovery)\" = 'true' ]"
+check "installer preserves explicit TF_NETWORK_DISCOVERY=false opt-out" bash -c "printf 'TF_NETWORK_DISCOVERY=false\n' > '$TMP/optout.env'; ENV_FILE='$TMP/optout.env'; source '$DISC_FUNC_FILE'; [ \"\$(resolve_network_discovery)\" = 'false' ]"
+check "installer preserves explicit TF_NETWORK_DISCOVERY=true" bash -c "printf 'TF_NETWORK_DISCOVERY=true\n' > '$TMP/on.env'; ENV_FILE='$TMP/on.env'; source '$DISC_FUNC_FILE'; [ \"\$(resolve_network_discovery)\" = 'true' ]"
 
 # 4b. uninstall contract
 check "uninstaller stops the service" grep -q 'systemctl stop techfusion-agent' "$UNINSTALLER"

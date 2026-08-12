@@ -17,6 +17,13 @@ fn jitter_offset(base_secs: u64) -> Duration {
     Duration::from_secs(offset.min(jitter_secs))
 }
 
+/// Whether the agent should enter the network-discovery polling path (NET-01A).
+/// Polling requires a verified device identity and the discovery capability
+/// being enabled by configuration (TF_NETWORK_DISCOVERY).
+fn should_poll_network_discovery(device_id: &str, enabled: bool) -> bool {
+    !device_id.is_empty() && enabled
+}
+
 pub struct Agent {
     config: AgentConfig,
     client: ApiClient,
@@ -443,7 +450,7 @@ impl Agent {
         }
 
         self.poll_pending_security_scans().await;
-        if self.config.network_discovery_enabled {
+        if should_poll_network_discovery(&self.device_id, self.config.network_discovery_enabled) {
             self.poll_pending_discovery_commands().await;
         }
         self.poll_pending_inventory_commands().await;
@@ -653,5 +660,32 @@ impl Agent {
                 tracing::debug!("Failed to poll pending discovery commands: {}", e);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_should_poll_network_discovery_when_enabled_and_identity() {
+        assert!(
+            should_poll_network_discovery("dev-123", true),
+            "an enabled agent with a device identity must enter the discovery polling path"
+        );
+    }
+
+    #[test]
+    fn test_should_poll_network_discovery_respects_opt_out() {
+        assert!(
+            !should_poll_network_discovery("dev-123", false),
+            "TF_NETWORK_DISCOVERY=false must keep the agent out of the discovery polling path"
+        );
+    }
+
+    #[test]
+    fn test_should_poll_network_discovery_requires_device_identity() {
+        assert!(!should_poll_network_discovery("", true));
+        assert!(!should_poll_network_discovery("", false));
     }
 }

@@ -6,6 +6,32 @@
 > `docs/tech-lead/README.md` conventions. Cyber-security remains CLOSED and is
 > not touched.
 
+## 0a. NET-01A Status Update (2026-08-12) — IMPLEMENTED_PENDING_REAL_DEVICE_CERTIFICATION
+
+NET-01A implemented the P0 fix (NET-A01) on top of this audit: default-enabled
+real-device agent discovery **and** the Web-vs-Agent auth/polling boundary (Web
+confined to the user-JWT read path with honest terminal states). Evidence
+markers follow `docs/tech-lead/README.md`. No schema change; Cybersecurity and
+Enrollment/Device Identity are untouched.
+
+| Item | State after NET-01A | Evidence |
+|---|---|---|
+| Agent discovery default | **ENABLED** — `config.rs:80` `TF_NETWORK_DISCOVERY` default `true` | `VERIFIED_BY_CURRENT_CI` — `config::tests::test_network_discovery_default_enabled_with_env_opt_out` |
+| `TF_NETWORK_DISCOVERY=false` opt-out | preserved as an intentional opt-out | `VERIFIED_BY_CURRENT_CI` — same config test; installer `resolve_network_discovery` preserves an explicit value |
+| Installer (normal V1 install) | writes `TF_NETWORK_DISCOVERY=true` to `agent.env`; an explicit operator value in an existing `agent.env` is preserved across reinstall/upgrade | `VERIFIED_BY_CURRENT_CI` — `verify-linux-bootstrap.sh` §4c (fresh→`true`, explicit `false`→`false`, explicit `true`→`true`); `VERIFIED_THIS_RUN` config-rendering simulation |
+| Enabled agent polling path | an enabled agent with a device identity enters `poll_pending_discovery_commands` (`should_poll_network_discovery` gate) | `VERIFIED_BY_CURRENT_CI` — `agent::tests::test_should_poll_network_discovery_*` |
+| Discovery auth | unchanged — persistent device Bearer credential on pending/status/result | `VERIFIED_BY_CURRENT_CI` — `client::tests::test_pending_discovery_commands_send_bearer_header`; `DeviceTokenGuard` untouched |
+| **Web-vs-Agent auth boundary** | Web discovery trigger = user JWT + RBAC `POST /network/discovery/trigger`; Web status polling = user JWT read path `GET /network/scans?limit=50` ONLY — the Web NEVER calls the device-token routes (`/network/discovery/pending|status|result`); the device token is never exposed to the browser | `VERIFIED_BY_CURRENT_CI` — `test/tenant-isolation-security.spec.ts` F2 (user JWT rejected 401 on `/network/discovery/pending`; user JWT read path org-scoped 200) + `use-network-discovery.spec.ts` (asserts `/network/discovery/pending` is never requested) |
+| **Web discovery terminal states** | `useStartDiscovery` is a full terminal-state machine (`idle`/`triggering`/`running`/`completed`/`failed`/`timeout`) polling `/network/scans` for the active scan id; completed/failed stop polling, a 90 s backstop turns a stuck scan into an honest timeout state, 401/403 + unexpected failures stop polling with an honest error banner — never infinite loading; a stale in-flight status write can never overwrite a terminal state | `VERIFIED_BY_CURRENT_CI` — `use-network-discovery.spec.ts` (5 tests: completed / failed / timeout / 401 / trigger-denied) |
+| Network page UI | "Start Discovery" button now reflects `Starting... / Discovering... / Retry Discovery` and renders a terminal banner for completed/failed/timeout with the honest reason | `INFERRED_FROM_CODE` — `apps/web/src/app/dashboard/network/page.tsx` |
+| Enrollment / device identity | unchanged — no enrollment/identity code modified; installer identity-preservation paths untouched | `INFERRED_FROM_CODE` + `VERIFIED_BY_CURRENT_CI` (E1-E8 suite green in gate) |
+| Agent capability banner | `main.rs` prints `Network: ENABLED` / `DISABLED (TF_NETWORK_DISCOVERY=false opt-out)` unconditionally | `INFERRED_FROM_CODE` |
+
+The shipped real-device Agent path is now enabled by default and the Web is
+bounded to the user-JWT read path with a terminal-state machine; real-device
+manual certification (§18) is still REQUIRED before Network can be certified on
+a live host. **NET-A01 = IMPLEMENTED_PENDING_REAL_DEVICE_CERTIFICATION.**
+
 ## 1. Status
 
 **COMPLETE (audit).** The full Network path (Agent → API → DB → Web → real

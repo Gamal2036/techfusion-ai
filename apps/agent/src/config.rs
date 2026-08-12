@@ -77,7 +77,7 @@ struct CliArgs {
     #[arg(long, env = "TF_INVENTORY_INTERVAL", default_value = "7200")]
     inventory_interval_secs: u64,
 
-    #[arg(long, env = "TF_NETWORK_DISCOVERY", default_value = "false")]
+    #[arg(long, env = "TF_NETWORK_DISCOVERY", default_value = "true")]
     network_discovery_enabled: bool,
 
     #[arg(long, env = "TF_REMOTE_POLLING_INTERVAL", default_value = "15")]
@@ -209,5 +209,30 @@ mod tests {
             dir.file_name().and_then(|n| n.to_str()),
             Some(".techfusion")
         );
+    }
+
+    #[test]
+    fn test_network_discovery_default_enabled_with_env_opt_out() {
+        // NET-01A: the shipped V1 default is network discovery ENABLED, with
+        // TF_NETWORK_DISCOVERY=false remaining an explicit operator opt-out.
+        std::env::remove_var("TF_NETWORK_DISCOVERY");
+        let default: CliArgs = CliArgs::parse_from(["techfusion-agent"]);
+        assert!(
+            default.network_discovery_enabled,
+            "default TF_NETWORK_DISCOVERY must be enabled for V1"
+        );
+
+        std::env::set_var("TF_NETWORK_DISCOVERY", "true");
+        let on: CliArgs = CliArgs::parse_from(["techfusion-agent"]);
+        assert!(on.network_discovery_enabled);
+
+        std::env::set_var("TF_NETWORK_DISCOVERY", "false");
+        let off: CliArgs = CliArgs::parse_from(["techfusion-agent"]);
+        assert!(
+            !off.network_discovery_enabled,
+            "explicit TF_NETWORK_DISCOVERY=false must remain a valid opt-out"
+        );
+
+        std::env::remove_var("TF_NETWORK_DISCOVERY");
     }
 }

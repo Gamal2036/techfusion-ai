@@ -295,18 +295,42 @@ verify_agent_capabilities "$BIN_PATH" "installed agent"
 ok "Installed agent artifact matches the required TechFusion Agent lifecycle build"
 
 # ── 2. configuration ────────────────────────────────────────────────────────
+# Resolve the TF_NETWORK_DISCOVERY value for agent.env (NET-01A).
+# Network discovery is ENABLED by default for the V1 product. An explicit
+# operator value already present in an existing agent.env (e.g.
+# TF_NETWORK_DISCOVERY=false) is an intentional opt-out and is preserved
+# across reinstall/upgrade.
+resolve_network_discovery() {
+  local existing=""
+  if [ -f "$ENV_FILE" ]; then
+    existing="$(sed -n 's/^TF_NETWORK_DISCOVERY=//p' "$ENV_FILE" | tail -n 1 | tr -d '[:space:]')"
+  fi
+  if [ -n "$existing" ]; then
+    printf '%s\n' "$existing"
+  else
+    printf 'true\n'
+  fi
+}
+
 log "Writing configuration"
 mkdir -p "$CONFIG_DIR"
 umask 077
+NETWORK_DISCOVERY="$(resolve_network_discovery)"
 cat > "$ENV_FILE" <<EOF
 # TechFusion Agent configuration (managed by install-linux.sh)
 TF_API_URL=${API_URL}
 TF_STATE_DIR=${STATE_DIR}
 RUST_LOG=${LOG_LEVEL}
+TF_NETWORK_DISCOVERY=${NETWORK_DISCOVERY}
 EOF
 chown root:root "$ENV_FILE"
 chmod 0600 "$ENV_FILE"
 ok "Config written to ${ENV_FILE} (root-only, no enrollment token)"
+if [ "$NETWORK_DISCOVERY" = "true" ]; then
+  ok "Network discovery ENABLED (TF_NETWORK_DISCOVERY=true)"
+else
+  warn "Network discovery DISABLED (TF_NETWORK_DISCOVERY=${NETWORK_DISCOVERY}) — operator opt-out preserved"
+fi
 
 # ── 3. state directory + identity migration ─────────────────────────────────
 log "Preparing state directory"

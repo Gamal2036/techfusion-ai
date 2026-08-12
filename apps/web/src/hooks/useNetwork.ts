@@ -156,34 +156,182 @@ export function useNetworkScans() {
   return { scans, loading, refetch: fetchScans };
 }
 
-export function useStartDiscovery() {
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export type DiscoveryState =
+  | 'idle'
+  | 'triggering'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'timeout';
 
-  const startDiscovery = useCallback(async (deviceId?: string) => {
-    setStarting(true);
-    setError(null);
-    try {
-      const res = await apiFetch('/network/discovery/trigger', {
-        method: 'POST',
-        body: JSON.stringify({ deviceId }),
-      });
-      if (res.ok) {
-        return await res.json();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Failed to start discovery');
-        return null;
-      }
-    } catch (e) {
-      setError('Network error');
-      return null;
-    } finally {
-      setStarting(false);
+export const NETWORK_POLL_INTERVAL_MS = 5000;
+export const NETWORK_SCAN_TIMEOUT_MS = 90000;
+
+/**
+ * NET-01A: the Web discovery flow must NEVER touch the agent-only,
+ * DeviceTokenGuard-protected routes (/network/discovery/pending|status|result).
+ * Triggering uses the user JWT + RBAC POST /network/discovery/trigger, and the
+ * scan status is read exclusively through the user JWT read path
+ * GET /network/scans. Polling stops on a terminal state (completed/failed) or
+ * on the timeout backstop — never infinite loading.
+ */
+export function useStartDiscovery() {
+  const [state, setState] = useState<DiscoveryState>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [scanId, setScanId] = useState<string | null>(null);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollDeadlineRef = useRef(0);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
     }
+    pollDeadlineRef.current = 0;
   }, []);
 
-  return { starting, error, startDiscovery };
+  const checkStatus = useCallback(
+    async (activeId: string) => {
+      let res: Response;
+      try {
+        res = await apiFetch('/network/scans?limit=50');
+      } catch {
+        if (pollDeadlineRef.current === 0) return;
+        stopPolling();
+        setState('failed');
+        setError('Could not reach the network service. Please try again.');
+        return;
+      }
+      // Polling may have reached a terminal state (completed/failed/timeout)
+      // while this request was in flight; a stale status write must never
+      // overwrite the terminal state.
+      if (pollDeadlineRef.current === 0) return;
+
+      if (res.status === 401 || res.status === 403) {
+        stopPolling();
+        setState('failed');
+        setError(
+          'Network data access was denied (401/403). Please refresh your session and try again.',
+        );
+        return;
+      }
+      if (!res.ok) {
+        stopPolling();
+        setState('failed');
+        setError(`Could not verify the discovery status (HTTP ${res.status}). Please try again.`);
+        return;
+      }
+      let scans: any[];
+      try {
+        scans = await res.json();
+      } catch {
+        if (pollDeadlineRef.current === 0) return;
+        stopPolling();
+        setState('failed');
+        setError('Could not verify the discovery status. Please try again.');
+        return;
+      }
+      if (pollDeadlineRef.current === 0) return;
+
+      const active = Array.isArray(scans) ? scans.find((s: any) => s.id === activeId) : null;
+      if (active) {
+        setScanStatus(active.status);
+        if (active.status === 'completed' || active.status === 'failed') {
+          stopPolling();
+          setState(active.status);
+          if (active.status === 'failed' && active.error) {
+            setError(active.error);
+          }
+          return;
+        }
+      }
+      setState('running');
+    },
+    [stopPolling],
+  );
+
+  const startPolling = useCallback(
+    (activeId: string) => {
+      if (pollingRef.current) return;
+      pollDeadlineRef.current = Date.now() + NETWORK_SCAN_TIMEOUT_MS;
+      pollingRef.current = setInterval(() => {
+        if (Date.now() >= pollDeadlineRef.current) {
+          stopPolling();
+          setState('timeout');
+          setError(
+            'Discovery timed out — no agent completed the scan in time. Verify the agent is online and network discovery is enabled, then try again.',
+          );
+          return;
+        }
+        checkStatus(activeId);
+      }, NETWORK_POLL_INTERVAL_MS);
+    },
+    [checkStatus, stopPolling],
+  );
+
+  const startDiscovery = useCallback(
+    async (deviceId?: string) => {
+      if (state === 'triggering' || state === 'running') return null;
+      setError(null);
+      setScanStatus(null);
+      setState('triggering');
+      try {
+        const res = await apiFetch('/network/discovery/trigger', {
+          method: 'POST',
+          body: JSON.stringify({ deviceId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.scanId) {
+            setScanId(data.scanId);
+            setState('running');
+            startPolling(data.scanId);
+            return data;
+          }
+          setState('failed');
+          setError('Discovery was accepted but returned no scan id. Please try again.');
+          return null;
+        }
+        if (res.status === 401 || res.status === 403) {
+          setState('failed');
+          setError(
+            'Access to network discovery was denied (401/403). Please refresh your session and try again.',
+          );
+        } else {
+          setState('failed');
+          setError(`Could not start the discovery scan (HTTP ${res.status}). Please try again.`);
+        }
+        return null;
+      } catch {
+        setState('failed');
+        setError('Network error starting the discovery scan. Please try again.');
+        return null;
+      }
+    },
+    [state, startPolling],
+  );
+
+  const resetDiscovery = useCallback(() => {
+    stopPolling();
+    setState('idle');
+    setError(null);
+    setScanId(null);
+    setScanStatus(null);
+  }, [stopPolling]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
+  return {
+    state,
+    error,
+    scanId,
+    scanStatus,
+    starting: state === 'triggering',
+    discoveryPolling: state === 'triggering' || state === 'running',
+    startDiscovery,
+    resetDiscovery,
+  };
 }
 
 export function useLatencyCheck() {
