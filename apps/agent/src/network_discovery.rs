@@ -115,22 +115,12 @@ fn is_private_subnet(ip_str: &str, prefix_len: u32) -> bool {
 fn is_virtual_interface_name(iface: &str) -> bool {
     let name = iface.to_ascii_lowercase();
     let virtual_prefixes = [
-        "docker",
-        "br-",
-        "veth",
-        "virbr",
-        "podman",
-        "cni",
-        "cali",
-        "flannel",
-        "tunl",
-        "tap",
-        "kube",
-        "kind",
-        "weave",
-        "cbr",
+        "docker", "br-", "veth", "virbr", "podman", "cni", "cali", "flannel", "tunl", "tap",
+        "kube", "kind", "weave", "cbr",
     ];
-    virtual_prefixes.iter().any(|prefix| name.starts_with(prefix))
+    virtual_prefixes
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 fn select_primary_interface(
@@ -144,9 +134,10 @@ fn select_primary_interface(
             .iter()
             .filter(|(_, _, current_iface)| current_iface == &iface)
             .find(|(ip, cidr, _)| {
-                cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
-                    is_private_subnet(ip, prefix)
-                })
+                cidr.split('/')
+                    .nth(1)
+                    .and_then(|p| p.parse::<u32>().ok())
+                    .map_or(false, |prefix| is_private_subnet(ip, prefix))
             })
             .cloned()
         {
@@ -158,20 +149,25 @@ fn select_primary_interface(
         .iter()
         .filter(|(_, _, iface)| !is_virtual_interface_name(iface))
         .find(|(ip, cidr, _)| {
-            cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
-                is_private_subnet(ip, prefix)
-            })
+            cidr.split('/')
+                .nth(1)
+                .and_then(|p| p.parse::<u32>().ok())
+                .map_or(false, |prefix| is_private_subnet(ip, prefix))
         })
         .cloned()
     {
         return Some(entry);
     }
 
-    addresses.iter().find(|(ip, cidr, _)| {
-        cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
-            is_private_subnet(ip, prefix)
+    addresses
+        .iter()
+        .find(|(ip, cidr, _)| {
+            cidr.split('/')
+                .nth(1)
+                .and_then(|p| p.parse::<u32>().ok())
+                .map_or(false, |prefix| is_private_subnet(ip, prefix))
         })
-    }).cloned()
+        .cloned()
 }
 
 fn get_local_ip_and_subnet() -> Option<(String, String, String)> {
@@ -678,7 +674,11 @@ pub fn discover_network() -> DiscoveryResult {
     info!(
         "[DISCOVERY] ARP table contains {} entries with valid MACs on selected interface {}",
         arp_entries.len(),
-        if iface_name.is_empty() { "all" } else { &iface_name }
+        if iface_name.is_empty() {
+            "all"
+        } else {
+            &iface_name
+        }
     );
 
     for (ip, mac) in &arp_entries {
