@@ -112,15 +112,75 @@ fn is_private_subnet(ip_str: &str, prefix_len: u32) -> bool {
     false
 }
 
+fn is_virtual_interface_name(iface: &str) -> bool {
+    let name = iface.to_ascii_lowercase();
+    let virtual_prefixes = [
+        "docker",
+        "br-",
+        "veth",
+        "virbr",
+        "podman",
+        "cni",
+        "cali",
+        "flannel",
+        "tunl",
+        "tap",
+        "kube",
+        "kind",
+        "weave",
+        "cbr",
+    ];
+    virtual_prefixes.iter().any(|prefix| name.starts_with(prefix))
+}
+
+fn select_primary_interface(
+    default_route_iface: Option<&str>,
+    addresses: &[(String, String, String)],
+) -> Option<(String, String, String)> {
+    let default_iface = default_route_iface.filter(|iface| !is_virtual_interface_name(iface));
+
+    if let Some(iface) = default_iface {
+        if let Some(entry) = addresses
+            .iter()
+            .filter(|(_, _, current_iface)| current_iface == &iface)
+            .find(|(ip, cidr, _)| {
+                cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
+                    is_private_subnet(ip, prefix)
+                })
+            })
+            .cloned()
+        {
+            return Some(entry);
+        }
+    }
+
+    if let Some(entry) = addresses
+        .iter()
+        .filter(|(_, _, iface)| !is_virtual_interface_name(iface))
+        .find(|(ip, cidr, _)| {
+            cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
+                is_private_subnet(ip, prefix)
+            })
+        })
+        .cloned()
+    {
+        return Some(entry);
+    }
+
+    addresses.iter().find(|(ip, cidr, _)| {
+        cidr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).map_or(false, |prefix| {
+            is_private_subnet(ip, prefix)
+        })
+    }).cloned()
+}
+
 fn get_local_ip_and_subnet() -> Option<(String, String, String)> {
     let output = run_cmd(
         "ip",
         &["-4", "addr", "show", "scope", "global"],
         CMD_TIMEOUT,
     )?;
-    let mut last_ip = None;
-    let mut last_cidr = None;
-    let mut last_iface = None;
+    let mut addresses: Vec<(String, String, String)> = Vec::new();
 
     for line in output.lines() {
         let trimmed = line.trim();
@@ -136,20 +196,40 @@ fn get_local_ip_and_subnet() -> Option<(String, String, String)> {
                         .unwrap_or(32);
 
                     if is_private_subnet(ip, prefix) {
-                        last_ip = Some(ip.to_string());
-                        last_cidr = Some(cidr.to_string());
-                        last_iface = Some(parts.last().unwrap_or(&"").to_string());
+                        let iface = parts.last().copied().unwrap_or("").to_string();
+                        addresses.push((ip.to_string(), cidr.to_string(), iface));
                     }
                 }
             }
         }
     }
 
-    if let (Some(ip), Some(cidr), Some(iface)) = (last_ip, last_cidr, last_iface) {
-        Some((ip, cidr, iface))
-    } else {
-        None
+    let default_route_iface = get_default_route_interface();
+    select_primary_interface(default_route_iface.as_deref(), &addresses)
+}
+
+fn get_default_route_interface() -> Option<String> {
+    let output = run_cmd("ip", &["route", "show", "default"], CMD_TIMEOUT)?;
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 5 && parts[0] == "default" {
+            let iface = parts[4].to_string();
+            if !iface.is_empty() && !is_virtual_interface_name(&iface) {
+                return Some(iface);
+            }
+        }
     }
+
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 5 && parts[0] == "default" {
+            let iface = parts[4].to_string();
+            if !iface.is_empty() {
+                return Some(iface);
+            }
+        }
+    }
+    None
 }
 
 fn get_local_mac(interface: &str) -> Option<String> {
@@ -191,20 +271,37 @@ fn arp_table_lookup(ip: &str) -> Option<String> {
 }
 
 fn read_arp_table() -> Vec<(String, String)> {
+    read_arp_table_for_interface("")
+}
+
+fn read_arp_table_for_interface(iface: &str) -> Vec<(String, String)> {
     let mut entries = Vec::new();
     if let Ok(content) = std::fs::read_to_string("/proc/net/arp") {
         for line in content.lines().skip(1) {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 {
+            if parts.len() >= 6 {
                 let ip = parts[0].to_string();
                 let mac = parts[3].to_uppercase();
-                if mac != "00:00:00:00:00:00" && !mac.is_empty() {
+                let device = parts[5].to_string();
+                let matches_iface = iface.is_empty() || device == iface;
+                if matches_iface && mac != "00:00:00:00:00:00" && !mac.is_empty() {
                     entries.push((ip, mac));
                 }
             }
         }
     }
     entries
+}
+
+fn filter_arp_entries_for_interface(
+    entries: &[(String, String, String)],
+    iface: &str,
+) -> Vec<(String, String)> {
+    entries
+        .iter()
+        .filter(|(_, _, device)| iface.is_empty() || device == &iface)
+        .map(|(ip, mac, _)| (ip.clone(), mac.clone()))
+        .collect()
 }
 
 fn resolve_hostname(ip: &str) -> Option<String> {
@@ -573,10 +670,15 @@ pub fn discover_network() -> DiscoveryResult {
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     info!("[DISCOVERY] Reading ARP/neighbour table...");
-    let arp_entries = read_arp_table();
+    let arp_entries = if iface_name.is_empty() {
+        read_arp_table()
+    } else {
+        read_arp_table_for_interface(&iface_name)
+    };
     info!(
-        "[DISCOVERY] ARP table contains {} entries with valid MACs",
-        arp_entries.len()
+        "[DISCOVERY] ARP table contains {} entries with valid MACs on selected interface {}",
+        arp_entries.len(),
+        if iface_name.is_empty() { "all" } else { &iface_name }
     );
 
     for (ip, mac) in &arp_entries {
@@ -803,6 +905,74 @@ mod tests {
         assert!(is_private_subnet("10.0.0.0", 8));
         assert!(is_private_subnet("10.0.0.0", 12));
         assert!(!is_private_subnet("not-an-ip", 24));
+    }
+
+    #[test]
+    fn test_is_virtual_interface_name() {
+        assert!(is_virtual_interface_name("br-891a0f872e41"));
+        assert!(is_virtual_interface_name("docker0"));
+        assert!(is_virtual_interface_name("veth920a456"));
+        assert!(!is_virtual_interface_name("wlp3s0"));
+        assert!(!is_virtual_interface_name("eth0"));
+    }
+
+    #[test]
+    fn test_select_primary_interface_prefers_default_route_physical_interface() {
+        let addresses = vec![
+            (
+                "172.20.0.1".to_string(),
+                "172.20.0.1/16".to_string(),
+                "br-891a0f872e41".to_string(),
+            ),
+            (
+                "192.168.43.75".to_string(),
+                "192.168.43.75/24".to_string(),
+                "wlp3s0".to_string(),
+            ),
+        ];
+
+        let selected = select_primary_interface(Some("wlp3s0"), &addresses);
+        assert_eq!(selected.unwrap().2, "wlp3s0");
+    }
+
+    #[test]
+    fn test_select_primary_interface_excludes_virtual_interfaces_when_default_route_exists() {
+        let addresses = vec![
+            (
+                "172.18.0.1".to_string(),
+                "172.18.0.1/16".to_string(),
+                "br-5799a15aab96".to_string(),
+            ),
+            (
+                "192.168.43.75".to_string(),
+                "192.168.43.75/24".to_string(),
+                "wlp3s0".to_string(),
+            ),
+        ];
+
+        let selected = select_primary_interface(Some("wlp3s0"), &addresses);
+        assert_eq!(selected.unwrap().2, "wlp3s0");
+    }
+
+    #[test]
+    fn test_filter_arp_entries_for_interface_keeps_physical_neighbours_only() {
+        let entries = vec![
+            (
+                "172.20.0.2".to_string(),
+                "EA:7C:77:45:51:11".to_string(),
+                "br-891a0f872e41".to_string(),
+            ),
+            (
+                "192.168.43.1".to_string(),
+                "06:D6:AA:86:95:E5".to_string(),
+                "wlp3s0".to_string(),
+            ),
+        ];
+
+        let filtered = filter_arp_entries_for_interface(&entries, "wlp3s0");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0, "192.168.43.1");
+        assert_eq!(filtered[0].1, "06:D6:AA:86:95:E5");
     }
 
     #[test]
