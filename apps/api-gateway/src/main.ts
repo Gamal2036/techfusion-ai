@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import * as nodeCrypto from 'node:crypto';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -11,6 +12,14 @@ import { initTelemetry, shutdownTelemetry } from './telemetry';
 import { CorrelationIdInterceptor } from './common/correlation-id';
 import { RequestLoggingInterceptor } from './common/request-logging.interceptor';
 import { createStructuredLogger } from './common/structured-logger';
+
+if (typeof globalThis.crypto === 'undefined') {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: nodeCrypto,
+    writable: true,
+    configurable: true,
+  });
+}
 
 const logger = createStructuredLogger('Bootstrap');
 
