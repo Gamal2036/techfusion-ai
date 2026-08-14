@@ -15,10 +15,15 @@ import { createStructuredLogger } from './common/structured-logger';
 const logger = createStructuredLogger('Bootstrap');
 
 async function bootstrap() {
+  console.log('[BOOT_STEP_1] Bootstrap started');
   validateEnvironment();
   await initTelemetry();
 
-  const app = await NestFactory.create(AppModule, { rawBody: true, bodyParser: false });
+  console.log('[BOOT_STEP_2] Creating Nest application');
+
+const app = await NestFactory.create(AppModule);
+
+console.log('[BOOT_STEP_3] Nest application created');
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -53,10 +58,41 @@ async function bootstrap() {
   logger.log(`API Gateway listening on port ${port}`);
 }
 
-bootstrap().catch(async (err) => {
-  const errorType = err?.name || 'StartupError';
-  const errorMessage = err?.message || String(err);
-  logger.error(`Failed to start API Gateway: ${errorMessage}`, { errorType });
+bootstrap().catch(async (err: any) => {
+  const errorType = err?.name ?? 'StartupError';
+  const errorCode = err?.code ?? err?.cause?.code ?? 'UNKNOWN_ERROR';
+
+  let safeMessage = String(err?.message ?? 'No error message');
+
+  // إزالة أي قيم سرية قد تجعل Railway تخفي السجل بالكامل
+  for (const [key, value] of Object.entries(process.env)) {
+    if (
+      value &&
+      value.length >= 4 &&
+      /(URL|SECRET|TOKEN|PASSWORD|KEY)/i.test(key)
+    ) {
+      safeMessage = safeMessage.split(value).join(`[${key}_HIDDEN]`);
+    }
+  }
+
+  safeMessage = safeMessage
+    .replace(
+      /(?:postgres(?:ql)?|redis(?:s)?):\/\/[^\s]+/gi,
+      '[CONNECTION_URL_HIDDEN]',
+    )
+    .replace(
+      /(password|passwd|token|secret)=([^&\s]+)/gi,
+      '$1=[HIDDEN]',
+    );
+
+  console.error('[BOOT_ERROR]', {
+    errorType,
+    errorCode,
+    message: safeMessage,
+    causeName: err?.cause?.name ?? null,
+    causeCode: err?.cause?.code ?? null,
+  });
+
   await shutdownTelemetry();
   process.exit(1);
 });
