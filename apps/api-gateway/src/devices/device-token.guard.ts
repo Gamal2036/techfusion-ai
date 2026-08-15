@@ -49,6 +49,23 @@ export class DeviceTokenGuard implements CanActivate {
       throw new UnauthorizedException('Invalid device token');
     }
 
+    // DEV-REV-01 — Revoked credential contract. A revoked device's stored
+    // verifier is retained so the revoked credential stays identifiable, but
+    // while revokedAt is set it can never authenticate again. This branch
+    // always precedes the generic inactive check and produces the stable
+    // machine-readable DEVICE_CREDENTIAL_REVOKED code on every request that
+    // presents the old credential. No credential value is ever logged.
+    if (device.revokedAt) {
+      this.logger.warn(
+        `[DEV_DEVICE_AUTH] Rejected: device ${device.id} credential revoked`
+      );
+      throw new UnauthorizedException({
+        message: 'Device credential has been revoked',
+        error: 'Unauthorized',
+        code: 'DEVICE_CREDENTIAL_REVOKED',
+      });
+    }
+
     if (device.inactive) {
       if (process.env.NODE_ENV !== 'production') {
         this.logger.warn(
