@@ -48,6 +48,17 @@ describe('Web Security Configuration', () => {
       expect(csp.value).toContain("default-src 'self'");
     });
 
+    it('CSP connect-src allows the Railway API gateway and WebSocket origins', async () => {
+      const headers = await nextConfig.headers();
+      const csp = headers[0].headers.find((h: any) => h.key === 'Content-Security-Policy');
+      const connectSrc = csp.value.split('; ').find((d: string) => d.startsWith('connect-src'));
+      expect(connectSrc).toContain('https://techfusionapi-gateway-production.up.railway.app');
+      expect(connectSrc).toContain('wss://techfusionapi-gateway-production.up.railway.app');
+      expect(connectSrc).toContain("'self'");
+      expect(connectSrc).toContain('ws:');
+      expect(connectSrc).toContain('wss:');
+    });
+
     it('HSTS includes includeSubDomains and preload', async () => {
       const headers = await nextConfig.headers();
       const hsts = headers[0].headers.find((h: any) => h.key === 'Strict-Transport-Security');

@@ -1,4 +1,20 @@
 /** @type {import('next').NextConfig} */
+const apiUrl =
+  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+const wsUrl =
+  process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001';
+
+const connectSrc = [
+  "'self'",
+  apiUrl,
+  wsUrl,
+  'https://techfusionapi-gateway-production.up.railway.app',
+  'wss://techfusionapi-gateway-production.up.railway.app',
+  'ws:',
+  'wss:',
+];
+
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
   { key: 'X-Frame-Options', value: 'DENY' },
@@ -17,7 +33,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: https:",
-      "connect-src 'self' http://localhost:3001 ws://localhost:3001 ws: wss:",
+      `connect-src ${[...new Set(connectSrc)].join(' ')}`,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
