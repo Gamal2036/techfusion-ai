@@ -25,6 +25,7 @@ export interface LogContext {
   clientOrgId?: string;
   claimedDeviceId?: string;
   scanId?: string;
+  alreadyRevoked?: boolean;
 }
 
 export interface StructuredLogEntry {
@@ -54,6 +55,7 @@ export interface StructuredLogEntry {
   clientOrgId?: string;
   claimedDeviceId?: string;
   scanId?: string;
+  alreadyRevoked?: boolean;
 }
 
 const SENSITIVE_PATTERNS = [
@@ -151,6 +153,7 @@ function createLogEntry(level: string, message: string, context?: string, extra?
   if (extra?.clientOrgId) entry.clientOrgId = extra.clientOrgId;
   if (extra?.claimedDeviceId) entry.claimedDeviceId = extra.claimedDeviceId;
   if (extra?.scanId) entry.scanId = extra.scanId;
+  if (extra?.alreadyRevoked !== undefined) entry.alreadyRevoked = extra.alreadyRevoked;
   return entry;
 }
 

@@ -183,6 +183,15 @@ model Device {
   credentialVersion   Int      @default(1)
   lastRegisteredAt    DateTime @default(now())
   deviceTokenHash     String?  @unique
+  // Administrative/support credential revocation (DEV-REV-01). When set, the
+  // stored credential is revoked and EVERY request using it must fail with
+  // HTTP 401 / DEVICE_CREDENTIAL_REVOKED (DeviceTokenGuard). The verifier is
+  // intentionally retained so a revoked credential stays identifiable; it can
+  // never authenticate again while revokedAt is set. A same-organization
+  // re-enrollment (register-public) clears this state explicitly and issues a
+  // fresh credential — the old credential is never reactivated.
+  revokedAt     DateTime?
+  revokedReason String?
 
   org                 Organization              @relation(fields: [orgId], references: [id])
   metrics             DeviceMetric[]

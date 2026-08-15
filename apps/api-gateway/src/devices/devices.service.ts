@@ -10,6 +10,7 @@ import { QueueService } from '../queue/queue.service';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { getPlanConfig } from '../billing/plan-features';
+import { getRequestId, getCorrelationId } from '../common/correlation-id';
 
 const IDENTITY_VERSION = 1;
 const DEVICE_TOKEN_BYTES = 32;
@@ -144,12 +145,44 @@ export class DevicesService {
   ) {
     await this.enrichDeviceFromRegistration(deviceId, dto);
 
+    const prior = await this.prisma.device.findUnique({ where: { id: deviceId } });
+    const wasRevoked = !!prior?.revokedAt;
+
     const rotated = await this.rotateCredential(
       deviceId,
       orgId,
       'duplicate_detected',
       { reason: 'duplicate_registration' },
     );
+
+    if (wasRevoked) {
+      // DEV-REV-01 — duplicate-safe re-enrollment. An explicit same-org
+      // re-enrollment (fresh org enrollment token) brings the archived revoked
+      // row back to ACTIVE with a NEW independent credential. The old
+      // credential is never reactivated: rotateCredential already replaced its
+      // verifier above. Cross-org isolation is untouched — a different org gets
+      // its own new Device row via registerPublic's org-scoped lookup.
+      await this.prisma.device.update({
+        where: { id: deviceId },
+        data: { revokedAt: null, revokedReason: null, inactive: false },
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          orgId,
+          action: 'device_reenrolled',
+          targetId: deviceId,
+          details: {
+            deviceId,
+            organizationId: orgId,
+            action: 'device_reenrolled',
+            previousState: 'revoked',
+            newCredentialIssued: true,
+            requestId: getRequestId() ?? null,
+            correlationId: getCorrelationId() ?? null,
+          },
+        },
+      });
+    }
 
     const enrichedDevice = await this.prisma.device.findUnique({ where: { id: deviceId } });
 
@@ -266,7 +299,7 @@ export class DevicesService {
   async findByToken(token: string) {
     const tokenHash = this.hashToken(token);
     return this.prisma.device.findFirst({
-      where: { deviceTokenHash: tokenHash },
+      where: { deviceTokenHash: tokenHash, revokedAt: null },
     });
   }
 
