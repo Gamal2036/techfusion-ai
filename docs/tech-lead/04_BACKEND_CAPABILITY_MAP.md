@@ -17,6 +17,7 @@ Status: 2026-08-09. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 | MFA (TOTP) | ✅ | ✅ | User.mfa* | JWT | ✅ | ✅ | in auth suite | ✅ settings/account | FUNCTIONAL |
 | SSO | ✅ | ✅ | SsoConfig, User.sso* | `RequireFeature('sso')` for config; **login route is Public** | ✅ (slug→org) | ❌ none on login body | ❌ none | ❌ no UI | **CRITICAL FLAW** (see `07`) |
 | Account deletion | ✅ | ✅ | User, RefreshToken, org, invitations | JWT, `DELETE` confirm, SOLE_OWNER guard | ✅ | ✅ | ✅ `account-deletion.spec.ts` | ✅ settings/account | CERTIFIED |
+| Account profile (self-scoped) | ✅ | ✅ | User (safe fields only) | JWT, membership-authoritative; forged body `userId` ignored | ✅ (self only) | ✅ | ✅ `account-summary.spec.ts` | ✅ settings/account | FUNCTIONAL |
 | Organizations | ✅ | ✅ | Organization, OrganizationMember | JWT + perms + role rules | ✅ | ✅ | ✅ `organizations.spec.ts`, `organization-lifecycle.spec.ts` | ✅ | CERTIFIED |
 | Memberships/roles | ✅ | ✅ | OrganizationMember | role rules (Owner/Admin/Technician/Viewer) | ✅ | ✅ | ✅ `membership-authoritative.spec.ts`, `rbac-permissions.spec.ts` | ✅ team | CERTIFIED |
 | Invitations | ✅ | ✅ | OrganizationInvitation | role allowlist, token hash | ✅ | ✅ | ✅ `invitations.spec.ts` | ✅ team/invite | CERTIFIED |
@@ -44,7 +45,8 @@ Status: 2026-08-09. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 
 ## 3. Endpoint Inventory (representative; full route set in source)
 
-- **Auth**: `POST /auth/signup|login|verify-login|refresh|logout`; `POST /auth/mfa/enroll|verify`, `GET /auth/mfa/status`; `POST /auth/sso/login` (Public); `POST /account/deletion-preview|delete`.
+- **Auth**: `POST /auth/signup|login|verify-login|refresh|logout`; `POST /mfa/enroll|verify`, `GET /mfa/status`; `POST /auth/sso/login` (Public).
+- **Account**: `GET|PATCH /auth/account/summary` (self-scoped safe profile), `GET /auth/account/deletion-preview`, `DELETE /auth/account`.
 - **Orgs**: `GET|POST /organizations`; `GET|PATCH /organizations/:id`; `POST /organizations/:id/switch`; `GET /organizations/:id/members`; `PATCH|DELETE /organizations/:id/members/:userId`; `POST /organizations/:id/leave`; `POST|GET /organizations/:orgId/invitations`; `PATCH|DELETE|POST /organizations/:orgId/invitations/:id(/:resend)`; `GET|POST /invitations/:token`.
 - **Devices**: `POST /devices/register-public` (Public, enrollment token); `POST /devices/recover-credential` (Public, X-Org-Token); `POST /devices/metrics` (device token); `GET /devices`, `GET /devices/:id/latest|metrics|scores`.
 - **Enrollment**: `GET|POST /devices/enrollment-tokens`; `PATCH|DELETE /devices/enrollment-tokens/:id`; `GET /devices/enrollment-tokens/:id/audit`.

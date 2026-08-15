@@ -28,6 +28,7 @@ Status: 2026-08-09. **Nothing in this register was deleted or fixed during the d
 | T22 | Misc | Malformed leftover file at repo root: `tablish TechFusion V1 enterprise foundation and command center"` (untracked). | LOW | root listing |
 | T23 | Billing | `maxTeamMembers` / `maxAlertRules` unenforced. | MEDIUM | `09` |
 | T24 | Misc | `engines.node ">=18"` vs Node 22 pin; `forceExit` in test scripts (flakiness masking). | LOW | `package.json`, app manifests |
+| T25 | Account profile | **Deferred account capabilities — no backend support, surfaced honestly on `/dashboard/settings/account` as "not available in this release" (no fabricated controls).** Email verification status, avatar/profile photo, last-login, password change endpoint, session listing/revocation, and MFA enrollment/management UI on the account page are all absent (`User` has no email-verified/avatar/last-login fields; no password-change or session endpoints exist; MFA status is read-only via `GET /mfa/status`). Recorded as deferred per ACC-FOUND-01, never faked. | LOW | `prisma/schema.prisma` `User` (84-105), `src/auth`, `src/mfa`, `src/account`; `03` |
 
 ## 2. High-Risk TODO/FIXME Scan
 
