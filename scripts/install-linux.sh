@@ -272,7 +272,7 @@ verify_agent_capabilities() {
   started.
 
   Re-run with --release/--url pointing at the current certified release
-  (v1.0.0-agent-beta.4+), or with --binary <path> of a current build."
+  (v1.0.0-agent-beta.5+), or with --binary <path> of a current build."
     fi
   done
 }
@@ -397,7 +397,7 @@ elif [ -n "$ENROLL_TOKEN" ]; then
   This means the binary does not implement the one-shot enrollment contract
   (TF_ENROLL=true → register → exit) expected by this installer — for example it
   predates it. Re-run with --release/--url pointing at a current build
-  (v1.0.0-agent-beta.4+), or with --binary <path> of a current build."
+  (v1.0.0-agent-beta.5+), or with --binary <path> of a current build."
   fi
   if [ "$ENROLL_EXIT" -ne 0 ]; then
     die 5 "Enrollment failed. Check that the token is valid/unused/unexpired and the API is reachable."

@@ -68,7 +68,7 @@ Status: 2026-08-09. Root `/home/ge/techfusion-ai`. Monorepo (pnpm workspace + Tu
 | `install-linux.sh` / `uninstall-linux.sh` | agent systemd installer/uninstaller (v1.3.0) |
 | `enroll-device.sh` | enrollment helper |
 | `verify-linux-bootstrap.sh`, `verify-agent-systemd-unit.sh`, `verify-installer-arch-resolution.sh`, `verify-agent-release-assets.sh`, `test-installer-artifact-regression.sh`, `sync-installer-assets.sh` | release/installer verification |
-| `agent-release-config.sh` | single source of truth: `AGENT_RELEASE_TAG=v1.0.0-agent-beta.4` |
+| `agent-release-config.sh` | single source of truth: `AGENT_RELEASE_TAG=v1.0.0-agent-beta.5` |
 | `run-integration-tests.sh` | compose test infra + migrate deploy + jest |
 | `backup/` | legacy backup scripts (dir removed; artifacts remain in `backups/`) |
 

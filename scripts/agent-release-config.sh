@@ -14,11 +14,11 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # GitHub release tag (repo naming convention: v<major>.<minor>.<patch>-agent-<prerelease>).
-AGENT_RELEASE_TAG="v1.0.0-agent-beta.4"
+AGENT_RELEASE_TAG="v1.0.0-agent-beta.5"
 
 # Cargo package version of apps/agent/Cargo.toml. MUST equal the version that
 # `techfusion-agent --version` prints after the command name.
-AGENT_RELEASE_VERSION="1.0.0-beta.4"
+AGENT_RELEASE_VERSION="1.0.0-beta.5"
 
 # Release owner/repo + full release base URL used by the installer's
 # `--release` argument (per-architecture asset suffix is appended).

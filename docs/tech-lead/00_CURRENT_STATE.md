@@ -33,7 +33,7 @@ A working monorepo for a Linux-first device management + monitoring SaaS:
 - **apps/web** — Next.js 14 command center (real API wiring, WebSocket live alerts, polling).
 - **apps/api-gateway** — NestJS API (auth/RBAC/orgs/devices/enrollment/monitoring/alerts/network/inventory/security/KB/reporting/backups/remote-support/billing/AI/audit/admin).
 - **apps/worker** — BullMQ worker, 8 processors (monitoring sweep, alerts, backups, inventory, security, retention, KB embedding, report).
-- **apps/agent** — Rust (1.96.0) systemd Linux agent, `1.0.0-beta.4`, 78 tests, 17 verified endpoint call-sites.
+- **apps/agent** — Rust (1.96.0) systemd Linux agent, `1.0.0-beta.5`, 88 tests, 17 verified endpoint call-sites.
 - **packages/** — shared config, types, ui, utils.
 
 ## 4. Headline Findings (detail in referenced docs)

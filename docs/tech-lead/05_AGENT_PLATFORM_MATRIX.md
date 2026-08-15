@@ -1,6 +1,6 @@
 # 05 — Agent Platform Matrix
 
-Status: 2026-08-09. Rust agent `apps/agent`, version `1.0.0-beta.4`, toolchain 1.96.0. 78 in-source tests. All 17 agent→gateway call-sites verified against gateway controllers (`VERIFIED_THIS_RUN`).
+Status: 2026-08-15. Rust agent `apps/agent`, version `1.0.0-beta.5`, toolchain 1.96.0. All 17 agent→gateway call-sites verified against gateway controllers (`VERIFIED_THIS_RUN`).
 
 ## 1. Capability Matrix
 
@@ -56,4 +56,4 @@ Certified real-device path exists (`docs/v1/V1-STAGE-00B-R2_*`, `V1-AGENT-E2E-02
 
 ## 5. Version Reporting
 
-- `agent_version = env!("CARGO_PKG_VERSION")` → `1.0.0-beta.4`; sent only at registration (`Device.agentVersion`). No `/agent-version` endpoint and no version in headers/metrics — server never learns of upgrades after enrollment.
+- `agent_version = env!("CARGO_PKG_VERSION")` → `1.0.0-beta.5`; sent only at registration (`Device.agentVersion`). No `/agent-version` endpoint and no version in headers/metrics — server never learns of upgrades after enrollment.

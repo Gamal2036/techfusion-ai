@@ -34,7 +34,7 @@ run_resolution() { # <arch>
     ok()  { :; }
     die() { echo "die: $*" >&2; exit "${1:-1}"; }
     uname() { printf "%s\n" "$MOCK_UNAME_M"; }
-    RELEASE_BASE_URL="https://downloads.example/releases/download/v1.0.0-agent-beta.4"
+    RELEASE_BASE_URL="https://downloads.example/releases/download/v1.0.0-agent-beta.5"
     '"$BLOCK"'
     printf "%s\n" "$BINARY_URL"
   ' 2>&1)" || code=$?
@@ -71,10 +71,10 @@ echo "────────────────────────�
 [ -n "$BLOCK" ] || { echo "ERROR: could not extract arch block from $INSTALLER" >&2; exit 1; }
 ok "extracted arch/resolution block verbatim from installer"
 
-run_resolution "x86_64" "https://downloads.example/releases/download/v1.0.0-agent-beta.4/techfusion-agent-linux-x86_64"
-run_resolution "amd64"  "https://downloads.example/releases/download/v1.0.0-agent-beta.4/techfusion-agent-linux-x86_64"
-run_resolution "aarch64" "https://downloads.example/releases/download/v1.0.0-agent-beta.4/techfusion-agent-linux-aarch64"
-run_resolution "arm64"  "https://downloads.example/releases/download/v1.0.0-agent-beta.4/techfusion-agent-linux-aarch64"
+run_resolution "x86_64" "https://downloads.example/releases/download/v1.0.0-agent-beta.5/techfusion-agent-linux-x86_64"
+run_resolution "amd64"  "https://downloads.example/releases/download/v1.0.0-agent-beta.5/techfusion-agent-linux-x86_64"
+run_resolution "aarch64" "https://downloads.example/releases/download/v1.0.0-agent-beta.5/techfusion-agent-linux-aarch64"
+run_resolution "arm64"  "https://downloads.example/releases/download/v1.0.0-agent-beta.5/techfusion-agent-linux-aarch64"
 run_resolution "riscv64" "exit:2"
 run_scheme_fail "ftp://downloads.example/artifacts"
 

@@ -120,7 +120,7 @@ check "capability list overridable via TF_REQUIRED_AGENT_CAPABILITIES" grep -q '
 # 5c. single-source-of-truth release consistency (V1-STAGE-00B-R1)
 check "web dashboard default release URL uses certified tag" grep -q "releases/download/${AGENT_RELEASE_TAG}" "$WEB_DOWNLOAD_TS"
 check "web required capabilities match certified release" grep -q "reset-identity" "$WEB_DOWNLOAD_TS" && grep -q "identity-status" "$WEB_DOWNLOAD_TS"
-check "installer stale-artifact message references certified release" grep -q 'v1.0.0-agent-beta.4+' "$INSTALLER"
+check "installer stale-artifact message references certified release" grep -q 'v1.0.0-agent-beta.5+' "$INSTALLER"
 
 # 6. web-served asset integrity
 check "web copy matches scripts/install-linux.sh" cmp -s "$INSTALLER" "$WEB_COPY"

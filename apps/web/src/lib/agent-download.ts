@@ -20,7 +20,7 @@
  */
 
 export const DEFAULT_AGENT_RELEASE_BASE_URL =
-  'https://github.com/Gamal2036/techfusion-ai/releases/download/v1.0.0-agent-beta.4';
+  'https://github.com/Gamal2036/techfusion-ai/releases/download/v1.0.0-agent-beta.5';
 
 /**
  * Lifecycle commands the certified agent build MUST expose. The installer and
