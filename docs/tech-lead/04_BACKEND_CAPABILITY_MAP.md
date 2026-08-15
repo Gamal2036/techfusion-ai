@@ -32,7 +32,7 @@ Status: 2026-08-09. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 | Knowledge Base | ✅ | ✅ | KbArticle, KbEmbedding | `SOFTWARE_VIEW/MANAGE` | ✅ | ✅ | ✅ | ✅ knowledge-base | FUNCTIONAL (embeddings pipeline produces mock vectors — `06`) |
 | Audit logs | ✅ | ✅ | AuditLog (immutable) | `AUDIT_VIEW` | ✅ | ✅ | ✅ | ❌ no page | FUNCTIONAL |
 | Billing | ✅ | ✅ | Subscription, Invoice, Organization.plan | `BILLING_VIEW/MANAGE`; webhook public (Stripe sig) | ✅ | ✅ | ✅ `billing.integration` (in lifecycle suite) | ✅ billing | FUNCTIONAL → CERTIFY after entitlement gap closure (`09`) |
-| Admin | ✅ | ✅ | User/org | admin guard/role | ✅ | ✅ | partial | ❌ no page | FUNCTIONAL |
+| Admin | ✅ | ✅ | User/org + Device | admin guard/role + `SupportAdminGuard` (hash-only internal boundary for device recovery) | ✅ | ✅ | ✅ `device-revocation-recovery.spec.ts` | ❌ no page | FUNCTIONAL |
 | AI (chat/troubleshoot/embed) | ✅ | ✅ | AiProviderConfig, AiUsageLog, AiConversation/Message | JWT + org settings + AI quota | ✅ | ✅ | ✅ | ✅ ai-chat | FUNCTIONAL (embed endpoint missing — `06`) |
 | Reporting | ✅ | ✅ | Report/Template/Schedule | `REPORTS_*`, `RequireFeature('customBranding')`; download HMAC-signed public | ✅ | ✅ | ✅ | ✅ reports | CERTIFIED (report queue dead — `06`) |
 | Retention | ✅ | ✅ | DataRetentionPolicy | `retention_*` perms | ✅ | ✅ | partial | ❌ no UI | FUNCTIONAL |
