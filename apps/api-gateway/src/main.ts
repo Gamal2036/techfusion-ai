@@ -30,7 +30,15 @@ async function bootstrap() {
 
   console.log('[BOOT_STEP_2] Creating Nest application');
 
-const app = await NestFactory.create(AppModule);
+// NestFactory.create() auto-registers body-parser.json/urlencoded during init()
+// (bodyParser defaults to true). main.ts already registers express.json() and
+// express.urlencoded() explicitly below, and NestJS's isMiddlewareApplied()
+// dedupe by handle.name can be defeated (e.g. OpenTelemetry's express
+// instrumentation renames wrapped middleware handles to "patched"), causing
+// two body parsers to consume the same request stream and the second one to
+// throw "stream is not readable". Disable the automatic parser so main.ts
+// remains the single, explicit body-parsing path.
+const app = await NestFactory.create(AppModule, { bodyParser: false });
 
 console.log('[BOOT_STEP_3] Nest application created');
   app.use(express.json({ limit: '10mb' }));
