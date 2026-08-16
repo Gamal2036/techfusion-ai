@@ -6,7 +6,7 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 
 - Guard order: `ThrottlerGuard` → `CombinedAuthGuard` (JWT → membership-authoritative) → `PermissionsGuard` (≈40 `domain:action` keys) → `PlanGuard`/`RequireFeature`.
 - `Public()` decorator exempts routes; `DeviceTokenGuard` authenticates agents (SHA-256 vs `deviceTokenHash`, legacy plaintext fallback).
-- Rate limits (`src/config/rate-limits.ts`): signup 3/300 s, login 5/60 s, verify-login 10/60 s, refresh 5/60 s, MFA enroll/verify 5/60 s, metrics 120/60 s, security-report 20/60 s, inventory-report 20/60 s, discovery 10+30+30/60 s, register-public 10/60 s, recover-credential 5/60 s.
+- Rate limits (`src/config/rate-limits.ts`): signup 3/300 s, login 5/60 s, verify-login 10/60 s, refresh 5/60 s, MFA enroll/verify/disable/recovery-codes-generate/recovery-codes-regenerate 5/60 s, metrics 120/60 s, security-report 20/60 s, inventory-report 20/60 s, discovery 10+30+30/60 s, register-public 10/60 s, recover-credential 5/60 s.
 - Env validation (`src/config/env.validation.ts`): rejects placeholders, requires ≥32-char secrets in prod, `requireSecret` for JWT_SECRET/REFRESH in all envs, AI_ENCRYPTION_KEY/REPORT_URL_SECRET in prod.
 
 ## 2. Domain Matrix
@@ -14,7 +14,7 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 | Domain | Endpoints exist | Service | DB models | Authorization | Org isolation | Validation | Tests | Web consumer | Production readiness |
 |-------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | Auth (signup/login/logout/refresh) | ✅ | ✅ | User, RefreshToken, OrganizationMember | JWT, membership gate, throttles | ✅ | DTOs | ✅ `auth.spec.ts`, `session-refresh.spec.ts`, `slug-collision.spec.ts` | ✅ login/signup | CERTIFIED |
-| MFA (TOTP) | ✅ | ✅ | User.mfa* | JWT | ✅ | ✅ | `auth.spec.ts`, `mfa-security.spec.ts` (24 tests) | ✅ settings/account | CERTIFIED |
+| MFA (TOTP) | ✅ | ✅ | User.mfa* | JWT | ✅ | ✅ | `auth.spec.ts`, `mfa-security.spec.ts` (24 tests), `mfa-recovery.spec.ts` (22 tests) | ✅ settings/account | CERTIFIED |
 | SSO | ✅ | ✅ | SsoConfig, User.sso* | `RequireFeature('sso')` for config; **login route is Public** | ✅ (slug→org) | ❌ none on login body | ❌ none | ❌ no UI | **CRITICAL FLAW** (see `07`) |
 | Account deletion | ✅ | ✅ | User, RefreshToken, org, invitations | JWT, `DELETE` confirm, SOLE_OWNER guard | ✅ | ✅ | ✅ `account-deletion.spec.ts` | ✅ settings/account | CERTIFIED |
 | Account profile (self-scoped) | ✅ | ✅ | User (safe fields only) | JWT, membership-authoritative; forged body `userId` ignored | ✅ (self only) | ✅ | ✅ `account-summary.spec.ts` | ✅ settings/account | FUNCTIONAL |
@@ -70,3 +70,4 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 7. **Plaintext `Device.deviceToken` retained** alongside hash; legacy equality fallback in `findByToken`/guard (MEDIUM).
 8. **RLS inert** — app-layer isolation only (MEDIUM, `07`).
 9. **MFA secrets were stored as plaintext base32 — FIXED `ACC-SEC-02B1`**: now encrypted at rest (`enc:v1:` envelope, key `MASTER_KEY || AI_ENCRYPTION_KEY`); legacy plaintext rows readable + upgraded only after successful possession-proven verification; decryption fails closed; enroll/verify throttled 5/60 s (was: an unused `STRICT_RATE_LIMITS.mfa` constant); lifecycle deterministic (409 enroll/verify while enabled, 400 not-enrolled, pending re-enrollment allowed); events `mfa_enrollment_started`/`mfa_enabled`/`mfa_verification_failed`; 24-test suite (`10` T27, `14` D28).
+10. **MFA had no recovery/disable path — FIXED `ACC-SEC-02B2`**: operation-scoped re-authentication (`src/reauthentication/reauthentication.service.ts`, bcrypt vs `passwordHash`, identity from verified JWT only, deterministic 401 `'Current password is incorrect'`, no enumeration, event `reauthentication_failed`); recovery codes stored **hashed only** (`User.mfaBackupCodes` TEXT = JSON array of SHA-256, prefix `techfusion:mfa-recovery:v1:`, 10 × 16-char base32 grouped `XXXX-XXXX-XXXX-XXXX`, plaintext returned exactly once, `GET /mfa/recovery-codes/status` = `{generated, availableCount}` only); single-use enforced by atomic `SELECT … FOR UPDATE` consumption; `POST /mfa/disable` (throttled 5/60 s) requires password + valid TOTP or unused recovery code; `POST /auth/verify-login` accepts `recoveryCode` (mints tokens only after in-transaction consumption, rollback on failure); no schema change; 22-test suite (`14` D29).
