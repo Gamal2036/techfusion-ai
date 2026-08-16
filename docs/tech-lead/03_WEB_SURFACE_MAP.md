@@ -24,7 +24,7 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 | `/dashboard/ai-chat` | AI chat + troubleshooting | real | `POST /ai/troubleshoot` (SSE), `/ai/chat` | session + AI quota | loading/error/streaming | FUNCTIONAL | `useAiChat` |
 | `/dashboard/reports` | Reports + schedules | real | reports generate/list/download, schedules CRUD | session + `REPORTS_*` | loading/error/empty | FUNCTIONAL | `useReports`, tests `useReportSchedules.spec.ts`, `report-schedule-status.spec.ts` |
 | `/dashboard/settings` | Settings home | real | account/org mix | session | n/a | FUNCTIONAL | |
-| `/dashboard/settings/account` | Profile + security + deletion | real | account-client (change password, MFA, deletion preview/confirm) | session | loading/error | FUNCTIONAL | |
+| `/dashboard/settings/account` | Profile + security + org + deletion | real | `account-client` (summary `GET/PATCH /auth/account/summary`, MFA `GET /mfa/status`, deletion preview/confirm), `org-client` (`/organizations/current`), `auth-client` (session) | session | loading/error/retry per section | FUNCTIONAL | `account-page.spec.tsx` |
 | `/dashboard/settings/organization` | Org settings + roles | real | org-client (update org, manage members/roles) | session + org perms | loading/error | FUNCTIONAL | `organization-switcher.spec.tsx`, `org-client.spec.ts` |
 | `/dashboard/settings/enrollment` | Enrollment tokens + agent download | real | enrollment tokens CRUD, `GET /devices/enrollment-tokens`, agent-download | session + `DEVICES_ENROLL` | loading/error/empty | FUNCTIONAL | |
 | `/dashboard/team` | Team/invitations/members | real | org-client invitations/members | session + org perms | loading/error/empty | FUNCTIONAL | tests `team-page.spec.tsx`, `invitations.spec.ts` |
@@ -48,7 +48,7 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 
 - `auth-client.ts` — `apiFetch` wrapper (JWT + refresh rotation + retry), login/signup/logout/session.
 - `org-client.ts` — organizations CRUD/switch, members (update role/remove), invitations (create/list/revoke/resend/accept).
-- `account-client.ts` — profile, password, MFA, deletion preview/confirm.
+- `account-client.ts` — account summary (self-scoped `GET/PATCH /auth/account/summary`), MFA status (`GET /mfa/status`), deletion preview/confirm (`GET /auth/account/deletion-preview`, `DELETE /auth/account`). No password-change or session-management calls exist (capabilities deferred).
 - `socket-client.ts` — socket.io `/metrics` subscription with connection-state fallback to polling.
 - `permissions.ts` — frontend permission/role helpers.
 - `device-presence.ts` / `device-presence-state.ts` — presence thresholds + derivation (mirrored with backend; tests enforce parity).

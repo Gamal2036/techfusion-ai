@@ -26,6 +26,23 @@ export interface DeleteAccountResult {
   removedOrganizations: string[];
 }
 
+/**
+ * Safe profile fields returned by GET /auth/account/summary. The endpoint is
+ * self-scoped (authenticated server context only) and never returns credential
+ * material, MFA secrets, or SSO identity fields.
+ */
+export interface AccountSummary {
+  id: string;
+  email: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MfaStatus {
+  isMfaEnabled: boolean;
+}
+
 async function readError(res: Response): Promise<string> {
   const body = await res.json().catch(() => null);
   if (body?.message) return body.message;
@@ -39,6 +56,30 @@ export class AccountError extends Error {
     this.name = 'AccountError';
     this.status = status;
   }
+}
+
+/** GET /auth/account/summary — self-scoped safe profile fields. */
+export async function fetchAccountSummary(): Promise<AccountSummary> {
+  const res = await apiFetch('/auth/account/summary');
+  if (!res.ok) throw new AccountError(await readError(res), res.status);
+  return res.json();
+}
+
+/** PATCH /auth/account/summary — update the authenticated user's display name. */
+export async function updateDisplayName(displayName: string): Promise<AccountSummary> {
+  const res = await apiFetch('/auth/account/summary', {
+    method: 'PATCH',
+    body: JSON.stringify({ displayName }),
+  });
+  if (!res.ok) throw new AccountError(await readError(res), res.status);
+  return res.json();
+}
+
+/** GET /mfa/status — authoritative MFA status for the authenticated user. */
+export async function fetchMfaStatus(): Promise<MfaStatus> {
+  const res = await apiFetch('/mfa/status');
+  if (!res.ok) throw new AccountError(await readError(res), res.status);
+  return res.json();
 }
 
 /** GET /auth/account/deletion-preview — eligibility for account deletion. */
