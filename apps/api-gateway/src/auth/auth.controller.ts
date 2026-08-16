@@ -30,7 +30,7 @@ export class AuthController {
   @Throttle(throttle(10, 60000))
   @Post('verify-login')
   async verifyLogin(@Body() body: VerifyLoginDto) {
-    return this.authService.verifyLoginMfa(body.userId, body.token);
+    return this.authService.verifyLoginMfa(body.userId, body.token, body.recoveryCode);
   }
 
   @Public()

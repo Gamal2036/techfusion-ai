@@ -1,8 +1,10 @@
 import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
 import { createStructuredLogger } from '../common/structured-logger';
 import { decryptMfaSecret } from '../mfa/mfa-secret.util';
+import { RecoveryCodesService } from '../mfa/recovery-codes.service';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
@@ -41,6 +43,8 @@ function generateRefreshToken(): string {
 
 const MAX_SLUG_RETRIES = 10;
 
+type DbClient = PrismaService | Prisma.TransactionClient;
+
 export function normalizeSlug(input: string): string {
   let slug = input
     .toLowerCase()
@@ -58,6 +62,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private encryption: EncryptionService,
+    private recoveryCodes: RecoveryCodesService,
   ) {}
 
   async signup(input: SignupInput) {
@@ -148,10 +153,57 @@ export class AuthService {
     };
   }
 
-  async verifyLoginMfa(userId: string, token: string) {
+  /**
+   * ACC-SEC-02B2 — the MFA login challenge accepts a valid TOTP token OR a
+   * valid unused recovery code. The response contract is unchanged. A recovery
+   * code is consumed atomically inside the same transaction that mints the
+   * refresh token: it can never be spent on a failed login, and concurrent
+   * attempts can never reuse it. A recovery code never replaces the password —
+   * the password is verified in the login step before the challenge.
+   */
+  async verifyLoginMfa(userId: string, token?: string, recoveryCode?: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.isMfaEnabled || !user.mfaSecret) {
       throw new UnauthorizedException('MFA verification required');
+    }
+
+    const hasToken = typeof token === 'string' && token.length > 0;
+    const hasRecoveryCode = typeof recoveryCode === 'string' && recoveryCode.length > 0;
+
+    if (hasRecoveryCode && !hasToken) {
+      const membership = await this.requireMembership(user);
+      let tokens: { accessToken: string; refreshToken: string };
+      try {
+        tokens = await this.prisma.$transaction(async (tx) => {
+          const consumed = await this.recoveryCodes.consume(tx, userId, recoveryCode);
+          if (!consumed) {
+            throw new UnauthorizedException('Invalid MFA code');
+          }
+          return this.generateTokens(user.id, membership.orgId, membership.role, tx);
+        });
+      } catch (err) {
+        if (err instanceof UnauthorizedException) {
+          this.events.warn('mfa_verification_failed', { userId, reason: 'invalid_recovery_code' });
+        }
+        throw err;
+      }
+      this.events.log('mfa_recovery_code_used', { userId });
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          role: membership.role,
+          orgId: membership.orgId,
+        },
+        ...tokens,
+      };
+    }
+
+    if (!hasToken) {
+      // No usable second factor was supplied.
+      this.events.warn('mfa_verification_failed', { userId, reason: 'missing_second_factor' });
+      throw new UnauthorizedException('Invalid MFA code');
     }
 
     // The stored secret may be encrypted (enc:v1:) or a legacy plaintext
@@ -277,7 +329,7 @@ export class AuthService {
     return membership;
   }
 
-  private async generateTokens(userId: string, orgId: string, role: string) {
+  private async generateTokens(userId: string, orgId: string, role: string, db: DbClient = this.prisma) {
     const accessToken = jwt.sign(
       { sub: userId, orgId, role },
       JWT_SECRET(),
@@ -285,7 +337,7 @@ export class AuthService {
     );
 
     const refreshTokenStr = generateRefreshToken();
-    await this.prisma.refreshToken.create({
+    await db.refreshToken.create({
       data: {
         token: refreshTokenStr,
         userId,
