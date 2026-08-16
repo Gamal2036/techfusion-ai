@@ -5,6 +5,18 @@ export function throttle(limit: number, ttl: number) {
   return { default: { limit, ttl } };
 }
 
+/**
+ * Strict per-route throttle limit backed by STRICT_RATE_LIMITS.
+ *
+ * Deliberately NOT neutered in test mode (unlike throttle()): the MFA routes it
+ * decorates must be provably rate-limited in the test suite. Only the routes
+ * that reference this helper are affected; every other route keeps the
+ * test-mode 999999 limit.
+ */
+export function mfaThrottle() {
+  return { default: { limit: STRICT_RATE_LIMITS.mfa.limit, ttl: STRICT_RATE_LIMITS.mfa.ttl } };
+}
+
 export function getRateLimitConfig(): ThrottlerModuleOptions {
   const isProduction = process.env.NODE_ENV === 'production';
   const isTest = process.env.NODE_ENV === 'test';

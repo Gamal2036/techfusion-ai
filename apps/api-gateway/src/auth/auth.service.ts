@@ -1,5 +1,8 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EncryptionService } from '../encryption/encryption.service';
+import { createStructuredLogger } from '../common/structured-logger';
+import { decryptMfaSecret } from '../mfa/mfa-secret.util';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
@@ -50,8 +53,12 @@ export function normalizeSlug(input: string): string {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly events = createStructuredLogger('Auth');
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private encryption: EncryptionService,
+  ) {}
 
   async signup(input: SignupInput) {
     const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
@@ -147,13 +154,25 @@ export class AuthService {
       throw new UnauthorizedException('MFA verification required');
     }
 
+    // The stored secret may be encrypted (enc:v1:) or a legacy plaintext
+    // value. Decryption is transparent and fails closed: an unreadable secret
+    // denies login rather than ever being treated as the actual secret.
+    let plaintextSecret: string;
+    try {
+      plaintextSecret = decryptMfaSecret(this.encryption, user.mfaSecret);
+    } catch {
+      this.events.error('mfa_verification_failed', { userId, reason: 'secret_decryption_failed' });
+      throw new InternalServerErrorException('MFA verification unavailable');
+    }
+
     const verified = speakeasy.totp.verify({
-      secret: user.mfaSecret,
+      secret: plaintextSecret,
       encoding: 'base32',
       token,
     });
 
     if (!verified) {
+      this.events.warn('mfa_verification_failed', { userId, reason: 'invalid_token' });
       throw new UnauthorizedException('Invalid MFA code');
     }
 

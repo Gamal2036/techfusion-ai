@@ -7,7 +7,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Feature | WEB | API | DB | WORKER | AGENT | AUTH | RBAC | TESTS | LINUX | WIN | PLAN | STATUS | Blockers / Dependencies |
 |---------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
 | Authentication (JWT+refresh) | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
-| MFA (TOTP) | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | PRO | FUNCTIONAL | enrollment UI polish |
+| MFA (TOTP) | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | PRO | CERTIFIED (backend) | enrollment UI polish remains (T25); backend hardened `ACC-SEC-02B1`: secrets encrypted at rest (`enc:v1:`), legacy plaintext + upgrade-after-verify, fail-closed decrypt, enroll/verify throttled 5/60 s (deterministic 429), deterministic lifecycle, security events — `test/mfa-security.spec.ts` (24 tests) |
 | SSO | ❌ UI | ⚠️ login | ✅ | — | — | ⚠️ | ✅ | ✅ | — | — | PREMIUM | **DISABLED_SAFE** | fail-closed (501) until real IdP verification (`V1-STAGE-01-SUB-01`) |
 | Organizations | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
 | Membership + roles | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | — | — | FREE | CERTIFIED | — |
