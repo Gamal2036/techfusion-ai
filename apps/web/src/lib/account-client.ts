@@ -39,11 +39,7 @@ export interface AccountSummary {
   updatedAt: string;
 }
 
-export interface MfaStatus {
-  isMfaEnabled: boolean;
-}
-
-async function readError(res: Response): Promise<string> {
+export async function readError(res: Response): Promise<string> {
   const body = await res.json().catch(() => null);
   if (body?.message) return body.message;
   return `Request failed (${res.status})`;
@@ -71,13 +67,6 @@ export async function updateDisplayName(displayName: string): Promise<AccountSum
     method: 'PATCH',
     body: JSON.stringify({ displayName }),
   });
-  if (!res.ok) throw new AccountError(await readError(res), res.status);
-  return res.json();
-}
-
-/** GET /mfa/status — authoritative MFA status for the authenticated user. */
-export async function fetchMfaStatus(): Promise<MfaStatus> {
-  const res = await apiFetch('/mfa/status');
   if (!res.ok) throw new AccountError(await readError(res), res.status);
   return res.json();
 }

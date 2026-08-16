@@ -552,6 +552,163 @@ describe('LoginExperience — MFA flow', () => {
     expect(screen.getByLabelText('Password*')).toHaveValue('secret');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('switches to the recovery-code input and explains the option', async () => {
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+
+    expect(
+      screen.getByText(/enter one of your recovery codes/i),
+    ).toBeInTheDocument();
+    const recovery = screen.getByLabelText('Recovery code*');
+    expect(recovery).toHaveAttribute('placeholder', 'XXXX-XXXX-XXXX-XXXX');
+    expect(recovery).toHaveAttribute('autoComplete', 'off');
+    expect(recovery).toHaveAttribute('autoCapitalize', 'characters');
+    expect(recovery).toHaveAttribute('spellcheck', 'false');
+    expect(screen.getByRole('button', { name: /verify/i })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Verification code*')).not.toBeInTheDocument();
+  });
+
+  it('switches back to the authenticator code input', async () => {
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /use an authenticator code instead/i }),
+    );
+
+    expect(
+      screen.getByText(/enter the 6-digit code from your authenticator app/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Verification code*')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Recovery code*')).not.toBeInTheDocument();
+  });
+
+  it('blocks an invalid recovery code without calling the API', async () => {
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    await user.type(screen.getByLabelText('Recovery code*'), '1111-1111-1111-1111');
+    await user.click(screen.getByRole('button', { name: /verify/i }));
+
+    expect(
+      screen.getByText('Enter a valid recovery code (e.g. XXXX-XXXX-XXXX-XXXX).'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Recovery code*')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('submits the exact recovery-code verify-login payload', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ mfaRequired: true, userId: 'user-123' }), {
+        status: 200,
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1' }),
+        { status: 200 },
+      ),
+    );
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    await user.type(
+      screen.getByLabelText('Recovery code*'),
+      'abcd-efgh-ijkl-mnop',
+    );
+    await user.click(screen.getByRole('button', { name: /verify/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [url, init] = fetchMock.mock.calls[1];
+    expect(url).toBe('http://localhost:3001/auth/verify-login');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      userId: 'user-123',
+      recoveryCode: 'ABCDEFGHIJKLMNOP',
+    });
+    expect(JSON.parse(init.body)).not.toHaveProperty('token');
+    await waitFor(() =>
+      expect(mockSetTokens).toHaveBeenCalledWith('access-1', 'refresh-1'),
+    );
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/dashboard'));
+  });
+
+  it('clears any typed code when switching modes', async () => {
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    await user.type(
+      screen.getByLabelText('Recovery code*'),
+      'abcd-efgh-ijkl-mnop',
+    );
+    await user.click(
+      screen.getByRole('button', { name: /use an authenticator code instead/i }),
+    );
+
+    expect(screen.getByLabelText('Verification code*')).toHaveValue('');
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    expect(screen.getByLabelText('Recovery code*')).toHaveValue('');
+  });
+
+  it('resets to authenticator mode after "Use a different account"', async () => {
+    render(<LoginExperience />);
+    const user = await fillValidCredentials();
+    await reachMfaStep(user);
+
+    await user.click(
+      screen.getByRole('button', { name: /use a recovery code instead/i }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /use a different account/i }),
+    );
+
+    expect(
+      screen.getByRole('heading', { name: /welcome back/i }),
+    ).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ mfaRequired: true, userId: 'user-123' }), {
+        status: 200,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /verify your identity/i }),
+      ).toBeInTheDocument(),
+    );
+
+    expect(screen.getByLabelText('Verification code*')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Recovery code*')).not.toBeInTheDocument();
+  });
 });
 
 describe('LoginExperience — invitation continuation (V1-TEAM-01)', () => {

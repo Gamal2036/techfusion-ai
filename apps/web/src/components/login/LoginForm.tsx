@@ -7,7 +7,8 @@ import { Alert, Button, Card, Input } from '@techfusion/ui';
 import { CircleAlert, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { LoginLogo } from './LoginLogo';
 import { LoginPasswordField } from './LoginPasswordField';
-import { LoginMfaStep } from './LoginMfaStep';
+import { LoginMfaStep, type MfaLoginMode } from './LoginMfaStep';
+import { isValidRecoveryCode, normalizeRecoveryCode } from '@/lib/mfa-client';
 import { setTokens, getApiUrl } from '@/lib/auth-client';
 
 const API_URL = getApiUrl();
@@ -28,6 +29,16 @@ function validatePassword(value: string): string {
 function validateMfaCode(value: string): string {
   if (value.length !== 6) return 'Enter the 6-digit verification code.';
   return '';
+}
+
+function validateSecondFactor(value: string, mode: MfaLoginMode): string {
+  if (mode === 'recovery') {
+    if (!isValidRecoveryCode(value)) {
+      return 'Enter a valid recovery code (e.g. XXXX-XXXX-XXXX-XXXX).';
+    }
+    return '';
+  }
+  return validateMfaCode(value);
 }
 
 /**
@@ -67,6 +78,7 @@ export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaMode, setMfaMode] = useState<MfaLoginMode>('totp');
   const [mfaToken, setMfaToken] = useState('');
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [serverError, setServerError] = useState('');
@@ -113,9 +125,17 @@ export function LoginForm() {
     if (mfaError) setMfaError('');
   }
 
+  function handleMfaModeChange(mode: MfaLoginMode) {
+    setMfaMode(mode);
+    setMfaToken('');
+    setMfaError('');
+    setMfaTouched(false);
+    setServerError('');
+  }
+
   function handleMfaCodeBlur() {
     setMfaTouched(true);
-    setMfaError(validateMfaCode(mfaToken));
+    setMfaError(validateSecondFactor(mfaToken, mfaMode));
   }
 
   async function handleCredentialsSubmit(e: FormEvent) {
@@ -149,6 +169,10 @@ export function LoginForm() {
       const data = await res.json();
       if (data.mfaRequired) {
         setPendingUserId(data.userId);
+        setMfaMode('totp');
+        setMfaToken('');
+        setMfaError('');
+        setMfaTouched(false);
         setMfaRequired(true);
         return;
       }
@@ -167,7 +191,7 @@ export function LoginForm() {
     if (!pendingUserId) return;
     setServerError('');
 
-    const codeError = validateMfaCode(mfaToken);
+    const codeError = validateSecondFactor(mfaToken, mfaMode);
     setMfaError(codeError);
     setMfaTouched(true);
     if (codeError) {
@@ -178,10 +202,16 @@ export function LoginForm() {
     setLoading(true);
     let status: number | null = null;
     try {
+      const body: Record<string, string> = { userId: pendingUserId };
+      if (mfaMode === 'recovery') {
+        body.recoveryCode = normalizeRecoveryCode(mfaToken);
+      } else {
+        body.token = mfaToken;
+      }
       const res = await fetch(`${API_URL}/auth/verify-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: pendingUserId, token: mfaToken }),
+        body: JSON.stringify(body),
       });
       status = res.status;
       if (!res.ok) {
@@ -202,6 +232,7 @@ export function LoginForm() {
   function handleUseDifferentAccount() {
     setMfaRequired(false);
     setPendingUserId(null);
+    setMfaMode('totp');
     setMfaToken('');
     setMfaError('');
     setMfaTouched(false);
@@ -232,7 +263,9 @@ export function LoginForm() {
               Verify your identity
             </h1>
             <p className="mt-1.5 text-sm text-text-secondary">
-              Enter the 6-digit code from your authenticator app.
+              {mfaMode === 'recovery'
+                ? 'Enter one of your recovery codes.'
+                : 'Enter the 6-digit code from your authenticator app.'}
             </p>
           </>
         ) : (
@@ -267,6 +300,8 @@ export function LoginForm() {
       {mfaRequired ? (
         <LoginMfaStep
           code={mfaToken}
+          mode={mfaMode}
+          onModeChange={handleMfaModeChange}
           onCodeChange={handleMfaCodeChange}
           onCodeBlur={handleMfaCodeBlur}
           error={mfaTouched ? mfaError : undefined}
