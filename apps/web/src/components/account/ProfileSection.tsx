@@ -11,6 +11,7 @@ import {
 } from '@techfusion/ui';
 import { Copy, Check, Loader2, Pencil, X, UserCog } from 'lucide-react';
 import { updateDisplayName, type AccountSummary } from '@/lib/account-client';
+import { copyText } from '@/lib/clipboard';
 
 interface ProfileSectionProps {
   summary: AccountSummary | null;
@@ -102,12 +103,10 @@ export function ProfileSection({
 
   const copyAccountId = useCallback(async () => {
     if (!summary) return;
-    try {
-      await navigator.clipboard.writeText(summary.id);
+    const ok = await copyText(summary.id);
+    if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard unavailable (non-secure context): no action, no false success.
     }
   }, [summary]);
 

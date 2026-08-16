@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  fetchAccountSummary,
-  fetchMfaStatus,
-  type AccountSummary,
-  type MfaStatus,
-} from '@/lib/account-client';
+import { fetchAccountSummary, type AccountSummary } from '@/lib/account-client';
+import { useAccountSection } from '@/lib/account-sections';
 import { useCurrentOrganization } from '@/hooks/useCurrentOrganization';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { AccountSectionNav } from '@/components/account/AccountSectionNav';
 import { ProfileSection } from '@/components/account/ProfileSection';
 import { SecuritySection } from '@/components/account/SecuritySection';
 import { OrganizationSection } from '@/components/account/OrganizationSection';
@@ -19,45 +16,26 @@ export default function AccountSettingsPage() {
   const reducedMotion = useReducedMotion();
   const { org, loading: orgLoading, error: orgError, refresh: refreshOrg } = useCurrentOrganization();
   const [summary, setSummary] = useState<AccountSummary | null>(null);
-  const [mfa, setMfa] = useState<MfaStatus | null>(null);
   const [summaryError, setSummaryError] = useState('');
-  const [mfaError, setMfaError] = useState('');
   const [loading, setLoading] = useState(true);
+  const activeSection = useAccountSection();
 
-  const load = useCallback(async () => {
+  const loadSummary = useCallback(async () => {
     setLoading(true);
     setSummaryError('');
-    setMfaError('');
-    const [summaryResult, mfaResult] = await Promise.allSettled([
-      fetchAccountSummary(),
-      fetchMfaStatus(),
-    ]);
-    if (summaryResult.status === 'fulfilled') {
-      setSummary(summaryResult.value);
-    } else {
+    try {
+      setSummary(await fetchAccountSummary());
+    } catch (e) {
       setSummary(null);
-      setSummaryError(
-        summaryResult.reason instanceof Error
-          ? summaryResult.reason.message
-          : 'Failed to load profile',
-      );
+      setSummaryError(e instanceof Error ? e.message : 'Failed to load profile');
+    } finally {
+      setLoading(false);
     }
-    if (mfaResult.status === 'fulfilled') {
-      setMfa(mfaResult.value);
-    } else {
-      setMfa(null);
-      setMfaError(
-        mfaResult.reason instanceof Error
-          ? mfaResult.reason.message
-          : 'Failed to load security status',
-      );
-    }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadSummary();
+  }, [loadSummary]);
 
   return (
     <div className="space-y-6">
@@ -72,24 +50,34 @@ export default function AccountSettingsPage() {
         </p>
       </motion.div>
 
-      <ProfileSection
-        summary={summary}
-        loading={loading}
-        error={summaryError || null}
-        onRetry={load}
-        onUpdated={(updated) => setSummary(updated)}
-      />
+      <AccountSectionNav active={activeSection} />
 
-      <SecuritySection mfa={mfa} loading={loading} error={mfaError} onRetry={load} />
+      <section id="profile" className="scroll-mt-6">
+        <ProfileSection
+          summary={summary}
+          loading={loading}
+          error={summaryError || null}
+          onRetry={loadSummary}
+          onUpdated={setSummary}
+        />
+      </section>
 
-      <OrganizationSection
-        org={org}
-        loading={orgLoading}
-        error={orgError}
-        onRetry={refreshOrg}
-      />
+      <section id="security" className="scroll-mt-6">
+        <SecuritySection />
+      </section>
 
-      <DangerZone />
+      <section id="organization" className="scroll-mt-6">
+        <OrganizationSection
+          org={org}
+          loading={orgLoading}
+          error={orgError}
+          onRetry={refreshOrg}
+        />
+      </section>
+
+      <section id="danger" className="scroll-mt-6">
+        <DangerZone />
+      </section>
     </div>
   );
 }

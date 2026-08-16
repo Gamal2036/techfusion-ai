@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Button, GlassPanel } from '@techfusion/ui';
 import {
   Trash2,
@@ -8,6 +9,7 @@ import {
   AlertTriangle,
   Shield,
   Check,
+  Settings2,
 } from 'lucide-react';
 import {
   fetchDeletionPreview,
@@ -187,6 +189,15 @@ export function DangerZone() {
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             Assign another Owner first, then return here to delete your account.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {preview?.blockers.map((blocker) => (
+              <Button key={blocker.organizationId} variant="outline" size="sm" asChild>
+                <Link href="/dashboard/settings/organization">
+                  <Settings2 className="mr-1.5 h-3.5 w-3.5" /> Review {blocker.organizationName}
+                </Link>
+              </Button>
+            ))}
+          </div>
         </div>
       ) : eligible ? (
         <div className="space-y-3">

@@ -7,7 +7,7 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 | Route | Purpose | Data source | Key API | Auth/Org/RBAC | States | Status | Evidence |
 |-------|---------|-------------|---------|---------------|--------|--------|----------|
 | `/` | Landing/marketing page + hero3d | Static marketing (no API) | none | public | n/a | FUNCTIONAL (marketing) | `app/page.tsx`, `components/landing/hero3d` |
-| `/login` | Sign in | real | `POST /auth/login`, `/auth/verify-login` (MFA) | public | loading/error | FUNCTIONAL | `auth-client.ts`, tests `login-page.spec.tsx` |
+| `/login` | Sign in | real | `POST /auth/login`, `/auth/verify-login` (MFA TOTP **or** recovery code) | public | loading/error | FUNCTIONAL | `auth-client.ts`, tests `login-page.spec.tsx` (35, incl. recovery mode) |
 | `/signup` | Register | real | `POST /auth/signup` | public | loading/error/validation | FUNCTIONAL | tests `signup-page.spec.tsx` |
 | `/invite/[token]` | Accept org invitation | real | `GET/POST /invitations/:token` | public token | loading/error/success | FUNCTIONAL | `invite-page.spec.tsx` |
 | `/dashboard` | Command center | real | `GET /dashboard/summary`, WS `/metrics` alerts, `GET /backups/runs` | session + `MONITORING_VIEW` | loading/error/empty/stale | FUNCTIONAL | `components/command-center/CommandCenterPage`, `useCommandCenterData` |
@@ -24,7 +24,7 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 | `/dashboard/ai-chat` | AI chat + troubleshooting | real | `POST /ai/troubleshoot` (SSE), `/ai/chat` | session + AI quota | loading/error/streaming | FUNCTIONAL | `useAiChat` |
 | `/dashboard/reports` | Reports + schedules | real | reports generate/list/download, schedules CRUD | session + `REPORTS_*` | loading/error/empty | FUNCTIONAL | `useReports`, tests `useReportSchedules.spec.ts`, `report-schedule-status.spec.ts` |
 | `/dashboard/settings` | Settings home | real | account/org mix | session | n/a | FUNCTIONAL | |
-| `/dashboard/settings/account` | Profile + security + org + deletion | real | `account-client` (summary `GET/PATCH /auth/account/summary`, MFA `GET /mfa/status`, deletion preview/confirm), `org-client` (`/organizations/current`), `auth-client` (session) | session | loading/error/retry per section | FUNCTIONAL | `account-page.spec.tsx` |
+| `/dashboard/settings/account` | Profile + security + org + deletion | real | `account-client` (summary `GET/PATCH /auth/account/summary`, deletion preview/confirm), `mfa-client` (status/enroll/verify/disable/recovery-codes), `org-client` (`/organizations/current`), `auth-client` (session) | session | loading/error/retry per section | FUNCTIONAL | `account-page.spec.tsx` (27), `security-section.spec.tsx` (34) |
 | `/dashboard/settings/organization` | Org settings + roles | real | org-client (update org, manage members/roles) | session + org perms | loading/error | FUNCTIONAL | `organization-switcher.spec.tsx`, `org-client.spec.ts` |
 | `/dashboard/settings/enrollment` | Enrollment tokens + agent download | real | enrollment tokens CRUD, `GET /devices/enrollment-tokens`, agent-download | session + `DEVICES_ENROLL` | loading/error/empty | FUNCTIONAL | |
 | `/dashboard/team` | Team/invitations/members | real | org-client invitations/members | session + org perms | loading/error/empty | FUNCTIONAL | tests `team-page.spec.tsx`, `invitations.spec.ts` |
@@ -48,7 +48,9 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 
 - `auth-client.ts` — `apiFetch` wrapper (JWT + refresh rotation + retry), login/signup/logout/session.
 - `org-client.ts` — organizations CRUD/switch, members (update role/remove), invitations (create/list/revoke/resend/accept).
-- `account-client.ts` — account summary (self-scoped `GET/PATCH /auth/account/summary`), MFA status (`GET /mfa/status`), deletion preview/confirm (`GET /auth/account/deletion-preview`, `DELETE /auth/account`). No password-change or session-management calls exist (capabilities deferred).
+- `account-client.ts` — account summary (self-scoped `GET/PATCH /auth/account/summary`), deletion preview/confirm (`GET /auth/account/deletion-preview`, `DELETE /auth/account`). No password-change or session-management calls exist (capabilities deferred).
+- `mfa-client.ts` — typed MFA + recovery client: `GET /mfa/status`, `POST /mfa/enroll`, `POST /mfa/verify`, `POST /mfa/disable`, `POST /mfa/recovery-codes/generate|regenerate`, `GET /mfa/recovery-codes/status`; recovery/TOTP normalization + validation helpers mirroring the backend alphabet (A-Z2-7, `XXXX-XXXX-XXXX-XXXX`). `mfa-errors.ts` maps errors to calm copy (backend text only for 400/401/403/404/409).
+- `clipboard.ts` — `copyText` helper (silent degradation in non-secure contexts), used by the MFA dialogs and Profile Account-ID copy.
 - `socket-client.ts` — socket.io `/metrics` subscription with connection-state fallback to polling.
 - `permissions.ts` — frontend permission/role helpers.
 - `device-presence.ts` / `device-presence-state.ts` — presence thresholds + derivation (mirrored with backend; tests enforce parity).
