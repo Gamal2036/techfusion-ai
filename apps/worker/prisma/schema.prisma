@@ -149,13 +149,31 @@ model OrganizationInvitation {
 
 model RefreshToken {
   id        String    @id @default(uuid())
+  // SHA-256 verifier of the opaque refresh token (format rt:v1:<sha256-hex>).
+  // Legacy plaintext values remain readable through a controlled compatibility
+  // path and are upgraded to verifier-only storage on the next successful
+  // refresh (ACC-SEC-02D2A).
   token     String    @unique
+  // Stable, non-secret session identity that survives the full refresh-token
+  // rotation chain. NOT unique: multiple historical (revoked) rows in one
+  // rotation chain share it. Never accepted from a client and never grants
+  // authentication by itself.
+  sessionId String
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   orgId     String
   expiresAt DateTime
   createdAt DateTime  @default(now())
+  // Truthful server-observed session metadata (ACC-SEC-02D2A). deviceName is
+  // reserved for a future client-declared value and is never fabricated.
+  lastUsedAt DateTime?
+  ipAddress  String?
+  userAgent  String?
+  deviceName String?
   revokedAt DateTime?
+
+  @@index([userId, revokedAt])
+  @@index([userId, sessionId])
 }
 
 model Device {

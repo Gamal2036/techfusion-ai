@@ -8,6 +8,7 @@ import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
+import { hashRefreshToken } from '../src/auth/refresh-token.util';
 
 const JWT_SECRET = () => {
   const secret = process.env.JWT_SECRET;
@@ -232,7 +233,8 @@ describe('TechFusion API (integration)', () => {
       const expiredToken = 'expired-' + Math.random().toString(36);
       await prisma.refreshToken.create({
         data: {
-          token: expiredToken,
+          token: hashRefreshToken(expiredToken),
+          sessionId: 'session-expired-test',
           userId: user!.id,
           orgId: user!.orgId,
           expiresAt: new Date(Date.now() - 1000),

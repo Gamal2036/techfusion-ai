@@ -5,6 +5,7 @@ import { EncryptionService } from '../encryption/encryption.service';
 import { createStructuredLogger } from '../common/structured-logger';
 import { decryptMfaSecret } from '../mfa/mfa-secret.util';
 import { RecoveryCodesService } from '../mfa/recovery-codes.service';
+import { generateRefreshToken, hashRefreshToken } from './refresh-token.util';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
@@ -37,8 +38,24 @@ interface LoginInput {
   password: string;
 }
 
-function generateRefreshToken(): string {
-  return crypto.randomBytes(48).toString('hex');
+/**
+ * Truthful server-observed session metadata (ACC-SEC-02D2A). Values are
+ * captured from the request (server-observed IP, User-Agent header with a
+ * strict maximum length) and are never accepted from a request body.
+ * deviceName is reserved for a future client-declared value and is never
+ * fabricated.
+ */
+export interface SessionMetadata {
+  ipAddress?: string;
+  userAgent?: string;
+  deviceName?: string;
+}
+
+const MAX_USER_AGENT_LENGTH = 300;
+
+export function sanitizeUserAgent(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.slice(0, MAX_USER_AGENT_LENGTH);
 }
 
 const MAX_SLUG_RETRIES = 10;
@@ -65,7 +82,7 @@ export class AuthService {
     private recoveryCodes: RecoveryCodesService,
   ) {}
 
-  async signup(input: SignupInput) {
+  async signup(input: SignupInput, metadata?: SessionMetadata) {
     const existing = await this.prisma.user.findUnique({ where: { email: input.email } });
     if (existing) {
       throw new ConflictException('Email already in use');
@@ -105,7 +122,7 @@ export class AuthService {
         });
 
         this.logger.debug(`Signup complete with slug "${slug}"`);
-        const tokens = await this.generateTokens(result.user.id, result.org.id, result.user.role);
+        const tokens = await this.generateTokens(result.user.id, result.org.id, result.user.role, undefined, undefined, metadata);
         return {
           user: { id: result.user.id, email: result.user.email, displayName: result.user.displayName, role: result.user.role, orgId: result.org.id },
           ...tokens,
@@ -124,7 +141,7 @@ export class AuthService {
     throw lastError || new Error('Failed to generate unique slug');
   }
 
-  async login(input: LoginInput) {
+  async login(input: LoginInput, metadata?: SessionMetadata) {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
@@ -140,7 +157,7 @@ export class AuthService {
     }
 
     const membership = await this.requireMembership(user);
-    const tokens = await this.generateTokens(user.id, membership.orgId, membership.role);
+    const tokens = await this.generateTokens(user.id, membership.orgId, membership.role, undefined, undefined, metadata);
     return {
       user: {
         id: user.id,
@@ -161,7 +178,7 @@ export class AuthService {
    * attempts can never reuse it. A recovery code never replaces the password —
    * the password is verified in the login step before the challenge.
    */
-  async verifyLoginMfa(userId: string, token?: string, recoveryCode?: string) {
+  async verifyLoginMfa(userId: string, token?: string, recoveryCode?: string, metadata?: SessionMetadata) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.isMfaEnabled || !user.mfaSecret) {
       throw new UnauthorizedException('MFA verification required');
@@ -179,7 +196,7 @@ export class AuthService {
           if (!consumed) {
             throw new UnauthorizedException('Invalid MFA code');
           }
-          return this.generateTokens(user.id, membership.orgId, membership.role, tx);
+          return this.generateTokens(user.id, membership.orgId, membership.role, tx, undefined, metadata);
         });
       } catch (err) {
         if (err instanceof UnauthorizedException) {
@@ -229,7 +246,7 @@ export class AuthService {
     }
 
     const membership = await this.requireMembership(user);
-    const tokens = await this.generateTokens(user.id, membership.orgId, membership.role);
+    const tokens = await this.generateTokens(user.id, membership.orgId, membership.role, undefined, undefined, metadata);
     return {
       user: {
         id: user.id,
@@ -242,11 +259,24 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string) {
-    const stored = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
+  async refresh(refreshToken: string, metadata?: SessionMetadata) {
+    // ACC-SEC-02D2A: lookup by the SHA-256 verifier first. A single exact
+    // lookup against the raw value is the controlled legacy-plaintext
+    // compatibility path for tokens persisted before this stage; the row is
+    // upgraded to verifier-only storage by the normal rotation below.
+    const verifier = hashRefreshToken(refreshToken);
+    let stored = await this.prisma.refreshToken.findUnique({
+      where: { token: verifier },
       include: { user: true },
     });
+    let legacyMatch = false;
+    if (!stored) {
+      stored = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+        include: { user: true },
+      });
+      legacyMatch = stored !== null;
+    }
 
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired refresh token');
@@ -271,17 +301,38 @@ export class AuthService {
     // succeeds while revokedAt is still null, so a refresh token that a
     // concurrent request (e.g. a second browser tab) is already rotating can
     // never mint a second token pair. The loser of the race is treated as an
-    // invalid session instead of silently issuing a duplicate.
+    // invalid session instead of silently issuing a duplicate. When the row
+    // was matched through the legacy plaintext path, the same atomic operation
+    // rewrites the stored value to the verifier so no raw token remains at
+    // rest (ACC-SEC-02D2A).
     const revoke = await this.prisma.refreshToken.updateMany({
       where: { id: stored.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: {
+        revokedAt: new Date(),
+        ...(legacyMatch ? { token: verifier } : {}),
+      },
     });
 
     if (revoke.count === 0) {
       throw new UnauthorizedException('Refresh token already used');
     }
 
-    const tokens = await this.generateTokens(stored.user.id, membership.orgId, membership.role);
+    const tokens = await this.generateTokens(
+      stored.user.id,
+      membership.orgId,
+      membership.role,
+      undefined,
+      { sessionId: stored.sessionId },
+      {
+        // Server-observed metadata follows first-seen policy across the
+        // rotation chain: the IP recorded at the original login is preserved
+        // and only filled from the current request when it was never recorded.
+        // deviceName is never fabricated.
+        ipAddress: stored.ipAddress ?? metadata?.ipAddress,
+        userAgent: metadata?.userAgent,
+        deviceName: stored.deviceName ?? undefined,
+      },
+    );
     return {
       user: {
         id: stored.user.id,
@@ -329,9 +380,21 @@ export class AuthService {
     return membership;
   }
 
-  private async generateTokens(userId: string, orgId: string, role: string, db: DbClient = this.prisma) {
+  private async generateTokens(
+    userId: string,
+    orgId: string,
+    role: string,
+    db: DbClient = this.prisma,
+    opts?: { sessionId?: string },
+    metadata?: SessionMetadata,
+  ) {
+    // A stable, non-secret session identity that survives the full refresh
+    // rotation chain. It is additive and non-authoritative: guards only
+    // require sub + orgId, so still-valid access tokens minted before this
+    // stage (no sid) remain accepted until natural expiry.
+    const sessionId = opts?.sessionId ?? crypto.randomUUID();
     const accessToken = jwt.sign(
-      { sub: userId, orgId, role },
+      { sub: userId, orgId, role, sid: sessionId },
       JWT_SECRET(),
       { expiresIn: '15m' },
     );
@@ -339,10 +402,17 @@ export class AuthService {
     const refreshTokenStr = generateRefreshToken();
     await db.refreshToken.create({
       data: {
-        token: refreshTokenStr,
+        // Only the SHA-256 verifier is persisted at rest; the raw token is
+        // returned to the client exactly once through this response.
+        token: hashRefreshToken(refreshTokenStr),
+        sessionId,
         userId,
         orgId,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        lastUsedAt: new Date(),
+        ipAddress: metadata?.ipAddress,
+        userAgent: metadata?.userAgent,
+        deviceName: metadata?.deviceName,
       },
     });
 

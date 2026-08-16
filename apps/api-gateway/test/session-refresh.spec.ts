@@ -8,6 +8,7 @@ import { MockQueueService } from '../src/queue/queue.service.mock';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
+import { hashRefreshToken } from '../src/auth/refresh-token.util';
 
 interface DecodedToken {
   sub: string;
@@ -191,7 +192,7 @@ describe('V1-STAGE-01B-R1 Session Persistence & Token Refresh', () => {
         .expect(401);
 
       const row = await prisma.refreshToken.findUnique({
-        where: { token: loginRes.body.refreshToken },
+        where: { token: hashRefreshToken(loginRes.body.refreshToken) },
       });
       expect(row?.revokedAt).not.toBeNull();
     });
@@ -244,7 +245,8 @@ describe('V1-STAGE-01B-R1 Session Persistence & Token Refresh', () => {
       const expiredToken = 'expired-' + Math.random().toString(36);
       await prisma.refreshToken.create({
         data: {
-          token: expiredToken,
+          token: hashRefreshToken(expiredToken),
+          sessionId: 'session-expired-test',
           userId: user.id,
           orgId: org.id,
           expiresAt: new Date(Date.now() - 1000),

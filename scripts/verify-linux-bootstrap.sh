@@ -50,7 +50,7 @@ check "uninstall-linux.sh parses (bash -n)" bash -n "$UNINSTALLER"
 # 2. strict mode + security posture
 check "installer runs with strict mode (set -euo pipefail)" grep -q 'set -euo pipefail' "$INSTALLER"
 check "installer refuses to run non-root" grep -q 'id -u.*-ne 0' "$INSTALLER"
-check "installer does not use eval" bash -c "! grep -qE '(^|[^a-z])eval '" "$INSTALLER"
+check "installer does not use eval" bash -c '! grep -qE "(^|[^a-z])eval " -- "$0"' "$INSTALLER"
 check "installer validates download URL scheme" grep -q 'http://\*|https://\*' "$INSTALLER"
 
 # 3. systemd unit generation/content
