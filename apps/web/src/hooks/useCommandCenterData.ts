@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { apiFetch } from '@/lib/auth-client';
+import { apiFetch, isLoggingOut, LogoutCancellationError } from '@/lib/auth-client';
 import { subscribe } from '@/lib/socket-client';
 import {
   useDashboardSummary,
@@ -58,6 +58,7 @@ export function useCommandCenterData() {
 
   const fetchActiveBackupRuns = useCallback(async () => {
     if (backupInFlightRef.current) return;
+    if (isLoggingOut()) return;
     backupInFlightRef.current = true;
     try {
       const res = await apiFetch('/backups/runs?limit=20');
@@ -68,6 +69,9 @@ export function useCommandCenterData() {
         );
       }
     } catch (e) {
+      if (isLoggingOut() || e instanceof LogoutCancellationError) {
+        return;
+      }
       console.error('Failed to fetch active backup runs:', e);
     } finally {
       backupInFlightRef.current = false;

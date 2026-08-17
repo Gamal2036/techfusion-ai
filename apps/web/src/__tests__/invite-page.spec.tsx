@@ -32,7 +32,9 @@ jest.mock('@/lib/org-client', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   isAuthenticated: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('@techfusion/ui', () => {

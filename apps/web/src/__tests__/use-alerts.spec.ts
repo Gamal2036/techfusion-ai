@@ -2,7 +2,9 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAlerts, type Alert, type AlertStatus } from '@/hooks/useAlerts';
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('@/lib/socket-client', () => ({

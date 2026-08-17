@@ -2,9 +2,11 @@ import { apiFetch, getAccessToken, setTokens } from '@/lib/auth-client';
 import { switchToOrganization, listenForOrgSwitch, ORG_SWITCH_EVENT, getActiveOrgId, fetchMembers } from '@/lib/org-client';
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
   getAccessToken: jest.fn(),
   setTokens: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;

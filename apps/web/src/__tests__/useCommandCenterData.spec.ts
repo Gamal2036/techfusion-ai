@@ -18,7 +18,9 @@ jest.mock('@/lib/socket-client', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 import { apiFetch } from '@/lib/auth-client';

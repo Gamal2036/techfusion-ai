@@ -14,6 +14,27 @@ export type RefreshOutcome = 'ok' | 'invalid' | 'unavailable';
 
 let refreshPromise: Promise<RefreshOutcome> | null = null;
 
+let _isLoggingOut = false;
+
+export function isLoggingOut(): boolean {
+  return _isLoggingOut;
+}
+
+/**
+ * Thrown by `apiFetch` when a request is attempted after logout has begun.
+ * Callers should check `isLoggingOut()` before making requests; this error
+ * exists as defense-in-depth for any code path that skips the guard.
+ *
+ * This is NOT a network error or server error — it is an expected cancellation
+ * that callers may suppress when `isLoggingOut()` is true.
+ */
+export class LogoutCancellationError extends Error {
+  readonly name = 'LogoutCancellationError' as const;
+  constructor() {
+    super('Logout in progress');
+  }
+}
+
 export type AuthEvent =
   | 'auth_access_expired'
   | 'auth_refresh_started'
@@ -149,6 +170,7 @@ async function performRefresh(): Promise<RefreshOutcome> {
 }
 
 export function refreshSession(): Promise<RefreshOutcome> {
+  if (_isLoggingOut) return Promise.resolve('invalid');
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = performRefresh().finally(() => {
@@ -188,6 +210,9 @@ export async function apiFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
+  if (_isLoggingOut) {
+    throw new LogoutCancellationError();
+  }
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
   const headers = {
     ...getAuthHeaders(),
@@ -229,6 +254,8 @@ export async function apiFetch(
 }
 
 export async function logout(): Promise<void> {
+  _isLoggingOut = true;
+
   const token = getAccessToken();
   if (token) {
     try {

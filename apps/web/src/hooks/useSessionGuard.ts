@@ -5,6 +5,7 @@ import {
   getCurrentUser,
   invalidateSession,
   isAuthenticated,
+  isLoggingOut,
   refreshSession,
 } from '@/lib/auth-client';
 
@@ -30,6 +31,7 @@ export function useSessionGuard(intervalMs = 30000): SessionGuardStatus {
   const [status, setStatus] = useState<SessionGuardStatus>('checking');
 
   const checkSession = useCallback(async () => {
+    if (isLoggingOut()) return;
     const currentUser = getCurrentUser();
     if (!currentUser) {
       await invalidateSession();

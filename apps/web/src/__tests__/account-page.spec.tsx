@@ -38,8 +38,10 @@ jest.mock('framer-motion', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   getCurrentUser: jest.fn(),
   clearTokens: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('@/lib/socket-client', () => ({

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { apiFetch } from '@/lib/auth-client';
+import { apiFetch, isLoggingOut, LogoutCancellationError } from '@/lib/auth-client';
 
 export interface DashboardSummary {
   generatedAt: string;
@@ -102,27 +102,33 @@ export function useDashboardSummary() {
 
   const fetchSummary = useCallback(async () => {
     if (inFlightRef.current) return;
+    if (isLoggingOut()) return;
     inFlightRef.current = true;
     try {
       const res = await apiFetch('/dashboard/summary');
       if (res.ok) {
-        const data = await res.json();
-        setSummary(data as DashboardSummary);
-        setError(null);
-        failureCountRef.current = 0;
-      } else {
+        if (!isLoggingOut()) {
+          const data = await res.json();
+          setSummary(data as DashboardSummary);
+          setError(null);
+          failureCountRef.current = 0;
+        }
+      } else if (!isLoggingOut()) {
         const errorBody = await res.text().catch(() => '');
         setError(`Failed to fetch dashboard summary: ${res.status} ${errorBody}`.trim());
         failureCountRef.current += 1;
       }
     } catch (e) {
+      if (isLoggingOut() || e instanceof LogoutCancellationError) {
+        return;
+      }
       setError('Network error while fetching dashboard summary');
       console.error('Failed to fetch dashboard summary:', e);
       failureCountRef.current += 1;
     } finally {
       inFlightRef.current = false;
       setLoading(false);
-      if (document.visibilityState !== 'hidden') {
+      if (!isLoggingOut() && document.visibilityState !== 'hidden') {
         scheduleNext();
       }
     }

@@ -106,8 +106,10 @@ jest.mock('@techfusion/ui', () => {
 });
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   setTokens: (...args: any[]) => mockSetTokens(...args),
   getApiUrl: () => 'http://localhost:3001',
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 const fetchMock = jest.fn();

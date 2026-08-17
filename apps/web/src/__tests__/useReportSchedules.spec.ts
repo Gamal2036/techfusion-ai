@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useReportSchedules } from '@/hooks/useReportSchedules';
 import { apiFetch } from '@/lib/auth-client';
 
-jest.mock('@/lib/auth-client', () => ({ apiFetch: jest.fn() }));
+jest.mock('@/lib/auth-client', () => ({ ...jest.requireActual('@/lib/auth-client'), apiFetch: jest.fn(), isLoggingOut: jest.fn().mockReturnValue(false) }));
 
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;
 

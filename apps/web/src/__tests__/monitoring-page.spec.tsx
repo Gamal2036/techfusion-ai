@@ -53,7 +53,9 @@ jest.mock('@/hooks/useAlerts', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: (...args: any[]) => mockApiFetch(...args),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('@/lib/socket-client', () => ({
