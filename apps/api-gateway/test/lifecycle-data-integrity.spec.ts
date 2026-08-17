@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { Role } from '@prisma/client';
+import { hashRefreshToken } from '../src/auth/refresh-token.util';
 
 const JWT_SECRET = () => {
   const secret = process.env.JWT_SECRET;
@@ -170,13 +171,17 @@ describe('V1-STAGE-01A Lifecycle Data Integrity', () => {
       const owner = await createUser('lif-a2@test.com', orgA.id, 'Owner');
       const loginRes = await login(owner.email);
       const refreshToken = loginRes.body.refreshToken as string;
+      // Only the SHA-256 verifier may be stored at rest, never the raw token.
       expect(
         await prisma.refreshToken.findUnique({ where: { token: refreshToken } }),
+      ).toBeNull();
+      expect(
+        await prisma.refreshToken.findUnique({ where: { token: hashRefreshToken(refreshToken) } }),
       ).not.toBeNull();
 
       await deleteAccount(loginRes.body.accessToken).expect(200);
 
-      expect(await prisma.refreshToken.findUnique({ where: { token: refreshToken } })).toBeNull();
+      expect(await prisma.refreshToken.findUnique({ where: { token: hashRefreshToken(refreshToken) } })).toBeNull();
       await request(server())
         .post('/auth/login')
         .send({ email: owner.email, password: 'password123' })
@@ -604,7 +609,7 @@ describe('V1-STAGE-01A Lifecycle Data Integrity', () => {
       expect(decode(res.body.accessToken).role).toBe('Admin');
 
       const stored = await prisma.refreshToken.findUnique({
-        where: { token: res.body.refreshToken },
+        where: { token: hashRefreshToken(res.body.refreshToken) },
       });
       expect(stored!.orgId).toBe(orgB.id);
     });
