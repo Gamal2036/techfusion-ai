@@ -44,11 +44,24 @@ export function getRateLimitConfig(): ThrottlerModuleOptions {
   }];
 }
 
+/**
+ * ACC-SEC-02D2B — Strict per-route throttle for password and session
+ * management endpoints. Like mfaThrottle(), this is deliberately NOT neutered
+ * in test mode: the routes it decorates must be provably rate-limited in the
+ * test suite.
+ */
+export function strictThrottle(limit: number, ttl: number) {
+  return { default: { limit, ttl } };
+}
+
 export const STRICT_RATE_LIMITS = {
   login: { limit: 5, ttl: 60000 },
   signup: { limit: 3, ttl: 300000 },
   refresh: { limit: 10, ttl: 60000 },
   mfa: { limit: 5, ttl: 60000 },
+  changePassword: { limit: 20, ttl: 60000 },
+  sessions: { limit: 30, ttl: 60000 },
+  sessionMutation: { limit: 10, ttl: 60000 },
   deviceRegister: { limit: 10, ttl: 60000 },
   deviceMetrics: { limit: 120, ttl: 60000 },
   securityReport: { limit: 20, ttl: 60000 },

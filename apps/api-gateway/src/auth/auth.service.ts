@@ -1,7 +1,9 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException, NotFoundException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { AuditService } from '../audit/audit.service';
+import { ReauthenticationService } from '../reauthentication/reauthentication.service';
 import { createStructuredLogger } from '../common/structured-logger';
 import { decryptMfaSecret } from '../mfa/mfa-secret.util';
 import { RecoveryCodesService } from '../mfa/recovery-codes.service';
@@ -80,6 +82,8 @@ export class AuthService {
     private prisma: PrismaService,
     private encryption: EncryptionService,
     private recoveryCodes: RecoveryCodesService,
+    private audit: AuditService,
+    private reauth: ReauthenticationService,
   ) {}
 
   async signup(input: SignupInput, metadata?: SessionMetadata) {
@@ -350,6 +354,221 @@ export class AuthService {
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+  }
+
+  // ─── ACC-SEC-02D2B: Password Change & Active Session Management ────
+
+  /**
+   * Change the authenticated user's password. Requires current-password
+   * reauthentication. Revokes all existing sessions and issues a fresh token
+   * pair so the client stays signed in.
+   */
+  async changePassword(
+    userId: string,
+    orgId: string,
+    currentPassword: string,
+    newPassword: string,
+    metadata?: SessionMetadata,
+  ) {
+    await this.reauth.verifyPassword(userId, currentPassword);
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('New password must differ from current password');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash },
+      });
+
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+
+      return true;
+    });
+
+    const membership = await this.prisma.organizationMember.findUnique({
+      where: { userId_orgId: { userId, orgId } },
+    });
+
+    if (!membership) {
+      throw new UnauthorizedException('No active membership for this organization');
+    }
+
+    const tokens = await this.generateTokens(
+      userId,
+      membership.orgId,
+      membership.role,
+      undefined,
+      undefined,
+      metadata,
+    );
+
+    this.events.log('password_changed', { userId, orgId });
+    await this.audit.log({
+      orgId,
+      action: 'password_changed',
+      actorId: userId,
+      details: { targetUserId: userId },
+    });
+
+    return {
+      message: 'Password changed successfully',
+      ...tokens,
+    };
+  }
+
+  /**
+   * List active sessions for the authenticated user. Returns safe metadata
+   * only — no token material. The `current` flag is derived from the
+   * requesting session's `sid` claim.
+   */
+  async listSessions(userId: string, currentSessionId?: string) {
+    const rows = await this.prisma.refreshToken.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: {
+        sessionId: true,
+        createdAt: true,
+        expiresAt: true,
+        lastUsedAt: true,
+        ipAddress: true,
+        userAgent: true,
+        deviceName: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const seen = new Set<string>();
+    const sessions = rows
+      .filter((row) => {
+        if (seen.has(row.sessionId)) return false;
+        seen.add(row.sessionId);
+        return true;
+      })
+      .map((row) => ({
+        sessionId: row.sessionId,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        lastUsedAt: row.lastUsedAt,
+        ipAddress: row.ipAddress,
+        userAgent: row.userAgent,
+        deviceName: row.deviceName,
+        current: currentSessionId ? row.sessionId === currentSessionId : false,
+      }));
+
+    return { sessions };
+  }
+
+  /**
+   * Revoke a specific session by sessionId. Ownership check is enforced.
+   * Returns 404 if not found or not owned. Idempotent: already-revoked
+   * sessions return 200.
+   */
+  async revokeSession(userId: string, sessionId: string) {
+    const result = await this.prisma.refreshToken.updateMany({
+      where: { userId, sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    if (result.count === 0) {
+      const exists = await this.prisma.refreshToken.findFirst({
+        where: { userId, sessionId },
+      });
+      if (!exists) {
+        throw new NotFoundException('Session not found');
+      }
+      return { message: 'Session already revoked' };
+    }
+
+    this.events.log('session_revoked', { userId, operation: sessionId });
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId },
+    });
+    if (membership) {
+      await this.audit.log({
+        orgId: membership.orgId,
+        action: 'session_revoked',
+        actorId: userId,
+        details: { sessionId },
+      });
+    }
+
+    return { message: 'Session revoked' };
+  }
+
+  /**
+   * Revoke all sessions except the current one. Requires the current
+   * session's `sid` to be known.
+   */
+  async revokeOtherSessions(userId: string, currentSessionId: string) {
+    const result = await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        sessionId: { not: currentSessionId },
+        revokedAt: null,
+      },
+      data: { revokedAt: new Date() },
+    });
+
+    this.events.log('sessions_revoked_others', { userId, reason: 'user_initiated' });
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId },
+    });
+    if (membership) {
+      await this.audit.log({
+        orgId: membership.orgId,
+        action: 'sessions_revoked_others',
+        actorId: userId,
+        details: { revokedCount: result.count, currentSessionId },
+      });
+    }
+
+    return { message: 'All other sessions signed out', revokedCount: result.count };
+  }
+
+  /**
+   * Revoke only the current session. The client must clear tokens and
+   * redirect to login afterward.
+   */
+  async revokeCurrentSession(userId: string, sessionId: string) {
+    const result = await this.prisma.refreshToken.updateMany({
+      where: { userId, sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    if (result.count === 0) {
+      const exists = await this.prisma.refreshToken.findFirst({
+        where: { userId, sessionId },
+      });
+      if (!exists) {
+        throw new NotFoundException('Session not found');
+      }
+      return { message: 'Session already revoked' };
+    }
+
+    this.events.log('session_revoked_current', { userId, operation: sessionId });
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId },
+    });
+    if (membership) {
+      await this.audit.log({
+        orgId: membership.orgId,
+        action: 'session_revoked_current',
+        actorId: userId,
+        details: { sessionId },
+      });
+    }
+
+    return { message: 'Current session revoked' };
   }
 
   /**
