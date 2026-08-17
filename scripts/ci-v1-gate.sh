@@ -88,11 +88,41 @@ echo ""
 echo "══════════════════════════════════════════════════"
 echo "  1. Test services (Postgres + Redis)"
 echo "══════════════════════════════════════════════════"
-if docker compose -f "$COMPOSE_FILE" ps --format json 2>/dev/null | grep -q '"Health":"healthy"'; then
+
+# Verify both dedicated test services are healthy.
+# Uses Docker Compose project-scoped inspection (same compose file) and checks
+# the exact service names defined in docker-compose.test.yml, preventing false
+# positives from unrelated dev, production, or manually-started containers.
+_test_services_healthy() {
+  local ps_output
+  ps_output=$(docker compose -f "$COMPOSE_FILE" ps --format json 2>/dev/null) || return 1
+  # Each service must be present with Health == "healthy" on its own JSON line
+  echo "$ps_output" | grep '"Service":"test-postgres"' | grep -q '"Health":"healthy"' || return 1
+  echo "$ps_output" | grep '"Service":"test-redis"'  | grep -q '"Health":"healthy"' || return 1
+  # Verify useful connectivity to the correct test ports (not dev 5433/6379)
+  docker exec techfusion-test-postgres pg_isready -U techfusion_test -d techfusion_test >/dev/null 2>&1 || return 1
+  docker exec techfusion-test-redis redis-cli ping >/dev/null 2>&1 || return 1
+  return 0
+}
+
+if _test_services_healthy; then
   echo "  Test services already healthy."
 else
   echo "  Starting test services (docker compose up -d --wait)..."
   docker compose -f "$COMPOSE_FILE" up -d --wait
+  # Verify readiness after start
+  echo "  Verifying test service readiness..."
+  if ! docker exec techfusion-test-postgres pg_isready -U techfusion_test -d techfusion_test >/dev/null 2>&1; then
+    echo "  ERROR: test-postgres not reachable on localhost:5434" >&2
+    docker compose -f "$COMPOSE_FILE" logs test-postgres 2>&1 | tail -20 >&2
+    exit 1
+  fi
+  if ! docker exec techfusion-test-redis redis-cli ping >/dev/null 2>&1; then
+    echo "  ERROR: test-redis not reachable on localhost:6381" >&2
+    docker compose -f "$COMPOSE_FILE" logs test-redis 2>&1 | tail -20 >&2
+    exit 1
+  fi
+  echo "  Test services ready."
 fi
 
 # ── 2. installer static verification (offline) ─────────────────────────────
