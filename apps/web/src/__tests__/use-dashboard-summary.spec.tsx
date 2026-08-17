@@ -2,7 +2,9 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { useDashboardSummary } from '@/hooks/useDashboardSummary';
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 import { apiFetch } from '@/lib/auth-client';

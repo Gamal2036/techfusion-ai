@@ -7,8 +7,10 @@ import {
 import { apiFetch } from '@/lib/auth-client';
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
   getApiUrl: jest.fn().mockReturnValue('http://localhost:3001'),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 const mockApiFetch = apiFetch as jest.MockedFunction<typeof apiFetch>;

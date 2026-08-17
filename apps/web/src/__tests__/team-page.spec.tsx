@@ -18,7 +18,10 @@ jest.mock('next/navigation', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
+  apiFetch: jest.fn(),
   getCurrentUser: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('@/lib/org-client', () => ({
@@ -119,7 +122,7 @@ describe('Team Page Contract', () => {
       await waitFor(() => expect(mockFetchMembers).toHaveBeenCalledWith('org-1'));
 
       const apiFetchModule = require('@/lib/auth-client');
-      expect(apiFetchModule.apiFetch).toBeUndefined();
+      expect(apiFetchModule.apiFetch).not.toHaveBeenCalled();
     });
   });
 

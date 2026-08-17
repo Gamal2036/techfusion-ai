@@ -21,7 +21,9 @@ jest.mock('@/hooks/useDevices', () => ({
 }));
 
 jest.mock('@/lib/auth-client', () => ({
+  ...jest.requireActual('@/lib/auth-client'),
   apiFetch: jest.fn(),
+  isLoggingOut: jest.fn().mockReturnValue(false),
 }));
 
 jest.mock('sonner', () => ({
