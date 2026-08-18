@@ -26,6 +26,21 @@ jest.mock('@/lib/mfa-client', () => ({
   disableMfa: jest.fn(),
 }));
 
+jest.mock('@/lib/security-client', () => ({
+  changePassword: jest.fn(),
+  listSessions: jest.fn().mockResolvedValue({ sessions: [] }),
+  revokeSession: jest.fn(),
+  revokeOtherSessions: jest.fn(),
+  revokeCurrentSession: jest.fn(),
+}));
+
+jest.mock('@/hooks/useAccountSecurity', () => ({
+  useAccountSecurity: () => ({
+    sessionsState: { status: 'ready', sessions: [] },
+    refreshSessions: jest.fn(),
+  }),
+}));
+
 jest.mock('@techfusion/ui', () => {
   const ReactUi = require('react');
   return {
@@ -64,6 +79,19 @@ jest.mock('@techfusion/ui', () => {
     ModalTitle: ({ children }: any) => <h3>{children}</h3>,
     ModalDescription: ({ children }: any) => <p>{children}</p>,
     ModalFooter: ({ children }: any) => <div>{children}</div>,
+    PasswordInput: ReactUi.forwardRef(
+      ({ label, description, error, ...props }: any, ref: any) => (
+        <div>
+          {label && <label>{label}</label>}
+          <input ref={ref} type="password" aria-label={label} {...props} />
+          {error && (
+            <span role="alert" className="text-danger">
+              {error}
+            </span>
+          )}
+        </div>
+      ),
+    ),
     Checkbox: ({ label, checked, onCheckedChange, id }: any) => (
       <div>
         <input
@@ -89,6 +117,13 @@ jest.mock('lucide-react', () => {
     Copy: MockIcon,
     Eye: MockIcon,
     EyeOff: MockIcon,
+    Key: MockIcon,
+    MonitorSmartphone: MockIcon,
+    Globe: MockIcon,
+    LogOut: MockIcon,
+    RefreshCw: MockIcon,
+    Monitor: MockIcon,
+    Smartphone: MockIcon,
   };
 });
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, GlassPanel, StatusMessage } from '@techfusion/ui';
-import { Loader2, ShieldCheck, ShieldOff } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldOff, Key, MonitorSmartphone } from 'lucide-react';
 import {
   fetchMfaStatus,
   fetchRecoveryCodesStatus,
@@ -10,9 +10,12 @@ import {
   type RecoveryCodesStatus,
 } from '@/lib/mfa-client';
 import { mapMfaError } from '@/lib/mfa-errors';
+import { useAccountSecurity } from '@/hooks/useAccountSecurity';
 import { MfaEnrollmentDialog } from './mfa/MfaEnrollmentDialog';
 import { RecoveryCodesDialog } from './mfa/RecoveryCodesDialog';
 import { DisableMfaDialog } from './mfa/DisableMfaDialog';
+import { PasswordChangeDialog } from './PasswordChangeDialog';
+import { ActiveSessions } from './ActiveSessions';
 
 type LoadState =
   | { status: 'loading' }
@@ -62,6 +65,9 @@ export function SecuritySection() {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryRegenerate, setRecoveryRegenerate] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+
+  const { sessionsState, refreshSessions } = useAccountSecurity();
 
   const load = useCallback(async () => {
     setLoadState({ status: 'loading' });
@@ -167,7 +173,7 @@ export function SecuritySection() {
 
       {loadState.status === 'loading' ? (
         <div className="flex items-center gap-2 text-sm text-text-disabled" role="status">
-          <Loader2 className="h-4 w-4 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
           Loading security status...
         </div>
       ) : loadState.status === 'failed' ? (
@@ -232,15 +238,22 @@ export function SecuritySection() {
 
           <SecurityRow
             title="Password"
-            description="Password change is not available in this release."
-            badge={<Badge variant="secondary">Not available</Badge>}
+            description="Your password protects your account. Change it regularly to keep your account secure."
+            actions={
+              <Button variant="outline" size="sm" onClick={() => setPasswordOpen(true)}>
+                <Key className="mr-1.5 h-3.5 w-3.5" />
+                Change password
+              </Button>
+            }
           />
 
-          <SecurityRow
-            title="Active sessions"
-            description="Session listing and revocation are not available in this release."
-            badge={<Badge variant="secondary">Not available</Badge>}
-          />
+          <div className="py-3">
+            <div className="flex items-center gap-2 mb-3">
+              <MonitorSmartphone className="h-4 w-4 text-text-muted" />
+              <h3 className="text-sm font-medium text-text-primary">Active sessions</h3>
+            </div>
+            <ActiveSessions sessionsState={sessionsState} onRefresh={refreshSessions} />
+          </div>
         </div>
       ) : null}
 
@@ -257,6 +270,12 @@ export function SecuritySection() {
         onThrottled={handleThrottled}
       />
       <DisableMfaDialog open={disableOpen} onOpenChange={closeDisable} onThrottled={handleThrottled} />
+      <PasswordChangeDialog
+        open={passwordOpen}
+        onOpenChange={setPasswordOpen}
+        onPasswordChanged={refreshSessions}
+        onThrottled={handleThrottled}
+      />
     </GlassPanel>
   );
 }
