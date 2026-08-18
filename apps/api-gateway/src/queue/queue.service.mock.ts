@@ -48,6 +48,10 @@ export class MockQueueService implements IQueueService {
     this.jobs.push({ type: 'presence_sweep', data });
   }
 
+  async addTransactionalEmail(data: { templateId: string; encryptedPayload: string; recipientHash: string; idempotencyKey: string; correlationId: string }): Promise<void> {
+    this.jobs.push({ type: 'transactional_email', data });
+  }
+
   async getQueueDepth(name: QueueName): Promise<number> {
     return 0;
   }

@@ -78,6 +78,36 @@ export function validateEnvironment(): void {
         '[ENV VALIDATION] WEB_APP_URL must be set in production (e.g. https://app.example.com).',
       );
     }
+
+    // Validate mail configuration when enabled
+    const mailEnabled = process.env.MAIL_ENABLED === 'true';
+    if (mailEnabled) {
+      const fromAddress = process.env.MAIL_FROM_ADDRESS;
+      if (!fromAddress || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromAddress)) {
+        throw new Error(
+          '[ENV VALIDATION] MAIL_FROM_ADDRESS must be a valid email address when MAIL_ENABLED=true.',
+        );
+      }
+
+      const mailTransport = process.env.MAIL_TRANSPORT || 'smtp';
+      if (mailTransport === 'smtp') {
+        if (!process.env.SMTP_HOST || process.env.SMTP_HOST.trim() === '') {
+          throw new Error(
+            '[ENV VALIDATION] SMTP_HOST is required when MAIL_ENABLED=true and MAIL_TRANSPORT=smtp.',
+          );
+        }
+        if (!process.env.SMTP_USER || process.env.SMTP_USER.trim() === '') {
+          throw new Error(
+            '[ENV VALIDATION] SMTP_USER is required when MAIL_ENABLED=true and MAIL_TRANSPORT=smtp.',
+          );
+        }
+        if (!process.env.SMTP_PASS || process.env.SMTP_PASS.trim() === '') {
+          throw new Error(
+            '[ENV VALIDATION] SMTP_PASS is required when MAIL_ENABLED=true and MAIL_TRANSPORT=smtp.',
+          );
+        }
+      }
+    }
   } else {
     optionalEnv('AI_ENCRYPTION_KEY', 'dev-key-not-for-production');
     optionalEnv('REPORT_URL_SECRET', 'dev-key-not-for-production');

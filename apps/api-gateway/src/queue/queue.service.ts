@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import { createHash } from 'crypto';
 import { QUEUE_NAMES, JOB_NAMES, DEFAULT_JOB_OPTIONS, QueueName } from './queue.constants';
 import { getCorrelationContext, generateJobCorrelationId } from '../common/correlation-id';
 
@@ -15,6 +16,7 @@ export interface IQueueService {
   addRetentionEnforce(data: { orgId?: string; allOrgs: boolean; requestedBy?: string }): Promise<void>;
   addKbEmbedding(data: { orgId: string; articleId: string }): Promise<void>;
   addPresenceSweep(data: { allOrgs: boolean; scheduledAt?: string }): Promise<void>;
+  addTransactionalEmail(data: { templateId: string; encryptedPayload: string; recipientHash: string; idempotencyKey: string; correlationId: string }): Promise<void>;
   getQueueDepth(name: QueueName): Promise<number>;
   getAllQueueDepths(): Promise<Record<string, number>>;
 }
@@ -243,6 +245,39 @@ export class QueueService implements IQueueService, OnModuleDestroy {
       removeOnFail: { count: 20 },
     });
     this.logger.log(`Presence sweep job added (allOrgs: ${data.allOrgs})`);
+  }
+
+  async addTransactionalEmail(data: {
+    templateId: string;
+    encryptedPayload: string;
+    recipientHash: string;
+    idempotencyKey: string;
+    correlationId: string;
+  }): Promise<void> {
+    const queue = this.getQueue(QUEUE_NAMES.TRANSACTIONAL_EMAIL);
+    const jobData = {
+      ...data,
+      _correlation: {
+        requestId: getCorrelationContext()?.requestId || '',
+        correlationId: data.correlationId,
+        traceId: getCorrelationContext()?.traceId,
+        userId: getCorrelationContext()?.userId,
+        orgId: getCorrelationContext()?.orgId,
+      },
+    };
+    const jobId = `txmail-${createHash('sha256').update(data.idempotencyKey).digest('hex').slice(0, 16)}`;
+    await queue.add(JOB_NAMES.TRANSACTIONAL_EMAIL.SEND, jobData, {
+      ...DEFAULT_JOB_OPTIONS,
+      attempts: 5,
+      backoff: { type: 'exponential' as const, delay: 2000 },
+      jobId,
+      removeOnComplete: { count: 200 },
+      removeOnFail: { count: 100 },
+    });
+    this.logger.log(`Transactional email job added`, {
+      queueName: QUEUE_NAMES.TRANSACTIONAL_EMAIL,
+      jobId,
+    });
   }
 
   async getQueueDepth(name: QueueName): Promise<number> {
