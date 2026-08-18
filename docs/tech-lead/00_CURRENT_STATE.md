@@ -17,7 +17,8 @@ Status date: 2026-08-17. Branch `feat/acc-ux-02d3-password-active-sessions`. Lat
 
 ## 2. Git State
 
-- `git status --short`: ACC-UX-02D3 changes present, uncommitted on branch `feat/acc-ux-02d3-password-active-sessions` — frontend password change + active sessions UX. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+- `git status --short`: ACC-SEC-02E1 audit documentation changes on branch `audit/acc-sec-02e1-account-recovery-email-verification` — audit report + canonical doc updates only. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+- ACC-UX-02D3 changes present, uncommitted on branch `feat/acc-ux-02d3-password-active-sessions` — frontend password change + active sessions UX. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 - FIX-AUTH-LOGOUT-01 changes present, committed locally on branch `fix/auth-logout-request-lifecycle` — logout race condition fix + favicon 404 fix. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 - ACC-SEC-02D2A changes present, committed locally on branch `fix/acc-sec-02d2a-session-foundation` — session identity & refresh-token hardening backend foundation. **PUSHED: NO; PRODUCTION DEPLOYED: NO; MANUAL VERCEL/RAILWAY CERTIFICATION: PENDING.**
 - ACC-UX-02D3 Password Change & Active Sessions UX (this mission) — frontend password change modal + active sessions list + revoke flows + SecuritySection integration, 43-proof spec, lint/build clean. **Uncommitted on branch `feat/acc-ux-02d3-password-active-sessions`; operator push pending.**
