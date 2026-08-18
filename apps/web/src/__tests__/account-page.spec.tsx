@@ -66,6 +66,21 @@ jest.mock('@/lib/mfa-client', () => ({
   fetchRecoveryCodesStatus: jest.fn(),
 }));
 
+jest.mock('@/lib/security-client', () => ({
+  changePassword: jest.fn(),
+  listSessions: jest.fn().mockResolvedValue({ sessions: [] }),
+  revokeSession: jest.fn(),
+  revokeOtherSessions: jest.fn(),
+  revokeCurrentSession: jest.fn(),
+}));
+
+jest.mock('@/hooks/useAccountSecurity', () => ({
+  useAccountSecurity: () => ({
+    sessionsState: { status: 'ready', sessions: [] },
+    refreshSessions: jest.fn(),
+  }),
+}));
+
 jest.mock('@techfusion/ui', () => {
   const ReactUi = require('react');
   const MockIcon = (props: any) => <svg data-testid="icon" {...props} />;
@@ -118,6 +133,19 @@ jest.mock('@techfusion/ui', () => {
     ),
     getInitials: (name: string) => name?.trim()?.charAt(0)?.toUpperCase() || 'U',
     Skeleton: () => <div data-testid="skeleton" />,
+    PasswordInput: ReactUi.forwardRef(
+      ({ label, description, error, ...props }: any, ref: any) => (
+        <div>
+          {label && <label>{label}</label>}
+          <input ref={ref} type="password" aria-label={label} {...props} />
+          {error && (
+            <span role="alert" className="text-danger">
+              {error}
+            </span>
+          )}
+        </div>
+      ),
+    ),
     MockIcon,
   };
 });
@@ -140,6 +168,8 @@ jest.mock('lucide-react', () => {
     AlertTriangle: MockIcon,
     Eye: MockIcon,
     EyeOff: MockIcon,
+    Key: MockIcon,
+    MonitorSmartphone: MockIcon,
   };
 });
 
@@ -267,12 +297,15 @@ describe('Account Page Contract', () => {
       expect(screen.queryByText(/passwordHash|mfaSecret|mfaBackupCodes|ssoId|accessToken/i)).not.toBeInTheDocument();
     });
 
-    it('shows an honest not-available state for unsupported security capabilities', async () => {
+    it('shows the implemented password and sessions experience', async () => {
       render(<AccountPage />);
 
       await screen.findAllByText('Alex Owner');
-      expect(screen.getByText(/Password change is not available/i)).toBeInTheDocument();
-      expect(screen.getByText(/Session listing and revocation are not available/i)).toBeInTheDocument();
+      expect(screen.getByText('Password')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /change password/i })).toBeInTheDocument();
+      expect(screen.getByText('Active sessions')).toBeInTheDocument();
+      expect(screen.queryByText(/Password change is not available/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Session listing and revocation are not available/i)).not.toBeInTheDocument();
     });
   });
 
