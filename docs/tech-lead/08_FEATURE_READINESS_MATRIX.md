@@ -44,6 +44,7 @@ Master matrix. Statuses: CERTIFIED / FUNCTIONAL / PARTIAL / SCAFFOLD / MOCKED / 
 | Admin console | ❌ UI | ✅ | ✅ | — | — | ✅ | ✅ | partial | — | — | PREMIUM | PARTIAL | no web admin page |
 | Encryption (provider keys) | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | FUNCTIONAL | — |
 | Demo/RBAC scaffold | ❌ | ⚠️ | — | — | — | — | — | ❌ | — | — | — | SCAFFOLD / dead | remove (`10`) |
+| Transactional email | ❌ | ✅ | — | ✅ | — | — | — | ✅ | — | — | — | INFRASTRUCTURE | ACC-SEC-02E2A: provider abstraction (SMTP/test/disabled), 3 templates, `transactional-email` queue, worker mail processor, `MAIL_ENABLED=false` default, URL builder, SMTP smoke test; no auth routes, no schema, no frontend — **manual SMTP certification PENDING** |
 | Agent enrollment/identity | — | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | FREE | CERTIFIED (Linux) | Windows (`05`); strong-identity recovery + no-hostname-relink verified (`V1-STAGE-02-SUB-01`) |
 | Agent updates | — | — | — | — | ❌ | — | — | ⚠️ | ⚠️ | ❌ | — | **MISSING** | self-update mechanism (`05`) |
 | Windows agent | — | — | — | — | ❌ | — | — | ❌ | — | ❌ | — | **MISSING** | full gap list (`05`) |

@@ -41,6 +41,7 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 | Encryption | ✅ | ✅ | — | JWT | n/a | ✅ | ✅ | ❌ | FUNCTIONAL (AES-256-GCM envelope for provider keys) |
 | Dashboard summary | ✅ | ✅ | (aggregate) | `MONITORING_VIEW` | ✅ | ✅ | ✅ | ✅ dashboard | CERTIFIED |
 | Health/metrics | ✅ | ✅ | — | public live/ready; metrics token (optional) | n/a | n/a | ✅ | — | CERTIFIED (token-in-query LOW finding `07`) |
+| Transactional email | ❌ | ✅ | — | — | — | provider abstraction, templates, queue, processor | 67+ tests | — | INFRASTRUCTURE (disabled-by-default; `ACC-SEC-02E2A`; manual SMTP cert PENDING) |
 | Demo (RBAC demo) | ✅ | — | — | — | — | — | ❌ | ❌ | SCAFFOLD / dead (`10`) |
 
 ## 3. Endpoint Inventory (representative; full route set in source)

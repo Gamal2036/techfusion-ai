@@ -36,7 +36,7 @@ import { Worker, Queue } from 'bullmq';
 describe('Queue Bootstrap', () => {
   it('creates a Worker for each queue name', () => {
     const queueNames = Object.values(QUEUE_NAMES);
-    expect(queueNames.length).toBe(8);
+    expect(queueNames.length).toBe(9);
 
     for (const name of queueNames) {
       expect(typeof name).toBe('string');
