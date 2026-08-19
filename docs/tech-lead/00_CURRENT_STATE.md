@@ -17,8 +17,13 @@ Status date: 2026-08-19. Branch `feat/acc-sec-02e2a-transactional-email-foundati
 
 ## 2. Git State
 
+
 - `git status --short`: ACC-SEC-02E2A changes present, uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation` — transactional email foundation (provider abstraction, templates, queue, worker processor, tests). **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 - ACC-UX-02D3 changes present, committed locally on branch `feat/acc-ux-02d3-password-active-sessions` — frontend password change + active sessions UX. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+
+- `git status --short`: ACC-SEC-02E1 audit documentation changes on branch `audit/acc-sec-02e1-account-recovery-email-verification` — audit report + canonical doc updates only. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+- ACC-UX-02D3 changes present, uncommitted on branch `feat/acc-ux-02d3-password-active-sessions` — frontend password change + active sessions UX. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+
 - FIX-AUTH-LOGOUT-01 changes present, committed locally on branch `fix/auth-logout-request-lifecycle` — logout race condition fix + favicon 404 fix. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 - ACC-SEC-02D2A changes present, committed locally on branch `fix/acc-sec-02d2a-session-foundation` — session identity & refresh-token hardening backend foundation. **PUSHED: NO; PRODUCTION DEPLOYED: NO; MANUAL VERCEL/RAILWAY CERTIFICATION: PENDING.**
 - ACC-SEC-02E2A Transactional Email Foundation (this mission) — provider abstraction (SMTP/test/disabled), 3 email templates, `transactional-email` BullMQ queue, worker mail processor, disabled-by-default (`MAIL_ENABLED=false`), URL builder (rejects dangerous schemes), SMTP smoke test, 67+ tests, lint/build clean. **Uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation`; operator push pending.**
