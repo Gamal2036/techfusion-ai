@@ -362,7 +362,6 @@ describe('Prisma Schema Unchanged', () => {
       require('path').resolve(__dirname, '../../prisma/schema.prisma'),
       'utf8',
     );
-    expect(schema).not.toContain('PasswordResetToken');
     expect(schema).not.toContain('EmailVerificationToken');
     expect(schema).not.toContain('pendingEmail');
     expect(schema).not.toContain('emailVerified');

@@ -367,19 +367,9 @@ describe('Mail Queue Constants', () => {
 });
 
 describe('No Auth Routes Added', () => {
-  // Test 25: No auth route is added by this stage
-  it('should not contain forgot-password endpoint in auth controller', async () => {
-    const fs = require('fs');
-    const path = require('path');
-    const authController = fs.readFileSync(
-      path.resolve(__dirname, '../../auth/auth.controller.ts'),
-      'utf8',
-    );
-    expect(authController).not.toContain('forgot-password');
-    expect(authController).not.toContain('reset-password');
-  });
-
-  // Test 26: No frontend route/control is added
+  // Test 25: ACC-SEC-02E2A guard — no auth route was added by the email foundation.
+  // ACC-SEC-02E2B intentionally added forgot-password/reset-password endpoints.
+  // This test now only verifies the web component guard below.
   it('should not contain forgot-password in web components', async () => {
     const fs = require('fs');
     const path = require('path');

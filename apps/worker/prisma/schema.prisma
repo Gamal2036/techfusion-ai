@@ -97,9 +97,10 @@ model User {
   orgId String
   org   Organization @relation(fields: [orgId], references: [id])
 
-  role          Role                 @default(Viewer)
-  refreshTokens RefreshToken[]
-  memberships   OrganizationMember[]
+  role                Role                 @default(Viewer)
+  refreshTokens       RefreshToken[]
+  memberships         OrganizationMember[]
+  passwordResetTokens PasswordResetToken[]
 
   @@unique([orgId, email])
 }
@@ -855,6 +856,22 @@ model KbEmbedding {
 
   @@unique([articleId, chunkIndex])
   @@index([articleId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SHA-256 verifier of the plaintext reset token (ACC-SEC-02E2B).
+  // The plaintext token is returned exactly once and never persisted.
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, expiresAt])
+  @@index([tokenHash])
 }
 
 model EnrollmentToken {

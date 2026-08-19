@@ -6,14 +6,14 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 
 - Guard order: `ThrottlerGuard` → `CombinedAuthGuard` (JWT → membership-authoritative) → `PermissionsGuard` (≈40 `domain:action` keys) → `PlanGuard`/`RequireFeature`.
 - `Public()` decorator exempts routes; `DeviceTokenGuard` authenticates agents (SHA-256 vs `deviceTokenHash`, legacy plaintext fallback).
-- Rate limits (`src/config/rate-limits.ts`): signup 3/300 s, login 5/60 s, verify-login 10/60 s, refresh 5/60 s, MFA enroll/verify/disable/recovery-codes-generate/recovery-codes-regenerate 5/60 s, metrics 120/60 s, security-report 20/60 s, inventory-report 20/60 s, discovery 10+30+30/60 s, register-public 10/60 s, recover-credential 5/60 s.
+- Rate limits (`src/config/rate-limits.ts`): signup 3/300 s, login 5/60 s, verify-login 10/60 s, refresh 5/60 s, MFA enroll/verify/disable/recovery-codes-generate/recovery-codes-regenerate 5/60 s, forgot-password 3/300 s (fingerprint-throttled by email hash), reset-password 5/300 s (fingerprint-throttled by token hash), metrics 120/60 s, security-report 20/60 s, inventory-report 20/60 s, discovery 10+30+30/60 s, register-public 10/60 s, recover-credential 5/60 s.
 - Env validation (`src/config/env.validation.ts`): rejects placeholders, requires ≥32-char secrets in prod, `requireSecret` for JWT_SECRET/REFRESH in all envs, AI_ENCRYPTION_KEY/REPORT_URL_SECRET in prod.
 
 ## 2. Domain Matrix
 
 | Domain | Endpoints exist | Service | DB models | Authorization | Org isolation | Validation | Tests | Web consumer | Production readiness |
 |-------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| Auth (signup/login/logout/refresh) | ✅ | ✅ | User, RefreshToken, OrganizationMember | JWT, membership gate, throttles | ✅ | DTOs | ✅ `auth.spec.ts`, `session-refresh.spec.ts`, `slug-collision.spec.ts`, `refresh-token-hardening.spec.ts` (20 proofs), `password-session-management.spec.ts` (30 proofs) | ✅ login/signup | CERTIFIED | `ACC-SEC-02D2A`: SHA-256 verifiers with legacy-plaintext atomic upgrade; stable `sessionId` + `sid` claim + server-observed metadata; `ACC-SEC-02D2B`: password change (`POST /auth/change-password` — reauth + revocation + reissue), session list + revoke one/other/current, strict throttling, structured audit events |
+| Auth (signup/login/logout/refresh) | ✅ | ✅ | User, RefreshToken, OrganizationMember, PasswordResetToken | JWT, membership gate, throttles | ✅ | DTOs | ✅ `auth.spec.ts`, `session-refresh.spec.ts`, `slug-collision.spec.ts`, `refresh-token-hardening.spec.ts` (20 proofs), `password-session-management.spec.ts` (30 proofs), `password-reset.spec.ts` (37 proofs) | ✅ login/signup | CERTIFIED | `ACC-SEC-02D2A`: SHA-256 verifiers with legacy-plaintext atomic upgrade; stable `sessionId` + `sid` claim + server-observed metadata; `ACC-SEC-02D2B`: password change (`POST /auth/change-password` — reauth + revocation + reissue), session list + revoke one/other/current, strict throttling, structured audit events; `ACC-SEC-02E2B`: password reset lifecycle (`POST /auth/forgot-password` + `POST /auth/reset-password`, SHA-256 token verifiers, 15-min expiry, single-use, email queue integration, session revocation) |
 | MFA (TOTP) | ✅ | ✅ | User.mfa* | JWT | ✅ | ✅ | `auth.spec.ts`, `mfa-security.spec.ts` (24 tests), `mfa-recovery.spec.ts` (22 tests) | ✅ settings/account | CERTIFIED |
 | SSO | ✅ | ✅ | SsoConfig, User.sso* | `RequireFeature('sso')` for config; **login route is Public** | ✅ (slug→org) | ❌ none on login body | ❌ none | ❌ no UI | **CRITICAL FLAW** (see `07`) |
 | Account deletion | ✅ | ✅ | User, RefreshToken, org, invitations | JWT, `DELETE` confirm, SOLE_OWNER guard | ✅ | ✅ | ✅ `account-deletion.spec.ts` | ✅ settings/account | CERTIFIED |
@@ -46,7 +46,7 @@ Status: 2026-08-16. All ratings `VERIFIED_THIS_RUN` (source read) unless noted. 
 
 ## 3. Endpoint Inventory (representative; full route set in source)
 
-- **Auth**: `POST /auth/signup|login|verify-login|refresh|logout|change-password`; `GET /auth/sessions`; `DELETE /auth/sessions|current|:sessionId`; `POST /mfa/enroll|verify`, `GET /mfa/status`; `POST /auth/sso/login` (Public).
+- **Auth**: `POST /auth/signup|login|verify-login|refresh|logout|change-password|forgot-password|reset-password`; `GET /auth/sessions`; `DELETE /auth/sessions|current|:sessionId`; `POST /mfa/enroll|verify`, `GET /mfa/status`; `POST /auth/sso/login` (Public).
 - **Account**: `GET|PATCH /auth/account/summary` (self-scoped safe profile), `GET /auth/account/deletion-preview`, `DELETE /auth/account`.
 - **Orgs**: `GET|POST /organizations`; `GET|PATCH /organizations/:id`; `POST /organizations/:id/switch`; `GET /organizations/:id/members`; `PATCH|DELETE /organizations/:id/members/:userId`; `POST /organizations/:id/leave`; `POST|GET /organizations/:orgId/invitations`; `PATCH|DELETE|POST /organizations/:orgId/invitations/:id(/:resend)`; `GET|POST /invitations/:token`.
 - **Devices**: `POST /devices/register-public` (Public, enrollment token); `POST /devices/recover-credential` (Public, X-Org-Token); `POST /devices/metrics` (device token); `GET /devices`, `GET /devices/:id/latest|metrics|scores`.

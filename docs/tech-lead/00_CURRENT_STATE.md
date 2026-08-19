@@ -18,7 +18,8 @@ Status date: 2026-08-19. Branch `feat/acc-sec-02e2a-transactional-email-foundati
 ## 2. Git State
 
 
-- `git status --short`: ACC-SEC-02E2A changes present, uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation` — transactional email foundation (provider abstraction, templates, queue, worker processor, tests). **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+- `git status --short`: ACC-SEC-02E2B changes present, uncommitted on branch `feat/acc-sec-02e2b-secure-password-reset-backend` — password reset backend lifecycle (forgot-password + reset-password endpoints, PasswordResetToken model, SHA-256 verifiers, fingerprint throttling, email queue integration, 43-test suite). **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
+- ACC-SEC-02E2A changes present, uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation` — transactional email foundation (provider abstraction, templates, queue, worker processor, tests). **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 - ACC-UX-02D3 changes present, committed locally on branch `feat/acc-ux-02d3-password-active-sessions` — frontend password change + active sessions UX. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
 
 - `git status --short`: ACC-SEC-02E1 audit documentation changes on branch `audit/acc-sec-02e1-account-recovery-email-verification` — audit report + canonical doc updates only. **PUSHED: NO; PRODUCTION DEPLOYED: NO.**
@@ -33,7 +34,8 @@ Status date: 2026-08-19. Branch `feat/acc-sec-02e2a-transactional-email-foundati
 - ACC-SEC-02B1 MFA core security hardening committed locally on branch `fix/acc-sec-02b1-mfa-core-hardening` — MFA secrets encrypted at rest (`enc:v1:` envelope), legacy plaintext readable + upgraded after verified possession, fail-closed decrypt, enroll/verify throttled 5/60 s (deterministic 429), deterministic lifecycle (409/409/400), structured security events; `test/mfa-security.spec.ts` 24 tests; full api-gateway suite 62/1057 green, lint/build clean, V1 gate 19/19 PASS. Pending: operator push.
 - ACC-FIX-01 Account Slot runtime crash fixed and committed locally on branch `feat/acc-found-01-account-foundation` — shared `Button` now slots `asChild` children through Radix `Slottable`; regression tests use the real Button (7 ui + 3 web tests, failing pre-fix); ui 35/429, web 39/824, lint/build clean, V1 gate 19/19 PASS. Pending: operator push + manual Vercel certification.
 - ACC-FOUND-01 account foundation committed locally on branch `feat/acc-found-01-account-foundation` — web sections + minimal self-scoped backend summary + focused specs (10 backend + 18 web tests) + full web suite green (38 suites / 821 tests), lint/build clean. Pending: operator push.
-- Latest commit: none yet (ACC-SEC-02E2A uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation`).
+- Latest commit: none yet (ACC-SEC-02E2B uncommitted on branch `feat/acc-sec-02e2b-secure-password-reset-backend`).
+- Previous: none yet (ACC-SEC-02E2A uncommitted on branch `feat/acc-sec-02e2a-transactional-email-foundation`).
 - Previous: `feat(auth): add password and active session management` (ACC-SEC-02D2B, committed locally; PUSHED: NO; PRODUCTION DEPLOYED: NO).
 - Previous: `fix(auth): clean logout request lifecycle` (FIX-AUTH-LOGOUT-01, committed locally; PUSHED: NO; PRODUCTION DEPLOYED: NO).
 - Previous: `feat(account): build interactive security experience` (ACC-UX-02C, committed locally; PUSHED: NO; PRODUCTION DEPLOYED: NO).
