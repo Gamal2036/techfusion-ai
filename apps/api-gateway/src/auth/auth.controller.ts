@@ -1,13 +1,16 @@
 import { Controller, Post, Get, Delete, Body, Param, Req, Headers, BadRequestException, HttpCode } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { throttle, strictThrottle, STRICT_RATE_LIMITS } from '../config/rate-limits';
+import { throttle, strictThrottle, fingerprintThrottle, STRICT_RATE_LIMITS } from '../config/rate-limits';
 import { AuthService, sanitizeUserAgent, SessionMetadata } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { Public } from '../common/public.decorator';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyLoginDto } from './dto/verify-login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { IncomingMessage } from 'http';
 import * as jwt from 'jsonwebtoken';
 
@@ -52,7 +55,10 @@ function extractSessionId(req: any): string | undefined {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private passwordResetService: PasswordResetService,
+  ) {}
 
   @Public()
   @Throttle(throttle(3, 300000))
@@ -80,6 +86,31 @@ export class AuthController {
   @Post('refresh')
   async refresh(@Body() body: RefreshDto, @Req() req: IncomingMessage, @Headers('user-agent') ua?: string) {
     return this.authService.refresh(body.refreshToken, observedMetadata(req, ua));
+  }
+
+  @Public()
+  @HttpCode(200)
+  @Throttle(fingerprintThrottle(
+    STRICT_RATE_LIMITS.forgotPassword.limit,
+    STRICT_RATE_LIMITS.forgotPassword.ttl,
+    'email',
+    (raw: string) => raw.toLowerCase().trim(),
+  ))
+  @Post('forgot-password')
+  async forgotPassword(@Body() body: ForgotPasswordDto) {
+    return this.passwordResetService.forgotPassword(body.email);
+  }
+
+  @Public()
+  @HttpCode(200)
+  @Throttle(fingerprintThrottle(
+    STRICT_RATE_LIMITS.resetPassword.limit,
+    STRICT_RATE_LIMITS.resetPassword.ttl,
+    'token',
+  ))
+  @Post('reset-password')
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    return this.passwordResetService.resetPassword(body.token, body.newPassword);
   }
 
   @Post('logout')
