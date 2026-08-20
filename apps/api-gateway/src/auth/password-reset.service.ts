@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'crypto';
 import { randomBytes } from 'crypto';
+import { TRANSACTIONAL_EMAIL_CONTRACT_VERSION } from '@techfusion/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TransactionalEmailService } from '../mail/mail.service';
@@ -111,6 +112,7 @@ export class PasswordResetService {
         const correlationId = `pwd-reset-${user.id}-${Date.now()}`;
 
         await this.queueService.addTransactionalEmail({
+          version: TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
           templateId: 'password-reset',
           encryptedPayload: JSON.stringify({
             rendered,

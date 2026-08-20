@@ -1,7 +1,9 @@
-export type TransactionalEmailTemplateId =
-  | 'password-reset'
-  | 'email-verification'
-  | 'security-notification';
+import {
+  type TransactionalEmailTemplateId as SharedTransactionalEmailTemplateId,
+  type TransactionalEmailJob as SharedTransactionalEmailJob,
+} from '@techfusion/types';
+
+export type TransactionalEmailTemplateId = SharedTransactionalEmailTemplateId;
 
 export interface PasswordResetTemplateData {
   recipientName: string;
@@ -40,14 +42,7 @@ export interface RenderedTransactionalEmail {
   htmlBody: string;
 }
 
-export interface TransactionalEmailJob {
-  version: 1;
-  templateId: TransactionalEmailTemplateId;
-  encryptedPayload: string;
-  recipientHash: string;
-  idempotencyKey: string;
-  correlationId: string;
-}
+export type TransactionalEmailJob = SharedTransactionalEmailJob;
 
 export interface TransactionalEmailResult {
   success: boolean;

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
+    "@techfusion/types": "workspace:*",
     "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^4.0.4",

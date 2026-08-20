@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.0",
+    "@techfusion/types": "workspace:*",
     "@opentelemetry/auto-instrumentations-node": "^0.54.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.54.0",
     "@opentelemetry/resources": "^1.27.0",

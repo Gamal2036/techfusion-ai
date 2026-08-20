@@ -1,4 +1,5 @@
 import { Job } from 'bullmq';
+import { TRANSACTIONAL_EMAIL_CONTRACT_VERSION, type TransactionalEmailJobWithCorrelation } from '@techfusion/types';
 import { MailProvider, MailDeliveryError, MailRenderedEmail } from './mail-provider.interface';
 import { renderTemplate, TemplateData } from './mail-templates';
 import { MailUrlBuilder } from './mail-url-builder';
@@ -6,22 +7,6 @@ import { createWorkerLogger } from '../structured-logger';
 import { extractCorrelationFromJob } from '../correlation';
 
 const log = createWorkerLogger('MailProcessor');
-
-interface TransactionalEmailJobData {
-  version: number;
-  templateId: string;
-  encryptedPayload: string;
-  recipientHash: string;
-  idempotencyKey: string;
-  correlationId: string;
-  _correlation?: {
-    requestId: string;
-    correlationId: string;
-    traceId?: string;
-    userId?: string;
-    orgId?: string;
-  };
-}
 
 function maskHash(hash: string): string {
   if (hash.length <= 8) return '****';
@@ -37,7 +22,7 @@ export function createMailProcessor(
     const start = Date.now();
     const corr = extractCorrelationFromJob(job.data as Record<string, unknown>);
 
-    const data = job.data as TransactionalEmailJobData;
+    const data = job.data as TransactionalEmailJobWithCorrelation;
 
     log.log('Processing transactional email job', {
       queueName: 'transactional-email',
@@ -46,7 +31,7 @@ export function createMailProcessor(
     });
 
     try {
-      if (data.version !== 1) {
+      if (data.version !== TRANSACTIONAL_EMAIL_CONTRACT_VERSION) {
         throw new Error(`Unsupported job version: ${data.version}`);
       }
 

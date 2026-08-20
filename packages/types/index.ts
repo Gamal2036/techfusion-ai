@@ -101,3 +101,16 @@ export interface ReportRecord {
   createdAt: string;
   completedAt: string | null;
 }
+
+export {
+  TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  isValidContractVersion,
+} from './transactional-email-job';
+
+export type {
+  TransactionalEmailTemplateId,
+  TransactionalEmailJobV1,
+  TransactionalEmailJob,
+  TransactionalEmailJobCorrelation,
+  TransactionalEmailJobWithCorrelation,
+} from './transactional-email-job';
