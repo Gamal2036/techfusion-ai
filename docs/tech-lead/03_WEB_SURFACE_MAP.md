@@ -7,7 +7,9 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 | Route | Purpose | Data source | Key API | Auth/Org/RBAC | States | Status | Evidence |
 |-------|---------|-------------|---------|---------------|--------|--------|----------|
 | `/` | Landing/marketing page + hero3d | Static marketing (no API) | none | public | n/a | FUNCTIONAL (marketing) | `app/page.tsx`, `components/landing/hero3d` |
-| `/login` | Sign in | real | `POST /auth/login`, `/auth/verify-login` (MFA TOTP **or** recovery code) | public | loading/error | FUNCTIONAL | `auth-client.ts`, tests `login-page.spec.tsx` (35, incl. recovery mode) |
+| `/login` | Sign in | real | `POST /auth/login`, `/auth/verify-login` (MFA TOTP **or** recovery code) | public | loading/error | FUNCTIONAL | `auth-client.ts`, tests `login-page.spec.tsx` (38, incl. recovery mode + Forgot Password link) |
+| `/forgot-password` | Request password reset email | real | `POST /auth/forgot-password` (via `recovery-client.ts`) | public | loading/error/success | FUNCTIONAL | `forgot-password-page.spec.tsx` (26), `recovery-client.spec.ts` (11) |
+| `/reset-password` | Set new password from reset link | real | `POST /auth/reset-password` (via `recovery-client.ts`) | public (token) | loading/ready/success/invalid_token/missing_token/error | FUNCTIONAL | `reset-password-page.spec.tsx` (35), `recovery-client.spec.ts` (11) |
 | `/signup` | Register | real | `POST /auth/signup` | public | loading/error/validation | FUNCTIONAL | tests `signup-page.spec.tsx` |
 | `/invite/[token]` | Accept org invitation | real | `GET/POST /invitations/:token` | public token | loading/error/success | FUNCTIONAL | `invite-page.spec.tsx` |
 | `/dashboard` | Command center | real | `GET /dashboard/summary`, WS `/metrics` alerts, `GET /backups/runs` | session + `MONITORING_VIEW` | loading/error/empty/stale | FUNCTIONAL | `components/command-center/CommandCenterPage`, `useCommandCenterData` |
@@ -50,6 +52,7 @@ All pages under `apps/web/src/app` use `'use client'` hooks that call the gatewa
 - `org-client.ts` — organizations CRUD/switch, members (update role/remove), invitations (create/list/revoke/resend/accept).
 - `account-client.ts` — account summary (self-scoped `GET/PATCH /auth/account/summary`), deletion preview/confirm (`GET /auth/account/deletion-preview`, `DELETE /auth/account`).
 - `security-client.ts` — password change (`POST /auth/change-password` with `setTokens()` for fresh pair), session list (`GET /auth/sessions`), revoke one/other/current (`DELETE /auth/sessions/:sessionId`, `DELETE /auth/sessions`, `DELETE /auth/sessions/current` with `clearTokens()` + redirect to `/login`).
+- `recovery-client.ts` — password recovery API client: `requestPasswordReset(email)` → `POST /auth/forgot-password` (returns generic success for enumeration resistance); `resetPassword(token, newPassword)` → `POST /auth/reset-password` (returns success or typed `RecoveryError` with `kind: 'invalid_token' | 'rate_limited' | 'network' | 'server'`).
 - `mfa-client.ts` — typed MFA + recovery client: `GET /mfa/status`, `POST /mfa/enroll`, `POST /mfa/verify`, `POST /mfa/disable`, `POST /mfa/recovery-codes/generate|regenerate`, `GET /mfa/recovery-codes/status`; recovery/TOTP normalization + validation helpers mirroring the backend alphabet (A-Z2-7, `XXXX-XXXX-XXXX-XXXX`). `mfa-errors.ts` maps errors to calm copy (backend text only for 400/401/403/404/409).
 - `clipboard.ts` — `copyText` helper (silent degradation in non-secure contexts), used by the MFA dialogs and Profile Account-ID copy.
 - `socket-client.ts` — socket.io `/metrics` subscription with connection-state fallback to polling.

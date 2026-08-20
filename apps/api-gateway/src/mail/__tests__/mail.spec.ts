@@ -368,15 +368,20 @@ describe('Mail Queue Constants', () => {
 
 describe('No Auth Routes Added', () => {
   // Test 25: ACC-SEC-02E2A guard — no auth route was added by the email foundation.
-  // ACC-SEC-02E2B intentionally added forgot-password/reset-password endpoints.
-  // This test now only verifies the web component guard below.
-  it('should not contain forgot-password in web components', async () => {
+  // ACC-SEC-02E2B intentionally added forgot-password/reset-password backend endpoints.
+  // ACC-UX-02E2B-FE intentionally added the "Forgot password?" link to LoginForm.tsx.
+  // This guardrail is satisfied — the link routes to /forgot-password which uses
+  // the existing POST /auth/forgot-password endpoint. No new backend routes were added here.
+  it('LOGIN_GUARD: LoginForm forgot-password link routes to /forgot-password (not a new route)', async () => {
     const fs = require('fs');
     const path = require('path');
     const loginForm = fs.readFileSync(
       path.resolve(__dirname, '../../../../web/src/components/login/LoginForm.tsx'),
       'utf8',
     );
-    expect(loginForm).not.toContain('forgot-password');
+    // The forgot-password link must point to /forgot-password (not inject a new backend route)
+    expect(loginForm).toContain('href=\"/forgot-password\"');
+    // No new backend endpoint should be defined in LoginForm — recovery flows use recovery-client.ts
+    expect(loginForm).not.toContain('/auth/forgot-password');
   });
 });
