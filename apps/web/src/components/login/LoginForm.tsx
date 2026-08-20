@@ -358,6 +358,15 @@ export function LoginForm() {
             Sign in
           </Button>
 
+          <p className="text-center text-sm">
+            <Link
+              href="/forgot-password"
+              className="rounded-sm font-medium text-primary transition-colors duration-150 hover:text-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Forgot password?
+            </Link>
+          </p>
+
           <p className="text-center text-sm text-text-secondary">
             Don&apos;t have an account?{' '}
             <Link

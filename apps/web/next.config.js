@@ -1,9 +1,11 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV !== 'production';
+
 const apiUrl =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+  process.env.NEXT_PUBLIC_API_URL ?? (isDev ? 'http://localhost:3001' : '');
 
 const wsUrl =
-  process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001';
+  process.env.NEXT_PUBLIC_WS_URL ?? (isDev ? 'ws://localhost:3001' : '');
 
 const connectSrc = [
   "'self'",
@@ -13,7 +15,8 @@ const connectSrc = [
   'wss://techfusionapi-gateway-production.up.railway.app',
   'ws:',
   'wss:',
-];
+  ...(isDev ? ['http://localhost:3001', 'ws://localhost:3001'] : []),
+].filter(Boolean);
 
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },

@@ -762,10 +762,17 @@ describe('LoginExperience — invitation continuation (V1-TEAM-01)', () => {
 });
 
 describe('LoginExperience — accessibility and regression', () => {
-  it('does not add Forgot Password or Remember Me affordances', () => {
+  it('renders Forgot password link and no Remember Me affordance', () => {
     render(<LoginExperience />);
-    expect(screen.queryByText(/forgot password/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /forgot password/i })).toHaveAttribute('href', '/forgot-password');
     expect(screen.queryByText(/remember me/i)).not.toBeInTheDocument();
+  });
+
+  it('renders Forgot password link that routes correctly', () => {
+    render(<LoginExperience />);
+    const link = screen.getByRole('link', { name: /forgot password/i });
+    expect(link).toHaveAttribute('href', '/forgot-password');
+    expect(link).not.toHaveAttribute('tabIndex', '-1');
   });
 
   it('keeps interactive controls keyboard reachable (no tabIndex=-1)', () => {
