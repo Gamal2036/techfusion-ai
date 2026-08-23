@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'crypto';
 import { randomBytes } from 'crypto';
-import { TRANSACTIONAL_EMAIL_CONTRACT_VERSION } from '@techfusion/types';
+import { TRANSACTIONAL_EMAIL_CONTRACT_VERSION, type PasswordResetEmailPayloadV1 } from '@techfusion/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TransactionalEmailService } from '../mail/mail.service';
@@ -102,11 +102,11 @@ export class PasswordResetService {
           .getUrlBuilder()
           .buildActionUrl('/reset-password', { token: rawToken });
 
-        const rendered = await this.emailService.renderEmail('password-reset', {
+        const templatePayload: PasswordResetEmailPayloadV1 = {
           recipientName: user.displayName || 'User',
           actionUrl: resetUrl,
           expiresIn: '15 minutes',
-        });
+        };
 
         const idempotencyKey = `pwd-reset-${result.id}`;
         const correlationId = `pwd-reset-${user.id}-${Date.now()}`;
@@ -114,10 +114,7 @@ export class PasswordResetService {
         await this.queueService.addTransactionalEmail({
           version: TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
           templateId: 'password-reset',
-          encryptedPayload: JSON.stringify({
-            rendered,
-            to: user.email,
-          }),
+          encryptedPayload: JSON.stringify(templatePayload),
           recipientHash: this.emailService.getUrlBuilder().hashRecipient(user.email),
           idempotencyKey,
           correlationId,

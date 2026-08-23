@@ -1,7 +1,9 @@
 import {
   TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
   isValidContractVersion,
+  isValidTransactionalEmailPayload,
   type TransactionalEmailJob,
+  type PasswordResetEmailPayloadV1,
 } from '@techfusion/types';
 import { MockQueueService } from '../../queue/queue.service.mock';
 
@@ -17,7 +19,11 @@ describe('Transactional Email Producer Contract', () => {
       await mockQueue.addTransactionalEmail({
         version: TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
         templateId: 'password-reset',
-        encryptedPayload: '{"rendered":{},"to":"user@test.com"}',
+        encryptedPayload: JSON.stringify({
+          recipientName: 'Test User',
+          actionUrl: 'https://app.techfusion.ai/reset-password?token=abc',
+          expiresIn: '15 minutes',
+        }),
         recipientHash: 'abc123',
         idempotencyKey: 'pwd-reset-token-1',
         correlationId: 'corr-1',
@@ -112,8 +118,9 @@ describe('Transactional Email Producer Contract', () => {
         version: TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
         templateId: 'password-reset' as const,
         encryptedPayload: JSON.stringify({
-          rendered: { subject: 'Reset', textBody: 'text', htmlBody: '<p>html</p>' },
-          to: 'user@example.com',
+          recipientName: 'Test User',
+          actionUrl: 'https://app.techfusion.ai/reset-password?token=abc123',
+          expiresIn: '15 minutes',
         }),
         recipientHash: 'abc123',
         idempotencyKey: 'pwd-reset-token-123',
@@ -126,6 +133,22 @@ describe('Transactional Email Producer Contract', () => {
       await mockQueue.addTransactionalEmail(jobData);
       const jobs = mockQueue.getJobs();
       expect(jobs[0].data.version).toBe(1);
+    });
+
+    it('producer payload satisfies the shared worker-side payload validator', async () => {
+      const payload: PasswordResetEmailPayloadV1 = {
+        recipientName: 'Test User',
+        actionUrl: 'https://app.techfusion.ai/reset-password?token=abc123',
+        expiresIn: '15 minutes',
+      };
+
+      expect(
+        isValidTransactionalEmailPayload('password-reset', JSON.parse(JSON.stringify(payload))),
+      ).toBe(true);
+
+      expect(isValidTransactionalEmailPayload('password-reset', {})).toBe(false);
+      expect(isValidTransactionalEmailPayload('password-reset', { recipientName: 'x' })).toBe(false);
+      expect(isValidTransactionalEmailPayload('password-reset', null)).toBe(false);
     });
   });
 

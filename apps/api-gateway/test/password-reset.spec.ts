@@ -11,6 +11,11 @@ import { QueueService } from '../src/queue/queue.service';
 import { TransactionalEmailService } from '../src/mail/mail.service';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'crypto';
+import {
+  TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  isValidContractVersion,
+  isValidTransactionalEmailPayload,
+} from '@techfusion/types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-password-reset-tests-32chars!!';
 
@@ -279,9 +284,43 @@ describe('Password Reset (ACC-SEC-02E2B)', () => {
     const emailJobs = jobs.filter((j: any) => j.type === 'transactional_email');
     expect(emailJobs.length).toBe(1);
 
+    expect(emailJobs[0].data.version).toBe(1);
+
     const payload = JSON.parse(emailJobs[0].data.encryptedPayload);
-    expect(payload.rendered.htmlBody).toContain('/reset-password?token=');
-    expect(payload.rendered.textBody).toContain('/reset-password?token=');
+    expect(payload.recipientName).toBe('Test User');
+    expect(payload.actionUrl).toContain('/reset-password?token=');
+    expect(payload.expiresIn).toBe('15 minutes');
+    expect(isValidTransactionalEmailPayload('password-reset', payload)).toBe(true);
+  });
+
+  // ── P10b: Producer emits V1 contract envelope ────────────────────────
+
+  it('P10b: producer emits valid V1 contract envelope accepted by shared validator', async () => {
+    const org = await createOrg();
+    await createUser('envelope@example.com', org.id);
+
+    await request(app.getHttpServer())
+      .post('/auth/forgot-password')
+      .send({ email: 'envelope@example.com' })
+      .expect(200);
+
+    const jobs = queueService.getJobs();
+    const emailJobs = jobs.filter((j: any) => j.type === 'transactional_email');
+    expect(emailJobs.length).toBe(1);
+
+    const jobData = emailJobs[0].data;
+    expect(jobData.version).toBe(TRANSACTIONAL_EMAIL_CONTRACT_VERSION);
+    expect(isValidContractVersion(jobData.version)).toBe(true);
+    expect(jobData.templateId).toBe('password-reset');
+    expect(typeof jobData.encryptedPayload).toBe('string');
+    expect(typeof jobData.recipientHash).toBe('string');
+    expect(jobData.recipientHash).not.toContain('envelope@example.com');
+    expect(typeof jobData.idempotencyKey).toBe('string');
+    expect(typeof jobData.correlationId).toBe('string');
+
+    const payload = JSON.parse(jobData.encryptedPayload);
+    expect(isValidTransactionalEmailPayload(jobData.templateId, payload)).toBe(true);
+    expect(JSON.stringify(payload)).not.toContain('envelope@example.com');
   });
 
   // ── P11: Reset succeeds with valid token ─────────────────────────────

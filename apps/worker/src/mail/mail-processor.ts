@@ -1,5 +1,10 @@
 import { Job } from 'bullmq';
-import { TRANSACTIONAL_EMAIL_CONTRACT_VERSION, type TransactionalEmailJobWithCorrelation } from '@techfusion/types';
+import {
+  TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  isValidTransactionalEmailPayload,
+  isValidTransactionalEmailTemplateId,
+  type TransactionalEmailJobWithCorrelation,
+} from '@techfusion/types';
 import { MailProvider, MailDeliveryError, MailRenderedEmail } from './mail-provider.interface';
 import { renderTemplate, TemplateData } from './mail-templates';
 import { MailUrlBuilder } from './mail-url-builder';
@@ -59,6 +64,20 @@ export function createMailProcessor(
           correlationId: corr?.correlationId,
         });
         throw new MailDeliveryError('Payload decryption failed', false, 'decryption');
+      }
+
+      if (
+        isValidTransactionalEmailTemplateId(data.templateId) &&
+        !isValidTransactionalEmailPayload(data.templateId, templateData)
+      ) {
+        log.error('Invalid template payload, aborting before render and send', {
+          queueName: 'transactional-email',
+          jobId: job.id?.toString(),
+          errorType: 'PayloadValidationError',
+          errorMessage: 'Invalid transactional email payload',
+          correlationId: corr?.correlationId,
+        });
+        throw new MailDeliveryError('Invalid transactional email payload', false, 'payload');
       }
 
       let rendered: MailRenderedEmail;

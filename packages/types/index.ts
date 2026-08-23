@@ -105,6 +105,8 @@ export interface ReportRecord {
 export {
   TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
   isValidContractVersion,
+  isValidTransactionalEmailTemplateId,
+  isValidTransactionalEmailPayload,
 } from './transactional-email-job';
 
 export type {
@@ -113,4 +115,9 @@ export type {
   TransactionalEmailJob,
   TransactionalEmailJobCorrelation,
   TransactionalEmailJobWithCorrelation,
+  PasswordResetEmailPayloadV1,
+  EmailVerificationEmailPayloadV1,
+  SecurityNotificationEmailPayloadV1,
+  TransactionalEmailPayloadMapV1,
+  TransactionalEmailPayloadV1,
 } from './transactional-email-job';

@@ -2,11 +2,12 @@ import { Job } from 'bullmq';
 import {
   TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
   isValidContractVersion,
+  isValidTransactionalEmailPayload,
   type TransactionalEmailJob,
   type TransactionalEmailJobWithCorrelation,
 } from '@techfusion/types';
 import { createTestMailProvider } from '../mail/mail-providers';
-import { renderTemplate } from '../mail/mail-templates';
+import * as mailTemplates from '../mail/mail-templates';
 import { MailUrlBuilder } from '../mail/mail-url-builder';
 import { createMailProcessor } from '../mail/mail-processor';
 import { MailDeliveryError } from '../mail/mail-provider.interface';
@@ -111,6 +112,39 @@ describe('Transactional Email Queue Contract', () => {
       await processor(job);
 
       expect(provider.getSentEmails()).toHaveLength(1);
+    });
+
+    it('should render the template exactly once for a valid job', async () => {
+      const renderSpy = jest.spyOn(mailTemplates, 'renderTemplate');
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob();
+      await processor(job);
+
+      expect(renderSpy).toHaveBeenCalledTimes(1);
+      expect(provider.getSentEmails()).toHaveLength(1);
+      renderSpy.mockRestore();
+    });
+
+    it('accepts payloads matching the shared authoritative payload validator', async () => {
+      const payload = {
+        recipientName: 'Test User',
+        actionUrl: 'https://app.techfusion.ai/reset-password?token=abc',
+        expiresIn: '15 minutes',
+      };
+      expect(isValidTransactionalEmailPayload('password-reset', payload)).toBe(true);
+
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob({ encryptedPayload: JSON.stringify(payload) });
+      const result = await processor(job);
+      expect(result.success).toBe(true);
     });
   });
 
@@ -228,6 +262,58 @@ describe('Transactional Email Queue Contract', () => {
 
       expect(provider.getSentEmails()).toHaveLength(0);
     });
+
+    it('should reject payload missing recipientName before SMTP', async () => {
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob({
+        encryptedPayload: JSON.stringify({
+          actionUrl: 'https://app.techfusion.ai/reset-password?token=abc',
+          expiresIn: '15 minutes',
+        }),
+      });
+
+      await expect(processor(job)).rejects.toThrow(/Invalid transactional email payload/);
+      expect(provider.getSentEmails()).toHaveLength(0);
+    });
+
+    it('should reject payload with non-string required fields before SMTP', async () => {
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob({
+        encryptedPayload: JSON.stringify({
+          recipientName: 'Test User',
+          actionUrl: { evil: true },
+          expiresIn: '15 minutes',
+        }),
+      });
+
+      await expect(processor(job)).rejects.toThrow(MailDeliveryError);
+      expect(provider.getSentEmails()).toHaveLength(0);
+    });
+
+    it('should reject empty-object payload before SMTP', async () => {
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob({ encryptedPayload: JSON.stringify({}) });
+      try {
+        await processor(job);
+        fail('Expected error');
+      } catch (err: any) {
+        expect(err.message).toMatch(/Invalid transactional email payload/);
+      }
+
+      expect(provider.getSentEmails()).toHaveLength(0);
+    });
   });
 
   describe('Retryable provider errors retain retry behavior', () => {
@@ -274,6 +360,27 @@ describe('Transactional Email Queue Contract', () => {
         expect(err).not.toBeInstanceOf(MailDeliveryError);
         expect(err.message).toMatch(/templateId/);
       }
+    });
+
+    it('should throw non-retryable MailDeliveryError for missing required payload fields', async () => {
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+      const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+
+      const job = makeJob({
+        encryptedPayload: JSON.stringify({ recipientName: 'Test User' }),
+      });
+      try {
+        await processor(job);
+        fail('Expected error');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(MailDeliveryError);
+        expect(err.isRetryable).toBe(false);
+        expect(err.message).toMatch(/Invalid transactional email payload/);
+      }
+
+      expect(provider.getSentEmails()).toHaveLength(0);
     });
   });
 
