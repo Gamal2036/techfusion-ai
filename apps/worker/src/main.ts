@@ -6,6 +6,12 @@ import { processAlertJob, processReportJob, processBackupJob, processInventoryJo
 import { createWorkerLogger } from './structured-logger';
 import { extractCorrelationFromJob, JobCorrelationData } from './correlation';
 import { disconnectPrisma } from './prisma-client';
+import {
+  loadMailPayloadEncryptionKey,
+  openTransactionalEmailDeliveryEnvelope,
+  MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV,
+  type TransactionalEmailDeliveryEnvelopeV1,
+} from '@techfusion/types';
 import { loadMailProviderConfig, createSmtpMailProvider, createTestMailProvider, createDisabledMailProvider } from './mail/mail-providers';
 import { MailProvider } from './mail/mail-provider.interface';
 import { createMailProcessor } from './mail/mail-processor';
@@ -219,17 +225,37 @@ async function main() {
   if (mailProvider && mailProvider.isReady()) {
     const mailConfig = loadMailProviderConfig();
     const mailUrlBuilder = new MailUrlBuilder(process.env.WEB_APP_URL || process.env.PUBLIC_WEB_URL || 'http://localhost:3000');
-    const mailDecryptPayload = (encrypted: string) => {
-      try {
-        const JSON5 = require('json5');
-        return JSON5.parse(encrypted);
-      } catch {
-        return JSON.parse(encrypted);
-      }
-    };
-    const mailProcessor = createMailProcessor(mailProvider, mailDecryptPayload, mailUrlBuilder);
-    QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = mailProcessor;
-    logger.log('Transactional email processor registered');
+
+    let openDeliveryEnvelope: ((encrypted: string) => TransactionalEmailDeliveryEnvelopeV1) | null = null;
+    try {
+      // Fail closed: without a valid payload encryption key the worker must
+      // not process transactional email jobs at all.
+      const mailPayloadKey = loadMailPayloadEncryptionKey();
+      openDeliveryEnvelope = (encrypted: string) =>
+        openTransactionalEmailDeliveryEnvelope(encrypted, mailPayloadKey);
+    } catch (err: any) {
+      logger.error('Transactional email payload encryption key is missing or invalid — failing closed', {
+        errorType: err?.name || 'MailPayloadKeyError',
+        errorMessage: err?.message || 'Mail payload encryption unavailable',
+      });
+    }
+
+    if (openDeliveryEnvelope) {
+      const mailProcessor = createMailProcessor(mailProvider, openDeliveryEnvelope, mailUrlBuilder);
+      QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = mailProcessor;
+      logger.log('Transactional email processor registered');
+    } else {
+      QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = async (job: Job) => {
+        logger.warn('Rejecting transactional email job: payload encryption unavailable', {
+          queueName: QUEUE_NAMES.TRANSACTIONAL_EMAIL,
+          jobId: job.id?.toString(),
+        });
+        throw new Error(
+          `Transactional email payload encryption is not configured (${MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV})`,
+        );
+      };
+      logger.log('Transactional email processor registered (fail-closed stub)');
+    }
   } else {
     // Register a stub processor that rejects jobs when mail is disabled
     QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = async (job: Job) => {

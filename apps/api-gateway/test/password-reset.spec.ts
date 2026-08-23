@@ -13,9 +13,17 @@ import { ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'crypto';
 import {
   TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  TRANSACTIONAL_EMAIL_DELIVERY_ENVELOPE_VERSION,
   isValidContractVersion,
   isValidTransactionalEmailPayload,
+  isValidTransactionalEmailDeliveryEnvelope,
+  openTransactionalEmailDeliveryEnvelope,
+  MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV,
 } from '@techfusion/types';
+
+// Ephemeral in-test payload encryption key — injected via env for the run,
+// never sourced from or persisted to repository .env files.
+const TEST_MAIL_PAYLOAD_KEY_B64 = Buffer.alloc(32, 13).toString('base64');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-for-password-reset-tests-32chars!!';
 
@@ -34,6 +42,7 @@ describe('Password Reset (ACC-SEC-02E2B)', () => {
   beforeAll(async () => {
     process.env.MAIL_ENABLED = 'true';
     process.env.MAIL_TRANSPORT = 'test';
+    process.env[MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV] = TEST_MAIL_PAYLOAD_KEY_B64;
 
     moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
@@ -64,6 +73,7 @@ describe('Password Reset (ACC-SEC-02E2B)', () => {
     await app?.close();
     delete process.env.MAIL_ENABLED;
     delete process.env.MAIL_TRANSPORT;
+    delete process.env[MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV];
   });
 
   beforeEach(async () => {
@@ -286,7 +296,11 @@ describe('Password Reset (ACC-SEC-02E2B)', () => {
 
     expect(emailJobs[0].data.version).toBe(1);
 
-    const payload = JSON.parse(emailJobs[0].data.encryptedPayload);
+    const envelope = openTransactionalEmailDeliveryEnvelope(
+      emailJobs[0].data.encryptedPayload,
+      Buffer.from(TEST_MAIL_PAYLOAD_KEY_B64, 'base64'),
+    );
+    const payload = envelope.templateData;
     expect(payload.recipientName).toBe('Test User');
     expect(payload.actionUrl).toContain('/reset-password?token=');
     expect(payload.expiresIn).toBe('15 minutes');
@@ -318,9 +332,56 @@ describe('Password Reset (ACC-SEC-02E2B)', () => {
     expect(typeof jobData.idempotencyKey).toBe('string');
     expect(typeof jobData.correlationId).toBe('string');
 
-    const payload = JSON.parse(jobData.encryptedPayload);
-    expect(isValidTransactionalEmailPayload(jobData.templateId, payload)).toBe(true);
-    expect(JSON.stringify(payload)).not.toContain('envelope@example.com');
+    // Root BullMQ job data carries only the allowed field set and never the
+    // plaintext recipient address.
+    expect(Object.keys(jobData).sort()).toEqual(
+      [
+        'correlationId',
+        'encryptedPayload',
+        'idempotencyKey',
+        'recipientHash',
+        'templateId',
+        'version',
+      ].sort(),
+    );
+    const rootPayloadJson = JSON.stringify(jobData);
+    expect(rootPayloadJson).not.toContain('envelope@example.com');
+
+    // After decryption the envelope contains the real recipient address and
+    // the typed template data, and passes the shared validator.
+    const envelope = openTransactionalEmailDeliveryEnvelope(
+      jobData.encryptedPayload,
+      Buffer.from(TEST_MAIL_PAYLOAD_KEY_B64, 'base64'),
+    );
+    expect(envelope.envelopeVersion).toBe(TRANSACTIONAL_EMAIL_DELIVERY_ENVELOPE_VERSION);
+    expect(envelope.to).toBe('envelope@example.com');
+    expect(isValidTransactionalEmailDeliveryEnvelope('password-reset', envelope)).toBe(true);
+  });
+
+  // ── P10c: Fail closed when payload encryption key is missing ─────────
+
+  it('P10c: missing payload encryption key queues no email but keeps generic response', async () => {
+    const org = await createOrg();
+    await createUser('failclosed@example.com', org.id);
+
+    delete process.env[MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV];
+    try {
+      const res = await request(app.getHttpServer())
+        .post('/auth/forgot-password')
+        .send({ email: 'failclosed@example.com' })
+        .expect(200);
+
+      expect(res.body.message).toBe(
+        'If an account exists for that email, password reset instructions will be sent.',
+      );
+
+      const jobs = queueService
+        .getJobs()
+        .filter((j: any) => j.type === 'transactional_email');
+      expect(jobs.length).toBe(0);
+    } finally {
+      process.env[MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV] = TEST_MAIL_PAYLOAD_KEY_B64;
+    }
   });
 
   // ── P11: Reset succeeds with valid token ─────────────────────────────

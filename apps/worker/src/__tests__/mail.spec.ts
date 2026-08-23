@@ -1,9 +1,18 @@
-import { Job } from 'bullmq';
-import { createDisabledMailProvider, createTestMailProvider, loadMailProviderConfig } from '../mail/mail-providers';
+import { Job, UnrecoverableError } from 'bullmq';
+import {
+  createDisabledMailProvider,
+  createTestMailProvider,
+  loadMailProviderConfig,
+  classifySmtpDeliveryError,
+} from '../mail/mail-providers';
 import { renderTemplate } from '../mail/mail-templates';
 import { MailUrlBuilder } from '../mail/mail-url-builder';
 import { createMailProcessor } from '../mail/mail-processor';
 import { MailDeliveryError, MailUnavailableError } from '../mail/mail-provider.interface';
+import {
+  openTransactionalEmailDeliveryEnvelope,
+  sealTransactionalEmailDeliveryEnvelope,
+} from '@techfusion/types';
 
 jest.mock('../metrics', () => ({
   startMetricsServer: jest.fn(),
@@ -153,182 +162,148 @@ describe('Worker Mail URL Builder', () => {
 });
 
 describe('Worker Mail Processor', () => {
-  // Test 21: Worker processor success path
-  it('should process a valid email job successfully', async () => {
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+  const TEST_KEY = Buffer.alloc(32, 11);
+  const RECIPIENT = 'processor@example.com';
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+  function sealedPayload(templateDataOverrides: Record<string, unknown> = {}, to = RECIPIENT): string {
+    return sealTransactionalEmailDeliveryEnvelope(
+      {
+        envelopeVersion: 1,
+        to,
+        templateData: {
+          recipientName: 'Test User',
+          actionUrl: 'https://app.techfusion.ai/reset?token=abc',
+          expiresIn: '30 minutes',
+          ...templateDataOverrides,
+        },
+      },
+      TEST_KEY,
+    );
+  }
 
-    const job = {
+  function makeProcessorJob(dataOverrides: Record<string, unknown> = {}, encryptedPayload?: string): Job {
+    return {
       id: 'job-1',
       data: {
         version: 1,
         templateId: 'password-reset',
-        encryptedPayload: JSON.stringify({
-          recipientName: 'Test User',
-          actionUrl: 'https://app.techfusion.ai/reset?token=abc',
-          expiresIn: '30 minutes',
-        }),
-        recipientHash: 'abc123',
+        encryptedPayload: encryptedPayload ?? sealedPayload(),
+        recipientHash: 'abc123def456',
         idempotencyKey: 'idem-1',
         correlationId: 'corr-1',
         _correlation: { requestId: 'req-1', correlationId: 'corr-1' },
+        ...dataOverrides,
       },
       attemptsMade: 1,
     } as unknown as Job;
+  }
 
-    const result = await processor(job);
+  function makeEnvelopeProcessor(provider = createTestMailProvider()) {
+    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+    const processor = createMailProcessor(
+      provider,
+      (encrypted: string) => openTransactionalEmailDeliveryEnvelope(encrypted, TEST_KEY),
+      urlBuilder,
+    );
+    return { provider, processor };
+  }
+
+  // Test 21: Worker processor success path
+  it('should process a valid email job successfully', async () => {
+    const { provider, processor } = makeEnvelopeProcessor();
+
+    const result = await processor(makeProcessorJob());
     expect(result.success).toBe(true);
     expect(provider.getSentEmails()).toHaveLength(1);
   });
 
+  it('passes the decrypted real recipient address to the provider', async () => {
+    const { provider, processor } = makeEnvelopeProcessor();
+
+    await processor(makeProcessorJob());
+
+    const emails = provider.getSentEmails();
+    expect(emails).toHaveLength(1);
+    expect(emails[0].metadata.to).toBe(RECIPIENT);
+    expect(emails[0].metadata.to).not.toContain('recipient-');
+  });
+
   // Test 22: Worker processor failure path (decryption failure)
   it('should fail on invalid encrypted payload', async () => {
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = () => { throw new Error('bad payload'); };
+    const { provider, processor } = makeEnvelopeProcessor();
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+    const job = makeProcessorJob({}, 'invalid');
 
-    const job = {
-      id: 'job-2',
-      data: {
-        version: 1,
-        templateId: 'password-reset',
-        encryptedPayload: 'invalid',
-        recipientHash: 'abc',
-        idempotencyKey: 'idem-2',
-        correlationId: 'corr-2',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
+    await expect(processor(job)).rejects.toThrow(/decryption|encrypted container/i);
+    await expect(processor(job)).rejects.toThrow(UnrecoverableError);
+    expect(provider.getSentEmails()).toHaveLength(0);
+  });
 
-    await expect(processor(job)).rejects.toThrow(/decryption/i);
+  it('rejects malformed or missing recipients before SMTP', async () => {
+    for (const badTo of ['', 'not-an-email']) {
+      const provider = createTestMailProvider();
+      const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
+      const processor = createMailProcessor(
+        provider,
+        () => ({ envelopeVersion: 1, to: badTo, templateData: { recipientName: 'U', actionUrl: 'https://x.com/r?t=1', expiresIn: '15 minutes' } }),
+        urlBuilder,
+      );
+
+      await expect(processor(makeProcessorJob())).rejects.toThrow(UnrecoverableError);
+      await expect(processor(makeProcessorJob())).rejects.toThrow(
+        /Invalid transactional email delivery envelope/,
+      );
+      expect(provider.getSentEmails()).toHaveLength(0);
+    }
   });
 
   // Test 14: Malformed job payload is rejected
   it('should reject job with unsupported version', async () => {
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+    const { provider, processor } = makeEnvelopeProcessor();
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
-
-    const job = {
-      id: 'job-3',
-      data: {
-        version: 999,
-        templateId: 'password-reset',
-        encryptedPayload: '{}',
-        recipientHash: 'abc',
-        idempotencyKey: 'idem-3',
-        correlationId: 'corr-3',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
-
+    const job = makeProcessorJob({ version: 999 });
     await expect(processor(job)).rejects.toThrow(/version/);
+    expect(provider.getSentEmails()).toHaveLength(0);
   });
 
   it('should reject job with missing templateId', async () => {
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+    const { provider, processor } = makeEnvelopeProcessor();
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
-
-    const job = {
-      id: 'job-4',
-      data: {
-        version: 1,
-        encryptedPayload: '{}',
-        recipientHash: 'abc',
-        idempotencyKey: 'idem-4',
-        correlationId: 'corr-4',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
-
+    const job = makeProcessorJob({ templateId: '' });
     await expect(processor(job)).rejects.toThrow(/templateId/);
+    expect(provider.getSentEmails()).toHaveLength(0);
   });
 
   // Test 16: Retryable failure classification
   it('should propagate retryable errors', async () => {
     const provider = createTestMailProvider();
     provider.setRetryableFailure(1);
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+    const { processor } = makeEnvelopeProcessor(provider);
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
-
-    const job = {
-      id: 'job-5',
-      data: {
-        version: 1,
-        templateId: 'password-reset',
-        encryptedPayload: JSON.stringify({ recipientName: 'User', actionUrl: 'https://app.techfusion.ai/reset?token=x', expiresIn: '30m' }),
-        recipientHash: 'abc',
-        idempotencyKey: 'idem-5',
-        correlationId: 'corr-5',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
-
-    await expect(processor(job)).rejects.toThrow(MailDeliveryError);
+    await expect(processor(makeProcessorJob())).rejects.toThrow(MailDeliveryError);
   });
 
   // Test 17: Permanent failure classification
   it('should propagate permanent template errors', async () => {
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
+    const { provider, processor } = makeEnvelopeProcessor();
 
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
-
-    const job = {
-      id: 'job-6',
-      data: {
-        version: 1,
-        templateId: 'nonexistent-template',
-        encryptedPayload: JSON.stringify({ recipientName: 'User', actionUrl: 'https://x.com', expiresIn: '30m' }),
-        recipientHash: 'abc',
-        idempotencyKey: 'idem-6',
-        correlationId: 'corr-6',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
-
+    const job = makeProcessorJob({ templateId: 'nonexistent-template' });
     await expect(processor(job)).rejects.toThrow(/Template rendering failed/);
+    expect(provider.getSentEmails()).toHaveLength(0);
   });
 
-  // Test 20: Logs contain no body, token, URL or credentials
+  // Test 20: Logs contain no body, token, URL, credentials or recipient email
   it('should not log sensitive payload content', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-    const provider = createTestMailProvider();
-    const urlBuilder = new MailUrlBuilder('https://app.techfusion.ai');
-    const decryptPayload = (encrypted: string) => JSON.parse(encrypted);
-
-    const processor = createMailProcessor(provider, decryptPayload, urlBuilder);
+    const { processor } = makeEnvelopeProcessor();
 
     const secretToken = 'SUPER_SECRET_TOKEN_12345';
-    const job = {
-      id: 'job-7',
-      data: {
-        version: 1,
-        templateId: 'password-reset',
-        encryptedPayload: JSON.stringify({
-          recipientName: 'User',
-          actionUrl: `https://app.techfusion.ai/reset?token=${secretToken}`,
-          expiresIn: '30m',
-        }),
-        recipientHash: 'abc123def456',
-        idempotencyKey: 'idem-7',
-        correlationId: 'corr-7',
-      },
-      attemptsMade: 1,
-    } as unknown as Job;
+    const job = makeProcessorJob(
+      {},
+      sealedPayload({
+        actionUrl: `https://app.techfusion.ai/reset?token=${secretToken}`,
+      }),
+    );
 
     await processor(job);
 
@@ -336,9 +311,81 @@ describe('Worker Mail Processor', () => {
     for (const logLine of allLogCalls) {
       expect(logLine).not.toContain(secretToken);
       expect(logLine).not.toContain('SUPER_SECRET');
+      expect(logLine).not.toContain(RECIPIENT);
     }
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe('SMTP Error Classification (sanitized)', () => {
+  it('categorizes EENVELOPE as permanent envelope error without echoing addresses', () => {
+    const err = {
+      code: 'EENVELOPE',
+      response: '550 5.1.1 <victim@example.com>: Recipient address rejected',
+      responseCode: 550,
+      message: 'Recipient address rejected: victim@example.com',
+    };
+    const { retryable, category } = classifySmtpDeliveryError(err);
+    expect(category).toBe('envelope');
+    expect(retryable).toBe(false);
+  });
+
+  it('categorizes EAUTH as permanent and non-retryable', () => {
+    const err = { code: 'EAUTH', responseCode: 535, message: 'Invalid credentials for secret-user' };
+    const { retryable, category } = classifySmtpDeliveryError(err);
+    expect(category).toBe('auth');
+    expect(retryable).toBe(false);
+  });
+
+  it('keeps connection/timeout classes retryable', () => {
+    for (const code of ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND']) {
+      const { retryable } = classifySmtpDeliveryError({ code });
+      expect(retryable).toBe(true);
+    }
+    const { retryable, category } = classifySmtpDeliveryError({
+      message: 'Connection timeout occurred',
+    });
+    expect(retryable).toBe(true);
+    expect(category).toBe('connection');
+  });
+
+  it('preserves safe SMTP response codes as categories', () => {
+    const fiveXX = classifySmtpDeliveryError({ responseCode: 500 });
+    expect(fiveXX.retryable).toBe(true);
+    expect(fiveXX.category).toBe('smtp-500');
+
+    const fourXX = classifySmtpDeliveryError({ responseCode: 421 });
+    expect(fourXX.retryable).toBe(true);
+    expect(fourXX.category).toBe('smtp-421');
+  });
+
+  it('falls back to the raw code instead of unknown when only an unrecognized safe code exists', () => {
+    const { retryable, category } = classifySmtpDeliveryError({ code: 'ECODE15' });
+    expect(category).toBe('ecode15');
+    expect(retryable).toBe(false);
+  });
+
+  it('never includes message text, responses, or addresses in any category output', () => {
+    const leaky = {
+      code: 'EENVELOPE',
+      response: '553 smtp-relay.brevo.com says goodbye secret-sender@example.com',
+      responseCode: 553,
+      command: 'MAIL FROM',
+      message: 'Unexpected upstream text with victim@example.com inside',
+    };
+    const { category } = classifySmtpDeliveryError(leaky);
+    expect(category).not.toContain('@');
+    expect(category).not.toContain('brevo');
+    expect(category).not.toContain('goodbye');
+    expect(typeof category).toBe('string');
+    expect(category.length).toBeLessThan(32);
+  });
+
+  it('classifies truly opaque errors as unknown', () => {
+    const { retryable, category } = classifySmtpDeliveryError(new Error('mystery'));
+    expect(category).toBe('unknown');
+    expect(retryable).toBe(false);
   });
 });
 

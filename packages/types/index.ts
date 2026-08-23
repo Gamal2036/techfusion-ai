@@ -109,6 +109,23 @@ export {
   isValidTransactionalEmailPayload,
 } from './transactional-email-job';
 
+export {
+  TRANSACTIONAL_EMAIL_DELIVERY_ENVELOPE_VERSION,
+  TRANSACTIONAL_EMAIL_ENCRYPTED_CONTAINER_VERSION,
+  TRANSACTIONAL_EMAIL_PAYLOAD_ENCRYPTION_SCHEME,
+  MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV,
+  loadMailPayloadEncryptionKey,
+  isValidRecipientEmailAddress,
+  isValidTransactionalEmailDeliveryEnvelope,
+  sealTransactionalEmailDeliveryEnvelope,
+  openTransactionalEmailDeliveryEnvelope,
+} from './transactional-email-envelope';
+
+export type {
+  TransactionalEmailDeliveryEnvelopeV1,
+  TransactionalEmailEncryptedContainerV1,
+} from './transactional-email-envelope';
+
 export type {
   TransactionalEmailTemplateId,
   TransactionalEmailJobV1,
