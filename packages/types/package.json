@@ -2,7 +2,7 @@
   "name": "@techfusion/types",
   "version": "0.1.0",
   "private": true,
-  "main": "./index.ts",
+  "main": "./dist/index.js",
   "types": "./index.ts",
   "scripts": {
     "build": "tsc",
