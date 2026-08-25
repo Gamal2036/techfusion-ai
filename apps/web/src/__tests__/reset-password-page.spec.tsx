@@ -14,12 +14,15 @@ jest.mock('@techfusion/ui', () => {
   const R = require('react');
   const cn = (...a: any[]) => a.filter(Boolean).join(' ');
   const Input = R.forwardRef((props: any, ref: any) => {
-    const { label, error, inputSize, className, ...rest } = props;
+    const { label, error, inputSize, className, rightElement, ...rest } = props;
     const inputId = rest.id || rest.name;
     return (
       <div>
         {label && <label htmlFor={inputId}>{label}{rest.required ? '*' : ''}</label>}
-        <input ref={ref} {...rest} id={inputId} className={className} aria-invalid={!!error} />
+        <div style={{ position: 'relative' }}>
+          <input ref={ref} {...rest} id={inputId} className={className} aria-invalid={!!error} />
+          {rightElement && <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }}>{rightElement}</span>}
+        </div>
         {error && <span role="alert">{error}</span>}
       </div>
     );

@@ -321,46 +321,46 @@ export function ResetPasswordForm() {
         <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
           {/* Password field */}
           <div>
-            <div className="relative">
-              <Input
-                id={passwordId}
-                label="New password"
-                name="newPassword"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                placeholder="Enter new password"
-                value={password}
-                onChange={handlePasswordChange}
-                onBlur={handlePasswordBlur}
-                error={
-                  touched.password ? fieldErrors.password : undefined
-                }
-                aria-describedby={
-                  touched.password && fieldErrors.password
-                    ? passwordErrorId
-                    : passwordHelpId
-                }
-                required
-                disabled={pageState === 'submitting'}
-                inputSize="lg"
-                className="h-11 rounded-sm pr-14"
-                ref={passwordRef}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                aria-pressed={showPassword}
-                disabled={pageState === 'submitting'}
-                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-sm text-text-muted transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-              >
-                {showPassword ? (
-                  <EyeOff className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <Eye className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
-            </div>
+            <Input
+              id={passwordId}
+              label="New password"
+              name="newPassword"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              placeholder="Enter new password"
+              value={password}
+              onChange={handlePasswordChange}
+              onBlur={handlePasswordBlur}
+              error={
+                touched.password ? fieldErrors.password : undefined
+              }
+              aria-describedby={
+                touched.password && fieldErrors.password
+                  ? passwordErrorId
+                  : passwordHelpId
+              }
+              required
+              disabled={pageState === 'submitting'}
+              inputSize="lg"
+              className="h-11 rounded-sm pr-14"
+              ref={passwordRef}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                  disabled={pageState === 'submitting'}
+                  className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              }
+            />
             <div
               id={passwordHelpId}
               className="mt-1.5 text-xs text-text-secondary"
@@ -371,50 +371,50 @@ export function ResetPasswordForm() {
 
           {/* Confirm password field */}
           <div>
-            <div className="relative">
-              <Input
-                id={confirmId}
-                label="Confirm password"
-                name="confirmPassword"
-                type={showConfirm ? 'text' : 'password'}
-                autoComplete="new-password"
-                placeholder="Re-enter new password"
-                value={confirmPassword}
-                onChange={handleConfirmChange}
-                onBlur={handleConfirmBlur}
-                error={
-                  touched.confirmPassword
-                    ? fieldErrors.confirmPassword
-                    : undefined
-                }
-                aria-describedby={
-                  touched.confirmPassword && fieldErrors.confirmPassword
-                    ? confirmErrorId
-                    : undefined
-                }
-                required
-                disabled={pageState === 'submitting'}
-                inputSize="lg"
-                className="h-11 rounded-sm pr-14"
-                ref={confirmRef}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm((v) => !v)}
-                aria-label={
-                  showConfirm ? 'Hide confirm password' : 'Show confirm password'
-                }
-                aria-pressed={showConfirm}
-                disabled={pageState === 'submitting'}
-                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center rounded-sm text-text-muted transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-              >
-                {showConfirm ? (
-                  <EyeOff className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <Eye className="h-4 w-4" aria-hidden="true" />
-                )}
-              </button>
-            </div>
+            <Input
+              id={confirmId}
+              label="Confirm password"
+              name="confirmPassword"
+              type={showConfirm ? 'text' : 'password'}
+              autoComplete="new-password"
+              placeholder="Re-enter new password"
+              value={confirmPassword}
+              onChange={handleConfirmChange}
+              onBlur={handleConfirmBlur}
+              error={
+                touched.confirmPassword
+                  ? fieldErrors.confirmPassword
+                  : undefined
+              }
+              aria-describedby={
+                touched.confirmPassword && fieldErrors.confirmPassword
+                  ? confirmErrorId
+                  : undefined
+              }
+              required
+              disabled={pageState === 'submitting'}
+              inputSize="lg"
+              className="h-11 rounded-sm pr-14"
+              ref={confirmRef}
+              rightElement={
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm((v) => !v)}
+                  aria-label={
+                    showConfirm ? 'Hide confirm password' : 'Show confirm password'
+                  }
+                  aria-pressed={showConfirm}
+                  disabled={pageState === 'submitting'}
+                  className="flex h-11 w-11 items-center justify-center rounded-sm text-text-muted transition-colors duration-150 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                >
+                  {showConfirm ? (
+                    <EyeOff className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              }
+            />
           </div>
 
           <Button
