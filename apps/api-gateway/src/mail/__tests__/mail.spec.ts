@@ -324,16 +324,33 @@ describe('Test Provider', () => {
 });
 
 describe('TransactionalEmailService', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.MAIL_ENABLED;
+    delete process.env.MAIL_TRANSPORT;
+    delete process.env.SMTP_HOST;
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
+    delete process.env.MAIL_FROM_ADDRESS;
+    delete process.env.WEB_APP_URL;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
   it('should have disabled provider when MAIL_ENABLED is not set', async () => {
     const { TransactionalEmailService } = require('../mail.service');
-    const service = new TransactionalEmailService();
+    const service = await TransactionalEmailService.create();
     expect(service.getProviderName()).toBe('disabled');
     expect(service.isReady()).toBe(false);
   });
 
   it('should throw TransactionalEmailUnavailableError when sending while disabled', async () => {
     const { TransactionalEmailService } = require('../mail.service');
-    const service = new TransactionalEmailService();
+    const service = await TransactionalEmailService.create();
     await expect(
       service.send({
         templateId: 'password-reset',
@@ -347,10 +364,168 @@ describe('TransactionalEmailService', () => {
   // Test 14: Malformed job payload is rejected (via template validation)
   it('should reject unsupported template IDs via renderEmail', async () => {
     const { TransactionalEmailService } = require('../mail.service');
-    const service = new TransactionalEmailService();
+    const service = await TransactionalEmailService.create();
     await expect(
       service.renderEmail('nonexistent' as any, { recipientName: 'User', actionUrl: 'https://example.com', expiresIn: '30m' }),
     ).rejects.toThrow(/Unsupported template ID/);
+  });
+});
+
+describe('TransactionalEmailService Async Factory Lifecycle', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.MAIL_ENABLED;
+    delete process.env.MAIL_TRANSPORT;
+    delete process.env.SMTP_HOST;
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
+    delete process.env.MAIL_FROM_ADDRESS;
+    delete process.env.WEB_APP_URL;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it('should boot with disabled provider when MAIL_ENABLED=false', async () => {
+    process.env.MAIL_ENABLED = 'false';
+    const { TransactionalEmailService } = require('../mail.service');
+    const service = await TransactionalEmailService.create();
+    expect(service.getProviderName()).toBe('disabled');
+    expect(service.isReady()).toBe(false);
+  });
+
+  it('should initialize successfully with test transport when MAIL_ENABLED=true MAIL_TRANSPORT=test', async () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.MAIL_TRANSPORT = 'test';
+    const { TransactionalEmailService } = require('../mail.service');
+    const service = await TransactionalEmailService.create();
+    expect(service.getProviderName()).toBe('test');
+    expect(service.isReady()).toBe(true);
+  });
+
+  it('should initialize successfully with SMTP transport (real nodemailer, non-connecting)', async () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.MAIL_TRANSPORT = 'smtp';
+    process.env.SMTP_HOST = 'localhost';
+    process.env.SMTP_PORT = '19999';
+    process.env.SMTP_USER = 'test-user';
+    process.env.SMTP_PASS = 'test-pass';
+    process.env.MAIL_FROM_ADDRESS = 'noreply@test.example.com';
+    process.env.WEB_APP_URL = 'https://app.test.example.com';
+
+    const { TransactionalEmailService } = require('../mail.service');
+    const service = await TransactionalEmailService.create();
+    expect(service.getProviderName()).toBe('smtp');
+    expect(service.isReady()).toBe(true);
+  });
+
+  it('should await the async factory (create returns a promise)', async () => {
+    process.env.MAIL_ENABLED = 'false';
+    const { TransactionalEmailService } = require('../mail.service');
+    const result = TransactionalEmailService.create();
+    expect(result).toBeInstanceOf(Promise);
+    const service = await result;
+    expect(service.getProviderName()).toBe('disabled');
+  });
+
+  it('should not perform async work in the constructor', async () => {
+    process.env.MAIL_ENABLED = 'false';
+    const { TransactionalEmailService } = require('../mail.service');
+    const config = require('../mail.config').loadMailConfig();
+    const provider = require('../mail.providers').createDisabledProvider();
+    const start = Date.now();
+    const service = new TransactionalEmailService(config, provider);
+    const elapsed = Date.now() - start;
+    expect(service.getProviderName()).toBe('disabled');
+    expect(elapsed).toBeLessThan(100);
+  });
+
+  it('should default SMTP_HOST to localhost when not provided', () => {
+    process.env.MAIL_ENABLED = 'true';
+    delete process.env.SMTP_HOST;
+    process.env.SMTP_USER = 'user';
+    process.env.SMTP_PASS = 'pass';
+    const { loadMailConfig } = require('../mail.config');
+    const config = loadMailConfig();
+    expect(config.smtp.host).toBe('localhost');
+  });
+
+  it('should fail through controlled validation when SMTP_USER is missing', () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.SMTP_HOST = 'smtp.example.com';
+    process.env.SMTP_USER = '';
+    process.env.SMTP_PASS = 'pass';
+    const { loadMailConfig } = require('../mail.config');
+    expect(() => loadMailConfig()).toThrow(/SMTP_USER/);
+  });
+
+  it('should fail through controlled validation when SMTP_PASS is missing', () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.SMTP_HOST = 'smtp.example.com';
+    process.env.SMTP_USER = 'user';
+    process.env.SMTP_PASS = '';
+    const { loadMailConfig } = require('../mail.config');
+    expect(() => loadMailConfig()).toThrow(/SMTP_PASS/);
+  });
+
+  it('should produce a controlled error when SMTP provider creation fails', async () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.MAIL_TRANSPORT = 'smtp';
+    process.env.SMTP_HOST = 'smtp.test.example.com';
+    process.env.SMTP_USER = 'test-user';
+    process.env.SMTP_PASS = 'test-pass';
+    process.env.MAIL_FROM_ADDRESS = 'noreply@test.example.com';
+    process.env.WEB_APP_URL = 'https://app.test.example.com';
+
+    jest.resetModules();
+    jest.doMock('nodemailer', () => ({
+      createTransport: jest.fn().mockImplementation(() => {
+        throw new Error('ECONNREFUSED');
+      }),
+    }));
+
+    try {
+      const { TransactionalEmailService } = require('../mail.service');
+      await expect(TransactionalEmailService.create()).rejects.toThrow('ECONNREFUSED');
+    } finally {
+      jest.dontMock('nodemailer');
+      jest.resetModules();
+    }
+  });
+
+  it('should not expose credential values in logs or errors', async () => {
+    process.env.MAIL_ENABLED = 'true';
+    process.env.MAIL_TRANSPORT = 'smtp';
+    process.env.SMTP_HOST = 'smtp.test.example.com';
+    process.env.SMTP_USER = 'super-secret-user-42';
+    process.env.SMTP_PASS = 'super-secret-pass-99';
+    process.env.MAIL_FROM_ADDRESS = 'noreply@test.example.com';
+    process.env.WEB_APP_URL = 'https://app.test.example.com';
+
+    jest.resetModules();
+    jest.doMock('nodemailer', () => ({
+      createTransport: jest.fn().mockImplementation(() => {
+        throw new Error('Connection timeout');
+      }),
+    }));
+
+    try {
+      const { TransactionalEmailService } = require('../mail.service');
+      try {
+        await TransactionalEmailService.create();
+        fail('Expected create() to throw');
+      } catch (err: any) {
+        expect(err.message).not.toContain('super-secret-user-42');
+        expect(err.message).not.toContain('super-secret-pass-99');
+        expect(err.message).toBe('Connection timeout');
+      }
+    } finally {
+      jest.dontMock('nodemailer');
+      jest.resetModules();
+    }
   });
 });
 

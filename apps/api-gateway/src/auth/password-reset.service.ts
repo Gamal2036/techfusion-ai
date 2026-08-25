@@ -1,6 +1,14 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'crypto';
 import { randomBytes } from 'crypto';
+import {
+  TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  TRANSACTIONAL_EMAIL_DELIVERY_ENVELOPE_VERSION,
+  loadMailPayloadEncryptionKey,
+  sealTransactionalEmailDeliveryEnvelope,
+  type PasswordResetEmailPayloadV1,
+  type TransactionalEmailDeliveryEnvelopeV1,
+} from '@techfusion/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TransactionalEmailService } from '../mail/mail.service';
@@ -101,21 +109,33 @@ export class PasswordResetService {
           .getUrlBuilder()
           .buildActionUrl('/reset-password', { token: rawToken });
 
-        const rendered = await this.emailService.renderEmail('password-reset', {
+        const templatePayload: PasswordResetEmailPayloadV1 = {
           recipientName: user.displayName || 'User',
           actionUrl: resetUrl,
           expiresIn: '15 minutes',
-        });
+        };
 
         const idempotencyKey = `pwd-reset-${result.id}`;
         const correlationId = `pwd-reset-${user.id}-${Date.now()}`;
 
+        // Seal the real recipient address together with the typed raw
+        // template data into a versioned AES-256-GCM envelope. The plaintext
+        // address exists only inside encryptedPayload ciphertext; it never
+        // appears in root job data, logs, or error output. Fails closed when
+        // the payload encryption key is missing or invalid.
+        const deliveryEnvelope: TransactionalEmailDeliveryEnvelopeV1 = {
+          envelopeVersion: TRANSACTIONAL_EMAIL_DELIVERY_ENVELOPE_VERSION,
+          to: normalizedEmail,
+          templateData: templatePayload,
+        };
+
         await this.queueService.addTransactionalEmail({
+          version: TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
           templateId: 'password-reset',
-          encryptedPayload: JSON.stringify({
-            rendered,
-            to: user.email,
-          }),
+          encryptedPayload: sealTransactionalEmailDeliveryEnvelope(
+            deliveryEnvelope,
+            loadMailPayloadEncryptionKey(),
+          ),
           recipientHash: this.emailService.getUrlBuilder().hashRecipient(user.email),
           idempotencyKey,
           correlationId,

@@ -1,22 +1,77 @@
 import { MailProvider, MailSendResult, MailRenderedEmail, MailUnavailableError, MailDeliveryError } from './mail-provider.interface';
 
-function isRetryableError(err: any): boolean {
-  const code = err?.code?.toUpperCase() || '';
-  const message = (err?.message || '').toLowerCase();
-  if (code.includes('ECONNRESET') || code.includes('ETIMEDOUT') || code.includes('ECONNREFUSED')) return true;
-  if (code.includes('ENOTFOUND') || code.includes('ENETUNREACH')) return true;
-  if (message.includes('timeout') || message.includes('connection')) return true;
-  if (err?.responseCode && err.responseCode >= 500 && err.responseCode < 600) return true;
-  return false;
+/**
+ * Sanitized SMTP error classification.
+ *
+ * Only the transport error's machine-readable code and numeric response code
+ * are inspected. Human-readable fields (`message`, `response`, `command`)
+ * may contain full recipient addresses or credentials and are never read,
+ * logged, or embedded into thrown errors.
+ */
+
+const RETRYABLE_SMTP_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'ESOCKETTIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'ENETUNREACH',
+  'EAI_AGAIN',
+]);
+
+const PERMANENT_SMTP_CODES = new Set([
+  'EENVELOPE', // invalid recipient / envelope rejected by MTA
+  'EAUTH', // authentication failure — retrying cannot help
+  'EMESSAGE',
+  'EPROTOCOL',
+]);
+
+export interface SmtpErrorClassification {
+  retryable: boolean;
+  category: string;
 }
 
-function categorizeError(err: any): string {
-  const code = err?.code || '';
-  if (code.includes('ETIMEOUT') || code.includes('ESOCKET')) return 'timeout';
-  if (code.includes('ECONNREFUSED') || code.includes('ECONNRESET')) return 'connection';
-  if (code.includes('ENOTFOUND') || code.includes('ENETUNREACH')) return 'dns';
-  if (err?.responseCode) return `smtp-${err.responseCode}`;
-  return 'unknown';
+export function classifySmtpDeliveryError(err: unknown): SmtpErrorClassification {
+  const code = typeof (err as any)?.code === 'string' ? (err as any).code.toUpperCase() : '';
+  const responseCode =
+    typeof (err as any)?.responseCode === 'number' ? (err as any).responseCode : undefined;
+
+  if (PERMANENT_SMTP_CODES.has(code)) {
+    return { retryable: false, category: smtpCategoryFor(code, responseCode) };
+  }
+
+  if (RETRYABLE_SMTP_CODES.has(code)) {
+    return { retryable: true, category: smtpCategoryFor(code, responseCode) };
+  }
+
+  if (responseCode !== undefined) {
+    // SMTP-layer responses keep their established retry posture: deferrals
+    // and server-error classes stay transient; envelope/auth-class codes were
+    // already classified permanent above.
+    return { retryable: true, category: `smtp-${responseCode}` };
+  }
+
+  if (!code) {
+    const message = typeof (err as any)?.message === 'string' ? (err as any).message.toLowerCase() : '';
+    if (message.includes('timeout') || message.includes('connection')) {
+      return { retryable: true, category: 'connection' };
+    }
+    return { retryable: false, category: 'unknown' };
+  }
+
+  // Unrecognized but safe machine-readable code: preserve it instead of "unknown".
+  return { retryable: false, category: code.toLowerCase() };
+}
+
+function smtpCategoryFor(code: string, responseCode?: number): string {
+  if (code === 'EENVELOPE') return 'envelope';
+  if (code === 'EAUTH') return 'auth';
+  if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') return 'timeout';
+  if (code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'EPIPE') return 'connection';
+  if (code === 'ENOTFOUND' || code === 'ENETUNREACH' || code === 'EAI_AGAIN') return 'dns';
+  if (responseCode !== undefined) return `smtp-${responseCode}`;
+  return code.toLowerCase();
 }
 
 export async function createSmtpMailProvider(config: {
@@ -66,8 +121,7 @@ export async function createSmtpMailProvider(config: {
           attempts: 1,
         };
       } catch (err: any) {
-        const retryable = isRetryableError(err);
-        const category = categorizeError(err);
+        const { retryable, category } = classifySmtpDeliveryError(err);
         throw new (await import('./mail-provider.interface')).MailDeliveryError(
           `SMTP delivery failed: ${category}`,
           retryable,

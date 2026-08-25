@@ -18,33 +18,32 @@ export class TransactionalEmailService implements OnModuleDestroy {
   private readonly provider: TransactionalEmailProvider;
   private readonly urlBuilder: MailUrlBuilder;
 
-  constructor() {
-    this.config = loadMailConfig();
-    this.urlBuilder = new MailUrlBuilder(this.config.publicWebUrl);
-
-    if (!this.config.enabled) {
-      this.provider = createDisabledProvider();
-      this.logger.log('Transactional email is DISABLED. Set MAIL_ENABLED=true to enable.');
-    } else if (this.config.transport === 'test') {
-      this.provider = createTestProvider();
-      this.logger.log('Transactional email using TEST provider (no network).');
-    } else {
-      throw new Error(
-        'SMTP provider initialization must be done via the async factory. ' +
-        'Use TransactionalEmailService.create() for enabled SMTP mode.',
-      );
-    }
+  constructor(config: MailConfig, provider: TransactionalEmailProvider) {
+    this.config = config;
+    this.provider = provider;
+    this.urlBuilder = new MailUrlBuilder(config.publicWebUrl);
   }
 
   static async create(): Promise<TransactionalEmailService> {
     const config = loadMailConfig();
-    const service = new TransactionalEmailService();
 
-    if (config.enabled && config.transport === 'smtp') {
-      (service as any).provider = await createSmtpProvider(config);
-      (service as any).logger.log('Transactional email using SMTP provider.');
+    if (!config.enabled) {
+      const provider = createDisabledProvider();
+      const service = new TransactionalEmailService(config, provider);
+      service.logger.log('Transactional email is DISABLED. Set MAIL_ENABLED=true to enable.');
+      return service;
     }
 
+    if (config.transport === 'test') {
+      const provider = createTestProvider();
+      const service = new TransactionalEmailService(config, provider);
+      service.logger.log('Transactional email using TEST provider (no network).');
+      return service;
+    }
+
+    const provider = await createSmtpProvider(config);
+    const service = new TransactionalEmailService(config, provider);
+    service.logger.log('Transactional email using SMTP provider.');
     return service;
   }
 

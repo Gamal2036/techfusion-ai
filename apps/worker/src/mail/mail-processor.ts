@@ -1,4 +1,12 @@
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
+import {
+  TRANSACTIONAL_EMAIL_CONTRACT_VERSION,
+  isValidTransactionalEmailTemplateId,
+  isValidTransactionalEmailPayload,
+  isValidRecipientEmailAddress,
+  type TransactionalEmailDeliveryEnvelopeV1,
+  type TransactionalEmailJobWithCorrelation,
+} from '@techfusion/types';
 import { MailProvider, MailDeliveryError, MailRenderedEmail } from './mail-provider.interface';
 import { renderTemplate, TemplateData } from './mail-templates';
 import { MailUrlBuilder } from './mail-url-builder';
@@ -7,37 +15,16 @@ import { extractCorrelationFromJob } from '../correlation';
 
 const log = createWorkerLogger('MailProcessor');
 
-interface TransactionalEmailJobData {
-  version: number;
-  templateId: string;
-  encryptedPayload: string;
-  recipientHash: string;
-  idempotencyKey: string;
-  correlationId: string;
-  _correlation?: {
-    requestId: string;
-    correlationId: string;
-    traceId?: string;
-    userId?: string;
-    orgId?: string;
-  };
-}
-
-function maskHash(hash: string): string {
-  if (hash.length <= 8) return '****';
-  return `${hash.slice(0, 4)}****${hash.slice(-4)}`;
-}
-
 export function createMailProcessor(
   provider: MailProvider,
-  decryptPayload: (encrypted: string) => TemplateData,
+  openDeliveryEnvelope: (encrypted: string) => TransactionalEmailDeliveryEnvelopeV1,
   urlBuilder: MailUrlBuilder,
 ) {
   return async function processTransactionalEmailJob(job: Job): Promise<any> {
     const start = Date.now();
     const corr = extractCorrelationFromJob(job.data as Record<string, unknown>);
 
-    const data = job.data as TransactionalEmailJobData;
+    const data = job.data as TransactionalEmailJobWithCorrelation;
 
     log.log('Processing transactional email job', {
       queueName: 'transactional-email',
@@ -46,39 +33,67 @@ export function createMailProcessor(
     });
 
     try {
-      if (data.version !== 1) {
-        throw new Error(`Unsupported job version: ${data.version}`);
+      if (data.version !== TRANSACTIONAL_EMAIL_CONTRACT_VERSION) {
+        throw new MailDeliveryError(`Unsupported job version: ${data.version}`, false, 'contract');
       }
 
       if (!data.templateId || typeof data.templateId !== 'string') {
-        throw new Error('Missing or invalid templateId');
+        throw new MailDeliveryError('Missing or invalid templateId', false, 'contract');
       }
 
       if (!data.encryptedPayload || typeof data.encryptedPayload !== 'string') {
-        throw new Error('Missing or invalid encryptedPayload');
+        throw new MailDeliveryError('Missing or invalid encryptedPayload', false, 'contract');
       }
 
       if (!data.idempotencyKey || typeof data.idempotencyKey !== 'string') {
-        throw new Error('Missing or invalid idempotencyKey');
+        throw new MailDeliveryError('Missing or invalid idempotencyKey', false, 'contract');
       }
 
-      let templateData: TemplateData;
+      let envelope: TransactionalEmailDeliveryEnvelopeV1;
       try {
-        templateData = decryptPayload(data.encryptedPayload);
+        envelope = openDeliveryEnvelope(data.encryptedPayload);
       } catch (err: any) {
-        log.error('Failed to decrypt payload, aborting', {
+        log.error('Failed to open encrypted delivery envelope, aborting', {
           queueName: 'transactional-email',
           jobId: job.id?.toString(),
           errorType: 'DecryptionError',
-          errorMessage: 'Payload decryption failed',
+          errorMessage: err?.message || 'Envelope decryption failed',
           correlationId: corr?.correlationId,
         });
-        throw new MailDeliveryError('Payload decryption failed', false, 'decryption');
+        throw new MailDeliveryError(err?.message || 'Payload decryption failed', false, 'decryption');
+      }
+
+      // The real recipient address comes ONLY from the decrypted envelope.
+      // recipientHash is observability/correlation data and must never be
+      // used to derive an SMTP recipient.
+      if (!isValidRecipientEmailAddress(envelope.to)) {
+        log.error('Invalid delivery envelope recipient, aborting before render and send', {
+          queueName: 'transactional-email',
+          jobId: job.id?.toString(),
+          errorType: 'EnvelopeValidationError',
+          errorMessage: 'Invalid transactional email delivery envelope',
+          correlationId: corr?.correlationId,
+        });
+        throw new MailDeliveryError('Invalid transactional email delivery envelope', false, 'envelope');
+      }
+
+      if (
+        isValidTransactionalEmailTemplateId(data.templateId) &&
+        !isValidTransactionalEmailPayload(data.templateId, envelope.templateData)
+      ) {
+        log.error('Invalid template payload, aborting before render and send', {
+          queueName: 'transactional-email',
+          jobId: job.id?.toString(),
+          errorType: 'PayloadValidationError',
+          errorMessage: 'Invalid transactional email payload',
+          correlationId: corr?.correlationId,
+        });
+        throw new MailDeliveryError('Invalid transactional email payload', false, 'payload');
       }
 
       let rendered: MailRenderedEmail;
       try {
-        rendered = renderTemplate(data.templateId, templateData);
+        rendered = renderTemplate(data.templateId, envelope.templateData as TemplateData);
       } catch (err: any) {
         log.error('Failed to render template', {
           queueName: 'transactional-email',
@@ -97,7 +112,7 @@ export function createMailProcessor(
       });
 
       const result = await provider.send(rendered, {
-        to: `recipient-${maskHash(data.recipientHash)}`,
+        to: envelope.to,
         templateId: data.templateId,
         correlationId: data.correlationId,
       });
@@ -131,7 +146,23 @@ export function createMailProcessor(
         throw err;
       }
 
-      log.error('Transactional email failed (permanent)', {
+      if (err instanceof MailDeliveryError && !err.isRetryable) {
+        log.error('Transactional email failed (permanent)', {
+          queueName: 'transactional-email',
+          jobId: job.id?.toString(),
+          errorType: err?.name || 'MailError',
+          errorMessage: err.providerErrorCategory
+            ? `${err.message} [category: ${err.providerErrorCategory}]`
+            : err.message,
+          correlationId: corr?.correlationId,
+          duration,
+        });
+        // BullMQ-supported non-retryable mechanism: the job moves straight to
+        // the failed set without consuming any remaining attempts.
+        throw new UnrecoverableError(err.message);
+      }
+
+      log.error('Transactional email failed (unexpected)', {
         queueName: 'transactional-email',
         jobId: job.id?.toString(),
         errorType: err?.name || 'MailError',
