@@ -22,6 +22,7 @@
     "@opentelemetry/sdk-node": "^0.54.0",
     "@opentelemetry/semantic-conventions": "^1.27.0",
     "@prisma/client": "^6.19.3",
+    "@techfusion/types": "workspace:*",
     "bullmq": "^5.0.0",
     "ioredis": "^5.4.0",
     "nodemailer": "^9.0.5",

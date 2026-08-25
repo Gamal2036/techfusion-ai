@@ -70,4 +70,8 @@ describe('Job Names', () => {
   it('defines monitoring job names', () => {
     expect(JOB_NAMES.MONITORING.PRESENCE_SWEEP).toBe('presence_sweep');
   });
+
+  it('defines transactional email job names', () => {
+    expect(JOB_NAMES.TRANSACTIONAL_EMAIL.SEND).toBe('send');
+  });
 });
