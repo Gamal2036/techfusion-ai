@@ -6,6 +6,16 @@ import { processAlertJob, processReportJob, processBackupJob, processInventoryJo
 import { createWorkerLogger } from './structured-logger';
 import { extractCorrelationFromJob, JobCorrelationData } from './correlation';
 import { disconnectPrisma } from './prisma-client';
+import {
+  loadMailPayloadEncryptionKey,
+  openTransactionalEmailDeliveryEnvelope,
+  MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV,
+  type TransactionalEmailDeliveryEnvelopeV1,
+} from '@techfusion/types';
+import { loadMailProviderConfig, createSmtpMailProvider, createTestMailProvider, createDisabledMailProvider } from './mail/mail-providers';
+import { MailProvider } from './mail/mail-provider.interface';
+import { createMailProcessor } from './mail/mail-processor';
+import { MailUrlBuilder } from './mail/mail-url-builder';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const API_URL = process.env.TF_API_URL || 'http://localhost:3001';
@@ -83,6 +93,41 @@ function startHealthServer(port: number): void {
   server.listen(port, '0.0.0.0', () => {
     logger.log(`Health server listening on port ${port}`);
   });
+}
+
+// ─── Mail Provider Initialization ───────────────────────────
+
+let mailProvider: MailProvider | null = null;
+
+async function initMailProvider(): Promise<void> {
+  const config = loadMailProviderConfig();
+  if (!config.enabled) {
+    mailProvider = createDisabledMailProvider();
+    logger.log('Transactional email is DISABLED in worker.');
+    return;
+  }
+
+  if (config.transport === 'test') {
+    mailProvider = createTestMailProvider();
+    logger.log('Transactional email using TEST provider in worker.');
+    return;
+  }
+
+  try {
+    mailProvider = await createSmtpMailProvider({
+      ...config.smtp,
+      fromAddress: config.fromAddress,
+      fromName: config.fromName,
+      replyTo: config.replyTo,
+    });
+    logger.log('Transactional email using SMTP provider in worker.');
+  } catch (err: any) {
+    logger.error('Failed to initialize SMTP mail provider', {
+      errorType: err?.name || 'MailInitError',
+      errorMessage: err?.message || String(err),
+    });
+    mailProvider = createDisabledMailProvider();
+  }
 }
 
 // ─── Queue Processors Map ──────────────────────────────────────
@@ -172,6 +217,56 @@ async function main() {
   await initTelemetry();
   startMetricsServer(9464);
   startHealthServer(HEALTH_PORT);
+
+  // Initialize mail provider
+  await initMailProvider();
+
+  // Register mail processor if mail is enabled
+  if (mailProvider && mailProvider.isReady()) {
+    const mailConfig = loadMailProviderConfig();
+    const mailUrlBuilder = new MailUrlBuilder(process.env.WEB_APP_URL || process.env.PUBLIC_WEB_URL || 'http://localhost:3000');
+
+    let openDeliveryEnvelope: ((encrypted: string) => TransactionalEmailDeliveryEnvelopeV1) | null = null;
+    try {
+      // Fail closed: without a valid payload encryption key the worker must
+      // not process transactional email jobs at all.
+      const mailPayloadKey = loadMailPayloadEncryptionKey();
+      openDeliveryEnvelope = (encrypted: string) =>
+        openTransactionalEmailDeliveryEnvelope(encrypted, mailPayloadKey);
+    } catch (err: any) {
+      logger.error('Transactional email payload encryption key is missing or invalid — failing closed', {
+        errorType: err?.name || 'MailPayloadKeyError',
+        errorMessage: err?.message || 'Mail payload encryption unavailable',
+      });
+    }
+
+    if (openDeliveryEnvelope) {
+      const mailProcessor = createMailProcessor(mailProvider, openDeliveryEnvelope, mailUrlBuilder);
+      QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = mailProcessor;
+      logger.log('Transactional email processor registered');
+    } else {
+      QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = async (job: Job) => {
+        logger.warn('Rejecting transactional email job: payload encryption unavailable', {
+          queueName: QUEUE_NAMES.TRANSACTIONAL_EMAIL,
+          jobId: job.id?.toString(),
+        });
+        throw new Error(
+          `Transactional email payload encryption is not configured (${MAIL_PAYLOAD_ENCRYPTION_KEY_B64_ENV})`,
+        );
+      };
+      logger.log('Transactional email processor registered (fail-closed stub)');
+    }
+  } else {
+    // Register a stub processor that rejects jobs when mail is disabled
+    QUEUE_PROCESSORS[QUEUE_NAMES.TRANSACTIONAL_EMAIL] = async (job: Job) => {
+      logger.warn('Received transactional email job but mail is disabled', {
+        queueName: QUEUE_NAMES.TRANSACTIONAL_EMAIL,
+        jobId: job.id?.toString(),
+      });
+      throw new Error('Transactional email is not enabled');
+    };
+    logger.log('Transactional email processor registered (disabled stub)');
+  }
 
   const queueNames = Object.values(QUEUE_NAMES);
   logger.log(`Registering ${queueNames.length} queues: ${queueNames.join(', ')}`);

@@ -7,6 +7,7 @@ export const QUEUE_NAMES = {
   RETENTION: 'retention',
   KB_EMBEDDING: 'kb_embedding',
   MONITORING: 'monitoring',
+  TRANSACTIONAL_EMAIL: 'transactional-email',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -40,5 +41,8 @@ export const JOB_NAMES = {
   },
   MONITORING: {
     PRESENCE_SWEEP: 'presence_sweep',
+  },
+  TRANSACTIONAL_EMAIL: {
+    SEND: 'send',
   },
 } as const;
